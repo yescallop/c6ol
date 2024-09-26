@@ -8,12 +8,11 @@ import Board from './components/Board.vue';
 
 <style>
 body {
-  height: 100vh;
   margin: 0;
   background-color: #ffcc66;
 }
 
 #app {
-  height: 100%;
+  height: 100svh;
 }
 </style>
