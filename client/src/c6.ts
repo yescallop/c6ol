@@ -71,6 +71,10 @@ export class Point {
       }
     }
   }
+
+  copy(): Point {
+    return new Point(this.x, this.y);
+  }
 }
 
 export function pointEquals(a: Point | undefined, b: Point | undefined): boolean {

@@ -79,14 +79,19 @@ function viewToBoardPos(p: Point): Point {
   return new Point(x, y);
 }
 
-function boardToViewPos(p: Point): [Point, boolean] {
+function boardToViewPos(p: Point, restrict: boolean = false): [Point, boolean] {
   let xMin = viewCenter.x - (viewSize >>> 1);
   let yMin = viewCenter.y - (viewSize >>> 1);
   let x = p.x - xMin, y = p.y - yMin;
   let out = false;
   if ((x >>> 0) >= viewSize || (y >>> 0) >= viewSize) {
-    x = x < 0 ? -1 : (x >= viewSize ? viewSize : x);
-    y = y < 0 ? -1 : (y >= viewSize ? viewSize : y);
+    if (restrict) {
+      x = x < 0 ? 0 : (x >= viewSize ? viewSize - 1 : x);
+      y = y < 0 ? 0 : (y >= viewSize ? viewSize - 1 : y);
+    } else {
+      x = x < 0 ? -1 : (x >= viewSize ? viewSize : x);
+      y = y < 0 ? -1 : (y >= viewSize ? viewSize : y);
+    }
     out = true;
   }
   return [new Point(x, y), out];
@@ -96,37 +101,30 @@ function viewToCanvasPos(p: Point): [number, number] {
   return [(p.x + 1) * gridSize, (p.y + 1) * gridSize];
 }
 
-function unoccupied(p: Point | undefined): Point | undefined {
-  if (p && board.get(p)) p = undefined;
-  return p;
-}
-
 function send(msg: any) {
   if (conn.readyState != conn.OPEN)
     return window.alert('连接已断开，请刷新页面。');
   conn.send(msg.toString());
 }
 
-function onKey(e: KeyboardEvent) {
-  switch (e.code) {
-    case 'KeyW':
-      viewCenter.y--;
-      break;
-    case 'KeyA':
-      viewCenter.x--;
-      break;
-    case 'KeyS':
-      viewCenter.y++;
-      break;
-    case 'KeyD':
-      viewCenter.x++;
-      break;
-    case 'Backspace':
-      send(-1);
-    default:
-      return;
+function actOnCursor() {
+  if (!cursorPos || boardToViewPos(cursorPos)[1] /* out */)
+    return;
+  if (board.get(cursorPos)) return;
+
+  if (pointEquals(tentativePos, cursorPos)) {
+    tentativePos = undefined;
+    send(cursorPos.index());
+  } else {
+    tentativePos = cursorPos.copy();
+    paint();
   }
-  paint();
+}
+
+function restrictCursor() {
+  if (!cursorPos) return;
+  let [p, out] = boardToViewPos(cursorPos, true);
+  if (out) cursorPos = viewToBoardPos(p);
 }
 
 function followBoardPosOnDown(e: MouseEvent): boolean {
@@ -142,26 +140,96 @@ function followBoardPosOnDown(e: MouseEvent): boolean {
   return false;
 }
 
-function onWheel(e: WheelEvent) {
-  if (e.deltaY > 0) {
+enum Zoom {
+  Out,
+  In,
+}
+
+function zoom(zoom: Zoom, e: MouseEvent | undefined = undefined) {
+  if (zoom == Zoom.Out) {
     viewSize += 2;
   } else {
     if (viewSize == 1) return;
     viewSize -= 2;
   }
+
   gridSize = size / (viewSize + 1);
 
   if (downPointers.size == 0) {
-    onRelativeMove(e, true);
+    if (e) onRelativeMove(e, true);
   } else if (downPointers.size == 1) {
     if (viewState == ViewState.Pinched) return;
 
-    followBoardPosOnDown(e);
+    if (!e) e = downPointers.values().next().value.last;
+    followBoardPosOnDown(e!);
     viewState = ViewState.Moved;
   } else {
     return;
   }
+  restrictCursor();
   paint();
+}
+
+const DIRECTION_OFFSETS = [[0, -1], [-1, 0], [0, 1], [1, 0]];
+
+function onKey(e: KeyboardEvent) {
+  let direction;
+  switch (e.code) {
+    case 'KeyW':
+      direction = 0;
+      break;
+    case 'KeyA':
+      direction = 1;
+      break;
+    case 'KeyS':
+      direction = 2;
+      break;
+    case 'KeyD':
+      direction = 3;
+      break;
+    case 'ArrowUp':
+      direction = 0;
+      break;
+    case 'ArrowLeft':
+      direction = 1;
+      break;
+    case 'ArrowDown':
+      direction = 2;
+      break;
+    case 'ArrowRight':
+      direction = 3;
+      break;
+    case 'Backspace':
+      return send(-1);
+    case 'Minus':
+      return zoom(Zoom.Out);
+    case 'Equal':
+      return zoom(Zoom.In);
+    case 'Space':
+    case 'Enter':
+      if (cursorPos) return actOnCursor();
+      cursorPos = viewCenter.copy();
+      return paint();
+    default:
+      return;
+  }
+
+  let [dx, dy] = DIRECTION_OFFSETS[direction];
+  if (e.code.startsWith('Key')) {
+    if (!cursorPos) cursorPos = viewCenter.copy();
+    cursorPos.x += dx, cursorPos.y += dy;
+
+    let [, out] = boardToViewPos(cursorPos);
+    if (out) viewCenter.x += dx, viewCenter.y += dy;
+  } else {
+    viewCenter.x += dx, viewCenter.y += dy;
+    restrictCursor();
+  }
+  paint();
+}
+
+function onWheel(e: WheelEvent) {
+  zoom(e.deltaY > 0 ? Zoom.Out : Zoom.In, e);
 }
 
 function onDown(e: PointerEvent) {
@@ -187,18 +255,9 @@ function onUp(e: PointerEvent) {
     return;
   }
 
-  let [p, out] = canvasToViewPos(e.offsetX, e.offsetY);
-  if (out) return;
-  p = viewToBoardPos(p);
-  if (board.get(p)) return;
-
-  if (pointEquals(tentativePos, p)) {
-    tentativePos = undefined;
-    send(p.index());
-  } else {
-    tentativePos = p;
-    paint();
-  }
+  let [p,] = canvasToViewPos(e.offsetX, e.offsetY);
+  cursorPos = viewToBoardPos(p);
+  actOnCursor();
 }
 
 function onMove(e: PointerEvent) {
@@ -240,7 +299,7 @@ function onRelativeMove(e: MouseEvent, noPaint: boolean = false) {
   [p, out] = canvasToViewPos(e.offsetX, e.offsetY);
   p = out ? undefined : viewToBoardPos(p);
 
-  let shouldPaint = !noPaint && !pointEquals(unoccupied(p), unoccupied(cursorPos));
+  let shouldPaint = !noPaint && !pointEquals(p, cursorPos);
   cursorPos = p;
   if (shouldPaint) paint();
 }
@@ -249,7 +308,7 @@ function onLeave(e: PointerEvent) {
   downPointers.delete(e.pointerId);
   if (downPointers.size == 0) viewState = ViewState.Calm;
 
-  let shouldPaint = unoccupied(cursorPos);
+  let shouldPaint = cursorPos != undefined;
   cursorPos = undefined;
   if (shouldPaint) paint();
 }
@@ -356,7 +415,7 @@ function paint() {
     ctx.globalAlpha = 1;
   }
 
-  if (cursorPos && ([p, out] = boardToViewPos(cursorPos), !out) && !board.get(cursorPos)) {
+  if (cursorPos && ([p, out] = boardToViewPos(cursorPos), !out)) {
     let [x, y] = viewToCanvasPos(p);
 
     ctx.lineWidth = gridSize / CURSOR_LINE_WIDTH_RATIO;
@@ -396,6 +455,7 @@ onMounted(() => {
     for (let n of rec) {
       board.set(Point.fromIndex(n), board.inferTurn()[0]);
     }
+    tentativePos = undefined;
     paint();
   };
 });
