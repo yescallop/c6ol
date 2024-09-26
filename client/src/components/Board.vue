@@ -15,8 +15,8 @@ const CURSOR_SIDE_RATIO = 4.0;
 
 const TENTATIVE_MOVE_OPACITY = 0.5;
 
-const DIST_FOR_PINCH_ZOOM = 1.0 * 96 / 2.54;
-const DIST_FOR_SWIPE_RETRACT = 2.0 * 96 / 2.54;
+const DIST_FOR_PINCH_ZOOM = 2.0 * 96 / 2.54;
+const DIST_FOR_SWIPE_RETRACT = 4.0 * 96 / 2.54;
 
 const canvasContainer = ref();
 const canvas = ref();
@@ -160,7 +160,7 @@ function zoom(zoom: Zoom, e: MouseEvent | undefined = undefined) {
   if (downPointers.size == 0) {
     if (e) onRelativeMove(e, true);
   } else if (downPointers.size == 1) {
-    if (viewState >= ViewState.Pinched) return;
+    if (viewState > ViewState.Moved) return;
 
     if (!e) e = downPointers.values().next().value.last;
     followBoardPosOnDown(e!);
@@ -271,7 +271,7 @@ function onMove(e: PointerEvent) {
   if (downPointers.size == 0) {
     onRelativeMove(e);
   } else if (downPointers.size == 1) {
-    if (viewState >= ViewState.Pinched) return;
+    if (viewState > ViewState.Moved) return;
 
     if (followBoardPosOnDown(e)) {
       viewState = ViewState.Moved;
