@@ -1,11 +1,11 @@
-package main
+package game
 
 type Point struct {
 	X int
 	Y int
 }
 
-func Abs(n int) int {
+func abs(n int) int {
 	if n < 0 {
 		return -n
 	}
@@ -17,7 +17,7 @@ func (p Point) Index() int {
 		return 0
 	}
 
-	xAbs, yAbs := Abs(p.X), Abs(p.Y)
+	xAbs, yAbs := abs(p.X), abs(p.Y)
 	vertical := xAbs > yAbs
 	var k int
 	if vertical {
@@ -147,8 +147,8 @@ func (a Axis) UnitVec() (int, int) {
 }
 
 type Move struct {
-	pos   Point
-	stone Stone
+	Pos   Point
+	Stone Stone
 }
 
 type Board struct {
@@ -203,7 +203,7 @@ func (b *Board) Unset() *Move {
 	b.index--
 	last := b.record[b.index]
 
-	delete(b.board, last.pos)
+	delete(b.board, last.Pos)
 	return &last
 }
 
@@ -214,7 +214,7 @@ func (b *Board) Reset() *Move {
 	next := b.record[b.index]
 	b.index++
 
-	b.board[next.pos] = next.stone
+	b.board[next.Pos] = next.Stone
 	return &next
 }
 
@@ -225,12 +225,12 @@ func (b *Board) Jump(index int) {
 	if b.index < index {
 		for i := b.index; i < index; i++ {
 			next := b.record[i]
-			b.board[next.pos] = next.stone
+			b.board[next.Pos] = next.Stone
 		}
 	} else {
 		for i := b.index - 1; i >= index; i-- {
 			last := b.record[i]
-			delete(b.board, last.pos)
+			delete(b.board, last.Pos)
 		}
 	}
 	b.index = index
@@ -241,12 +241,12 @@ func (b *Board) InferTurn() (Stone, bool) {
 		return BlackStone, true
 	}
 
-	last := b.record[b.index-1].stone
+	last := b.record[b.index-1].Stone
 	if b.index == 1 {
 		return WhiteStone, last == WhiteStone
 	}
 
-	prevOfLast := b.record[b.index-2].stone
+	prevOfLast := b.record[b.index-2].Stone
 	if last == prevOfLast {
 		return last.Opposite(), false
 	}

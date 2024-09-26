@@ -73,6 +73,11 @@ export class Point {
   }
 }
 
+export function pointEquals(a: Point | undefined, b: Point | undefined): boolean {
+  if (a == undefined) return b == undefined;
+  return b != undefined && a.x == b.x && a.y == b.y;
+}
+
 export enum Stone {
   // 0 would be falsy.
   Black = 1,

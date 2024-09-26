@@ -5,6 +5,7 @@
 package main
 
 import (
+	"c6ol/game"
 	"encoding/json"
 	"strconv"
 )
@@ -24,7 +25,7 @@ type Hub struct {
 	// Unregister requests from clients.
 	unregister chan *Client
 
-	board Board
+	board game.Board
 }
 
 func newHub() *Hub {
@@ -33,7 +34,7 @@ func newHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
-		board:      NewBoard(),
+		board:      game.NewBoard(),
 	}
 }
 
@@ -57,7 +58,7 @@ func (h *Hub) run() {
 func (h *Hub) boardToJson() []byte {
 	out := make([]int, h.board.Index())
 	for i, move := range h.board.Record() {
-		out[i] = move.pos.Index()
+		out[i] = move.Pos.Index()
 	}
 	outJson, err := json.Marshal(out)
 	if err != nil {
@@ -73,7 +74,7 @@ func (h *Hub) handleMessage(msg []byte) {
 	}
 
 	if n >= 0 {
-		p := PointFromIndex(int(n))
+		p := game.PointFromIndex(int(n))
 		stone, _ := h.board.InferTurn()
 		if !h.board.Set(p, stone) {
 			return
