@@ -15,7 +15,8 @@ const CURSOR_SIDE_RATIO = 4.0;
 
 const TENTATIVE_MOVE_OPACITY = 0.5;
 
-const DIST_FOR_PINCH_ZOOM_CM = 0.5;
+const DIST_FOR_PINCH_ZOOM = 1.0 * 96 / 2.54;
+const DIST_FOR_SWIPE_RETRACT = 2.0 * 96 / 2.54;
 
 const canvasContainer = ref();
 const canvas = ref();
@@ -44,6 +45,7 @@ enum ViewState {
   Calm,
   Moved,
   Pinched,
+  Retracted,
 }
 
 let viewState = ViewState.Calm;
@@ -158,7 +160,7 @@ function zoom(zoom: Zoom, e: MouseEvent | undefined = undefined) {
   if (downPointers.size == 0) {
     if (e) onRelativeMove(e, true);
   } else if (downPointers.size == 1) {
-    if (viewState == ViewState.Pinched) return;
+    if (viewState >= ViewState.Pinched) return;
 
     if (!e) e = downPointers.values().next().value.last;
     followBoardPosOnDown(e!);
@@ -168,6 +170,10 @@ function zoom(zoom: Zoom, e: MouseEvent | undefined = undefined) {
   }
   restrictCursor();
   paint();
+}
+
+function dist(a: MouseEvent, b: MouseEvent): number {
+  return Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY);
 }
 
 const DIRECTION_OFFSETS = [[0, -1], [-1, 0], [0, 1], [1, 0]];
@@ -241,8 +247,6 @@ function onDown(e: PointerEvent) {
   if (downPointers.size == 2) {
     prevViewSize = viewSize;
     viewState = ViewState.Pinched;
-  } else if (downPointers.size == 3) {
-    send(-1);
   }
 }
 
@@ -267,7 +271,7 @@ function onMove(e: PointerEvent) {
   if (downPointers.size == 0) {
     onRelativeMove(e);
   } else if (downPointers.size == 1) {
-    if (viewState == ViewState.Pinched) return;
+    if (viewState >= ViewState.Pinched) return;
 
     if (followBoardPosOnDown(e)) {
       viewState = ViewState.Moved;
@@ -276,14 +280,9 @@ function onMove(e: PointerEvent) {
   } else if (downPointers.size == 2) {
     let [p1, p2] = [...downPointers.values()];
 
-    function dist(a: PointerEvent, b: PointerEvent): number {
-      return Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY);
-    }
     let distDiff = dist(p1.last, p2.last) - dist(p1.down, p2.down);
 
-    let distForPinchZoom = DIST_FOR_PINCH_ZOOM_CM * 96 * window.devicePixelRatio / 2.54;
-    let newViewSize = prevViewSize - ((distDiff / distForPinchZoom) << 1);
-
+    let newViewSize = prevViewSize - ((distDiff / DIST_FOR_PINCH_ZOOM) << 1);
     if (newViewSize < 1) newViewSize = 1;
 
     if (newViewSize != viewSize) {
@@ -291,6 +290,15 @@ function onMove(e: PointerEvent) {
       gridSize = size / (viewSize + 1);
       paint();
     }
+  } else if (downPointers.size == 3) {
+    if (viewState == ViewState.Retracted) return;
+
+    for (let p of downPointers.values()) {
+      if (dist(p.last, p.down) < DIST_FOR_SWIPE_RETRACT) return;
+    }
+
+    viewState = ViewState.Retracted;
+    send(-1);
   }
 }
 
