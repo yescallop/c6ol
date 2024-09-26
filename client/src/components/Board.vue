@@ -130,7 +130,8 @@ function restrictCursor() {
 }
 
 function followBoardPosOnDown(e: MouseEvent): boolean {
-  let p0: Point = downPointers.values().next().value.boardPosOnDown;
+  let [pointer] = downPointers.values();
+  let p0: Point = pointer.boardPosOnDown;
   let [p,] = canvasToViewPos(e.offsetX, e.offsetY);
   p = viewToBoardPos(p);
 
@@ -162,8 +163,11 @@ function zoom(zoom: Zoom, e: MouseEvent | undefined = undefined) {
   } else if (downPointers.size == 1) {
     if (viewState > ViewState.Moved) return;
 
-    if (!e) e = downPointers.values().next().value.last;
-    followBoardPosOnDown(e!);
+    if (!e) {
+      let [pointer] = downPointers.values();
+      e = pointer.last;
+    }
+    followBoardPosOnDown(e);
     viewState = ViewState.Moved;
   } else {
     return;
