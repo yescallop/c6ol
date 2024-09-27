@@ -139,7 +139,7 @@ function clampCursor() {
 
 function followBoardPosOnDown(): boolean {
   let [pointer] = downPointers.values();
-  let p0: Point = pointer.boardPosOnDown;
+  let p0 = pointer.boardPosOnDown;
   let [p,] = canvasToBoardPos(pointer.last.offsetX, pointer.last.offsetY);
 
   let dx = p.x - p0.x, dy = p.y - p0.y;
@@ -213,6 +213,8 @@ function onKeyDown(e: KeyboardEvent) {
     default:
       return;
   }
+
+  if (downPointers.size > 0) return;
 
   let [dx, dy] = DIRECTION_OFFSETS[direction];
   if (e.code.startsWith('K') /* Key */) {
