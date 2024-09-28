@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import Board from './components/Board.vue';
+import BoardView from './components/BoardView.vue';
 </script>
 
 <template>
-  <Board />
+  <BoardView />
 </template>
 
 <style>

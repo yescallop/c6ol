@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue';
-import { Board, Point, Stone, pointEquals } from '@/c6';
+import { Board, type Move, Point, Stone, pointEquals } from '@/c6';
 
 const BOARD_COLOR = '#ffcc66';
 const CURSOR_COLOR = 'darkred';
@@ -132,7 +132,7 @@ function resizeCanvas() {
 
 /** Tests if a view position is out of view. */
 function outOfView(x: number, y: number): boolean {
-  return (x >>> 0) >= viewSize || (y >>> 0) >= viewSize;
+  return x < 0 || x >= viewSize || y < 0 || y >= viewSize;
 }
 
 /** Converts a canvas position to view position, testing if it is out of view. */
@@ -227,12 +227,7 @@ function followBoardPosOnDown(): boolean {
   return false;
 }
 
-/**
- * Updates the cursor.
- *
- * Called when no pointer is active and a move happens relatively
- * between the pointer and the board.
- */
+/** Moves the cursor to the pointer position, or removes it when out of view. */
 function updateCursor(e: MouseEvent, noDraw = false) {
   let p: Point | undefined, out;
   [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
@@ -476,6 +471,7 @@ function drawCircle(p: Point, r: number) {
   ctx.fill();
 }
 
+/** Draws the view. */
 function draw() {
   // Draw the board background.
   ctx.fillStyle = BOARD_COLOR;
@@ -526,23 +522,23 @@ function draw() {
   }
 
   /** Returns the number of successive same-stone moves ending at the given index. */
-  function trailingSuccessiveMoves(rec: [Point, Stone][], end: number): number {
+  function trailingSuccessiveMoves(moves: Move[], end: number): number {
     if (end == 0) return 0;
-    let stone = rec[end - 1][1], count = 1;
+    let stone = moves[end - 1].stone, count = 1;
     for (let i = end - 2; i >= 0; i--) {
-      if (rec[i][1] != stone) break;
+      if (moves[i].stone != stone) break;
       count++;
     }
     return count;
   }
 
-  let rec = board.record();
+  let moves = board.pastMoves();
 
   // Count the number of stars we should draw.
-  let stars = trailingSuccessiveMoves(rec, rec.length);
+  let stars = trailingSuccessiveMoves(moves, moves.length);
   if (stars == 1)
-    stars += trailingSuccessiveMoves(rec, rec.length - 1);
-  let starStart = rec.length - stars;
+    stars += trailingSuccessiveMoves(moves, moves.length - 1);
+  let starStart = moves.length - stars;
 
   let stoneRadius = gridSize / STONE_RADIUS_RATIO;
   // We project the out-of-view stones onto the view border,
@@ -550,9 +546,9 @@ function draw() {
   let outIndexes = new Set<number>();
 
   // Draw the stones and the stars.
-  rec.forEach((move, index) => {
-    let [p, stone] = move;
-    [p, out] = boardToViewPos(p);
+  moves.forEach((move, index) => {
+    let { pos, stone } = move;
+    let [p, out] = boardToViewPos(pos);
     if (out) return outIndexes.add(p.index());
 
     ctx.fillStyle = stone == Stone.Black ? 'black' : 'white';
@@ -630,18 +626,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div id="board-container" ref="canvasContainer">
-    <canvas id="board" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointermove="onPointerMove"
+  <div id="view-container" ref="canvasContainer">
+    <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointermove="onPointerMove"
       @pointerup="onPointerUp" @pointerleave="onPointerLeave"></canvas>
   </div>
 </template>
 
 <style>
-#board-container {
+#view-container {
   height: 100%;
 }
 
-#board {
+#view {
   /*
     `top` and `left` positions the top-left corner of the canvas in the center,
     and `transform` translates the canvas left and up half its size.
