@@ -229,7 +229,7 @@ function followBoardPosOnDown(): boolean {
 
 /**
  * Updates the cursor.
- * 
+ *
  * Called when no pointer is active and a move happens relatively
  * between the pointer and the board.
  */
@@ -289,7 +289,7 @@ function dist(a: MouseEvent, b: MouseEvent): number {
 
 /**
  * Handles `keydown` events.
- * 
+ *
  * - Moves the cursor on WASD keys.
  * - Moves the view center on Arrow keys.
  * - Zooms out on Minus key.
@@ -348,7 +348,7 @@ function onKeyDown(e: KeyboardEvent) {
 
 /**
  * Handles `keyup` events.
- * 
+ *
  * - Hits the cursor on Space and Enter keys.
  * - Retracts the last move on Backspace key.
  */
@@ -383,14 +383,17 @@ function onPointerDown(e: PointerEvent) {
 
 /**
  * Handles `pointerup` events.
- * 
- * Attempts to hit the cursor when the view isn't ever dragged,
+ *
+ * Attempts to hit the cursor when the pointer is the only active one,
+ * the left button is pressed, and the view isn't ever dragged,
  * zoomed, or pinched since the pointer became active.
  */
 function onPointerUp(e: PointerEvent) {
   // Bail out if the pointer is already inactive due to a `pointerleave` event.
   if (!downPointers.delete(e.pointerId)) return;
   if (downPointers.size > 0) return;
+
+  if (e.button != 0) return;
 
   if (viewState != ViewState.Calm) {
     viewState = ViewState.Calm;
@@ -406,9 +409,9 @@ function onPointerUp(e: PointerEvent) {
 
 /**
  * Handles `pointermove` events.
- * 
+ *
  * Performs different actions according to the number of active pointers:
- * 
+ *
  * - 0: Updates the cursor.
  * - 1: Drags the view if it isn't ever pinched since the pointer became active.
  * - 2: Roughly speaking, whenever the distance of pointers increases (decreases)
@@ -607,7 +610,7 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
 
-  ws = new WebSocket('ws://' + document.location.hostname + ':8080/ws');
+  ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.onclose = () => window.alert('连接已断开，请刷新页面。');
   ws.onmessage = e => {
     let rec: number[] = JSON.parse(e.data);

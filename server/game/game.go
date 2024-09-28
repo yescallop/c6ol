@@ -106,9 +106,9 @@ type Row struct {
 type Stone int
 
 const (
-	NoStone    = Stone(0)
-	BlackStone = Stone(1)
-	WhiteStone = Stone(2)
+	NoStone = Stone(iota)
+	BlackStone
+	WhiteStone
 )
 
 func (s Stone) Opposite() Stone {
@@ -124,10 +124,10 @@ func (s Stone) Opposite() Stone {
 type Axis int
 
 const (
-	VerticalAxis   = Axis(0)
-	AscendingAxis  = Axis(1)
-	HorizontalAxis = Axis(2)
-	DescendingAxis = Axis(3)
+	VerticalAxis = Axis(iota)
+	AscendingAxis
+	HorizontalAxis
+	DescendingAxis
 )
 
 var Axes = []Axis{VerticalAxis, AscendingAxis, HorizontalAxis, DescendingAxis}
