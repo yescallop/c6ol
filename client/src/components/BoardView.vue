@@ -182,7 +182,7 @@ function viewToCanvasPos(p: Point): [number, number] {
 /** Converts the message to a string and sends it on the WebSocket connection. */
 function send(msg: any) {
   if (ws.readyState != WebSocket.OPEN)
-    return window.alert('连接已断开，请刷新页面。');
+    return window.alert('Connection closed, please refresh the page.');
   ws.send(msg.toString());
 }
 
@@ -607,7 +607,7 @@ onMounted(() => {
   window.addEventListener('keyup', onKeyUp);
 
   ws = new WebSocket('ws://' + document.location.host + '/ws');
-  ws.onclose = () => window.alert('连接已断开，请刷新页面。');
+  ws.onclose = () => window.alert('Connection closed, please refresh the page.');
   ws.onmessage = e => {
     let rec: number[] = JSON.parse(e.data);
     board.jump(0);
