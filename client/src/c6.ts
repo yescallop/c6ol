@@ -1,3 +1,32 @@
+function zigzagEncode(x: number): number {
+  return ((x << 1) ^ (x >> 31)) >>> 0;
+}
+
+function zigzagDecode(x: number): number {
+  return ((x >>> 1) ^ -(x & 1)) >> 0;
+}
+
+function interleave(x: number, y: number): number {
+  function scatter(x: number): number {
+    x = (x | (x << 8)) & 0x00ff00ff;
+    x = (x | (x << 4)) & 0x0f0f0f0f;
+    x = (x | (x << 2)) & 0x33333333;
+    return (x | (x << 1)) & 0x55555555;
+  }
+  return scatter(x) | (scatter(y) << 1);
+}
+
+function deinterleave(x: number): [number, number] {
+  function gather(x: number): number {
+    x &= 0x55555555;
+    x = (x | (x >>> 1)) & 0x33333333;
+    x = (x | (x >>> 2)) & 0x0f0f0f0f;
+    x = (x | (x >>> 4)) & 0x00ff00ff;
+    return (x | (x >>> 8)) & 0x0000ffff;
+  }
+  return [gather(x), gather(x >>> 1)];
+}
+
 /** A 2D point with integer coordinates. */
 export class Point {
   x: number;
@@ -9,72 +38,16 @@ export class Point {
     this.y = y;
   }
 
-  /** Returns the index of the point on the spiral. */
+  /** Maps the point to an unsigned integer. */
   index(): number {
-    if (this.x == 0 && this.y == 0) return 0;
-
-    let xAbs = Math.abs(this.x), yAbs = Math.abs(this.y);
-    let vertical = xAbs > yAbs;
-    let k = vertical ? xAbs : yAbs;
-    let t = k << 1;
-    // m=(t-1)^2
-
-    if (vertical) {
-      if (this.x > 0) {
-        // Right: m+y+k-1
-        return (t - 1) ** 2 + this.y + k - 1;
-      } else {
-        // Left: m+2t+k-1-y
-        return t * t + k - this.y;
-      }
-    } else if (this.y > 0) {
-      // Top: m+t-1+k-x
-      return t * t - t + k - this.x;
-    } else {
-      // Bottom: m+3t-1+x+k
-      return t * t + t + this.x + k;
-    }
+    let x = zigzagEncode(this.x), y = zigzagEncode(this.y);
+    return interleave(x, y);
   }
 
-  /** Creates a point from its index on the spiral. */
-  static fromIndex(n: number): Point {
-    if (n == 0) return new Point(0, 0);
-
-    /** Computes the integer square root of `s`. */
-    function isqrt(s: number): number {
-      if (s <= 1) return s;
-      let x0 = s >>> 1;
-      let x1 = (x0 + (s / x0) >>> 0) >>> 1;
-      while (x1 < x0) {
-        x0 = x1;
-        x1 = (x0 + (s / x0) >>> 0) >>> 1;
-      }
-      return x0;
-    }
-
-    let k = (isqrt(n) + 1) >>> 1;
-    let t = k << 1;
-    let m = t * t + 1; // m=(t-1)^2+2t
-
-    if (n < m) {
-      m -= t;
-      if (n < m) {
-        // Right
-        return new Point(k, k + 1 - (m - n));
-      } else {
-        // Top
-        return new Point(k - 1 - (n - m), k);
-      }
-    } else {
-      m += t;
-      if (n < m) {
-        // Left
-        return new Point(-k, -k - 1 + (m - n));
-      } else {
-        // Bottom
-        return new Point(-k + 1 + (n - m), -k);
-      }
-    }
+  /** Creates a point from an unsigned integer. */
+  static fromIndex(i: number): Point {
+    let [x, y] = deinterleave(i);
+    return new Point(zigzagDecode(x), zigzagDecode(y));
   }
 
   /** Tests if two possibly undefined points equal. */

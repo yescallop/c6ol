@@ -1,97 +1,52 @@
 package game
 
+func zigzagEncode(x int32) uint32 {
+	return uint32((x << 1) ^ (x >> 31))
+}
+
+func zigzagDecode(x uint32) int32 {
+	return int32((x >> 1) ^ -(x & 1))
+}
+
+func scatter(x uint32) uint32 {
+	x = (x | (x << 8)) & 0x00ff00ff
+	x = (x | (x << 4)) & 0x0f0f0f0f
+	x = (x | (x << 2)) & 0x33333333
+	return (x | (x << 1)) & 0x55555555
+}
+
+func interleave(x, y uint32) uint32 {
+	return scatter(x) | (scatter(y) << 1)
+}
+
+func gather(x uint32) uint32 {
+	x &= 0x55555555
+	x = (x | (x >> 1)) & 0x33333333
+	x = (x | (x >> 2)) & 0x0f0f0f0f
+	x = (x | (x >> 4)) & 0x00ff00ff
+	return (x | (x >> 8)) & 0x0000ffff
+}
+
+func deinterleave(x uint32) (uint32, uint32) {
+	return gather(x), gather(x >> 1)
+}
+
 // A 2D point with integer coordinates.
 type Point struct {
-	X int
-	Y int
+	X int32
+	Y int32
 }
 
-// Returns the absolute value of `n`.
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
+// Maps the point to an unsigned integer.
+func (p Point) Index() uint32 {
+	x, y := zigzagEncode(p.X), zigzagEncode(p.Y)
+	return interleave(x, y)
 }
 
-// Returns the index of the point on the spiral.
-func (p Point) Index() int {
-	if p.X == 0 && p.Y == 0 {
-		return 0
-	}
-
-	xAbs, yAbs := abs(p.X), abs(p.Y)
-	vertical := xAbs > yAbs
-	var k int
-	if vertical {
-		k = xAbs
-	} else {
-		k = yAbs
-	}
-	t := k << 1
-	// m=(t-1)^2
-
-	if vertical {
-		if p.X > 0 {
-			// Right: m+y+k-1
-			t -= 1
-			return t*t + p.Y + k - 1
-		} else {
-			// Left: m+2t+k-1-y
-			return t*t + k - p.Y
-		}
-	} else if p.Y > 0 {
-		// Top: m+t-1+k-x
-		return t*t - t + k - p.X
-	} else {
-		// Bottom: m+3t-1+x+k
-		return t*t + t + p.X + k
-	}
-}
-
-// Computes the integer square root of `s`.
-func isqrt(s uint) uint {
-	if s <= 1 {
-		return s
-	}
-	x0 := s >> 1
-	x1 := (x0 + s/x0) >> 1
-	for x1 < x0 {
-		x0 = x1
-		x1 = (x0 + s/x0) >> 1
-	}
-	return x0
-}
-
-// Creates a point from its index on the spiral.
-func PointFromIndex(n int) Point {
-	if n == 0 {
-		return Point{0, 0}
-	}
-
-	k := int((isqrt(uint(n)) + 1) >> 1)
-	t := k << 1
-	m := t*t + 1 // m=(t-1)^2+2t
-
-	if n < m {
-		m -= t
-		if n < m {
-			// Right
-			return Point{k, k + 1 - (m - n)}
-		} else {
-			// Top
-			return Point{k - 1 - (n - m), k}
-		}
-	} else {
-		m += t
-		if n < m {
-			// Left
-			return Point{-k, -k - 1 + (m - n)}
-		} else {
-			// Bottom
-			return Point{-k + 1 + (n - m), -k}
-		}
-	}
+// Creates a point from an unsigned integer.
+func PointFromIndex(n uint32) Point {
+	x, y := deinterleave(n)
+	return Point{zigzagDecode(x), zigzagDecode(y)}
 }
 
 // Returns the adjacent point in the direction of the axis.
@@ -143,7 +98,7 @@ const (
 var Axes = []Axis{VerticalAxis, AscendingAxis, HorizontalAxis, DescendingAxis}
 
 // Returns the unit vector in the direction of the axis.
-func (a Axis) UnitVec() (int, int) {
+func (a Axis) UnitVec() (int32, int32) {
 	switch a {
 	case VerticalAxis:
 		return 0, 1

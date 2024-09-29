@@ -60,7 +60,7 @@ func (h *Hub) run() {
 // Serializes the board to bytes.
 // TODO: Use varints instead of JSON array.
 func (h *Hub) serializeBoard() []byte {
-	out := make([]int, h.board.Index())
+	out := make([]uint32, h.board.Index())
 	for i, move := range h.board.PastMoves() {
 		out[i] = move.Pos.Index()
 	}
@@ -79,7 +79,7 @@ func (h *Hub) handleMessage(msg []byte) {
 	}
 
 	if n >= 0 {
-		p := game.PointFromIndex(int(n))
+		p := game.PointFromIndex(uint32(n))
 		stone, _ := h.board.InferTurn()
 		if !h.board.Set(p, stone) {
 			// Fail if there is already a stone at the position.
