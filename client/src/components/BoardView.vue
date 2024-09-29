@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue';
-import { Board, type Move, Point, Stone, pointEquals } from '@/c6';
+import { Board, type Move, Point, Stone } from '@/c6';
 
 const BOARD_COLOR = '#ffcc66';
 const CURSOR_COLOR = 'darkred';
@@ -192,7 +192,7 @@ function hitCursor() {
     return;
   if (board.get(cursorPos)) return;
 
-  if (pointEquals(tentativePos, cursorPos)) {
+  if (Point.equal(tentativePos, cursorPos)) {
     tentativePos = undefined;
     send(cursorPos.index());
   } else {
@@ -234,7 +234,7 @@ function updateCursor(e: MouseEvent, noDraw = false) {
   if (out) p = undefined;
 
   // Draw if the cursor should appear, move, or disappear.
-  let shouldDraw = !noDraw && !pointEquals(p, cursorPos);
+  let shouldDraw = !noDraw && !Point.equal(p, cursorPos);
   cursorPos = p;
   if (shouldDraw) draw();
 }

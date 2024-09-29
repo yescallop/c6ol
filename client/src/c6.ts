@@ -3,6 +3,7 @@ export class Point {
   x: number;
   y: number;
 
+  /** Creates a point with the given coordinates. */
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
@@ -76,15 +77,16 @@ export class Point {
     }
   }
 
+  /** Tests if two possibly undefined points equal. */
+  static equal(a: Point | undefined, b: Point | undefined): boolean {
+    if (a == undefined) return b == undefined;
+    return b != undefined && a.x == b.x && a.y == b.y;
+  }
+
+  /** Copies the point. */
   copy(): Point {
     return new Point(this.x, this.y);
   }
-}
-
-/** Tests if two possibly undefined points equal. */
-export function pointEquals(a: Point | undefined, b: Point | undefined): boolean {
-  if (a == undefined) return b == undefined;
-  return b != undefined && a.x == b.x && a.y == b.y;
 }
 
 /** A stone on the board, either black or white. */
@@ -92,6 +94,13 @@ export enum Stone {
   // 0 would be falsy.
   Black = 1,
   White = 2,
+}
+
+export namespace Stone {
+  /** Returns the opposite stone. */
+  export function opposite(stone: Stone): Stone {
+    return stone == Stone.Black ? Stone.White : Stone.Black;
+  }
 }
 
 /** A move on the board, namely a (position, stone) pair. */
@@ -106,6 +115,7 @@ export class Board {
   private moves: Move[];
   private idx: number;
 
+  /** Creates an empty board. */
   constructor() {
     this.map = new Map();
     this.moves = [];
@@ -190,8 +200,8 @@ export class Board {
   }
 
   /**
-   * Infers the next stone to play and whether the opposite stone
-   * is going to play after that, based on past moves.
+   * Infers the next stone to play and whether the opponent
+   * is to play after that, based on past moves.
    */
   inferTurn(): [Stone, boolean] {
     if (this.idx == 0) return [Stone.Black, true];
@@ -200,7 +210,7 @@ export class Board {
     if (this.idx == 1) return [Stone.White, last == Stone.White];
 
     let prevOfLast = this.moves[this.idx - 2].stone;
-    if (last == prevOfLast) return [last ^ 3, false];
+    if (last == prevOfLast) return [Stone.opposite(last), false];
     return [last, true];
   }
 }

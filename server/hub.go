@@ -25,6 +25,7 @@ type Hub struct {
 	// Unregister requests from clients.
 	unregister chan *Client
 
+	// The shared Connect6 board.
 	board game.Board
 }
 
@@ -43,7 +44,8 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			client.send <- h.boardToJson()
+			// Send the board when a client joins.
+			client.send <- h.serializeBoard()
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
@@ -55,9 +57,11 @@ func (h *Hub) run() {
 	}
 }
 
-func (h *Hub) boardToJson() []byte {
+// Serializes the board to bytes.
+// TODO: Use varints instead of JSON array.
+func (h *Hub) serializeBoard() []byte {
 	out := make([]int, h.board.Index())
-	for i, move := range h.board.Record() {
+	for i, move := range h.board.PastMoves() {
 		out[i] = move.Pos.Index()
 	}
 	outJson, err := json.Marshal(out)
@@ -67,6 +71,7 @@ func (h *Hub) boardToJson() []byte {
 	return outJson
 }
 
+// Handles messages from clients.
 func (h *Hub) handleMessage(msg []byte) {
 	n, err := strconv.ParseInt(string(msg), 10, 32)
 	if err != nil {
@@ -77,20 +82,27 @@ func (h *Hub) handleMessage(msg []byte) {
 		p := game.PointFromIndex(int(n))
 		stone, _ := h.board.InferTurn()
 		if !h.board.Set(p, stone) {
+			// Fail if there is already a stone at the position.
 			return
 		}
 		if h.board.FindWinRow(p) != nil {
+			// Clear the board if we detect a win. For testing only.
 			h.board.Jump(0)
 		}
-	} else if h.board.Unset() == nil {
-		return
+	} else if n == -1 {
+		// Retract the last move (if any). For testing only.
+		if h.board.Unset() == nil {
+			return
+		}
 	}
 
-	boardJson := h.boardToJson()
+	response := h.serializeBoard()
 
+	// Broadcast the new board.
+	// TODO: Use incremental updates.
 	for client := range h.clients {
 		select {
-		case client.send <- boardJson:
+		case client.send <- response:
 		default:
 			close(client.send)
 			delete(h.clients, client)

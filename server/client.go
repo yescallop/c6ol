@@ -35,6 +35,8 @@ var (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	// FIXME: This is required for testing the client and the server
+	// separately and should be removed in production.
 	CheckOrigin: func(*http.Request) bool {
 		return true
 	},
@@ -98,6 +100,8 @@ func (c *Client) writePump() {
 				return
 			}
 
+			// The original code below queues chat messages and concatenates them
+			// with newlines. For this app just write them individually instead.
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
