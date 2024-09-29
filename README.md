@@ -18,4 +18,4 @@ cd ../server
 go run .
 ```
 
-The app will be served on port 8080. Use `-addr` to specify the address to listen to.
+The app will be served on port 8086. Use `-addr` to specify the address to listen to.
