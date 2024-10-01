@@ -179,11 +179,11 @@ function viewToCanvasPos(p: Point): [number, number] {
   return [(p.x + 1) * gridSize, (p.y + 1) * gridSize];
 }
 
-/** Converts the message to a string and sends it on the WebSocket connection. */
-function send(msg: any) {
+/** Sends the message on the WebSocket connection. */
+function send(msg: Uint8Array) {
   if (ws.readyState != WebSocket.OPEN)
     return window.alert('Connection closed, please refresh the page.');
-  ws.send(msg.toString());
+  ws.send(msg);
 }
 
 /** Attempts to make a tentative or actual move at the cursor position. */
@@ -194,7 +194,7 @@ function hitCursor() {
 
   if (Point.equal(tentativePos, cursorPos)) {
     tentativePos = undefined;
-    send(cursorPos.index());
+    send(cursorPos.serialize());
   } else {
     tentativePos = cursorPos.copy();
     draw();
@@ -277,6 +277,11 @@ function zoom(zoom: Zoom, wheelEvent?: WheelEvent) {
   draw();
 }
 
+/** Retracts the last move (if any). */
+function retract() {
+  send(new Uint8Array());
+}
+
 /** Returns the Euclidean distance between the positions of two pointers. */
 function dist(a: MouseEvent, b: MouseEvent): number {
   return Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY);
@@ -350,7 +355,7 @@ function onKeyDown(e: KeyboardEvent) {
 function onKeyUp(e: KeyboardEvent) {
   switch (e.code) {
     case 'Backspace':
-      return send(-1);
+      return retract();
     case 'Space':
     case 'Enter':
       if (cursorPos) return hitCursor();
@@ -448,7 +453,7 @@ function onPointerMove(e: PointerEvent) {
     }
 
     viewState = ViewState.Retracted;
-    send(-1);
+    retract();
   }
 }
 
@@ -607,13 +612,12 @@ onMounted(() => {
   window.addEventListener('keyup', onKeyUp);
 
   ws = new WebSocket('ws://' + document.location.host + '/ws');
+  ws.binaryType = "arraybuffer";
   ws.onclose = () => window.alert('Connection closed, please refresh the page.');
   ws.onmessage = e => {
-    let rec: number[] = JSON.parse(e.data);
-    board.jump(0);
-    for (let n of rec) {
-      board.set(Point.fromIndex(n), board.inferTurn()[0]);
-    }
+    let newBoard = Board.deserialize(new Uint8Array(e.data));
+    if (!newBoard) return;
+    board = newBoard;
     tentativePos = undefined;
     draw();
   };

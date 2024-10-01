@@ -1,5 +1,7 @@
 package game
 
+import "encoding/binary"
+
 func zigzagEncode(x int32) uint32 {
 	return uint32((x << 1) ^ (x >> 31))
 }
@@ -61,17 +63,17 @@ func (p Point) Adjacent(axis Axis, forward bool) Point {
 
 // A contiguous row of stones on the board.
 type Row struct {
-	start Point
-	end   Point
+	Start Point
+	End   Point
 }
 
 // A stone on the board.
 type Stone int
 
 const (
-	NoStone = Stone(iota)
-	BlackStone
-	WhiteStone
+	NoStone    = Stone(0)
+	BlackStone = Stone(1)
+	WhiteStone = Stone(2)
 )
 
 // Returns the opposite stone.
@@ -234,6 +236,16 @@ func (b *Board) InferTurn() (Stone, bool) {
 	return last, true
 }
 
+// Serializes the board to bytes.
+func (b Board) Serialize() []byte {
+	var buf []byte
+	for _, move := range b.PastMoves() {
+		x := (move.Pos.Index() << 1) | (uint32(move.Stone) - 1)
+		buf = binary.AppendUvarint(buf, uint64(x))
+	}
+	return buf
+}
+
 // Scans the row through a point in the direction of the axis.
 func (b *Board) ScanRow(p Point, axis Axis) (row Row, len int) {
 	stone := b.Get(p)
@@ -252,8 +264,8 @@ func (b *Board) ScanRow(p Point, axis Axis) (row Row, len int) {
 	}
 
 	row = Row{p, p}
-	scan(&row.start, false)
-	scan(&row.end, true)
+	scan(&row.Start, false)
+	scan(&row.End, true)
 	return
 }
 

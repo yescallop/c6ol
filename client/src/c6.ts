@@ -1,3 +1,5 @@
+import * as varint from 'varint';
+
 function zigzagEncode(x: number): number {
   return ((x << 1) ^ (x >> 31)) >>> 0;
 }
@@ -60,6 +62,11 @@ export class Point {
   copy(): Point {
     return new Point(this.x, this.y);
   }
+
+  /** Serializes the point to an array of bytes. */
+  serialize(): Uint8Array {
+    return new Uint8Array(varint.encode(this.index()));
+  }
 }
 
 /** A stone on the board, either black or white. */
@@ -72,7 +79,7 @@ export enum Stone {
 export namespace Stone {
   /** Returns the opposite stone. */
   export function opposite(stone: Stone): Stone {
-    return stone == Stone.Black ? Stone.White : Stone.Black;
+    return stone ^ 3;
   }
 }
 
@@ -185,5 +192,37 @@ export class Board {
     let prevOfLast = this.moves[this.idx - 2].stone;
     if (last == prevOfLast) return [Stone.opposite(last), false];
     return [last, true];
+  }
+
+  /** Serializes the board to an array of bytes. */
+  serialize(): Uint8Array {
+    let buf: number[] = [];
+    for (let move of this.moves) {
+      let x = (move.pos.index() << 1) | (move.stone - 1);
+      varint.encode(x, buf, buf.length);
+    }
+    return new Uint8Array(buf);
+  }
+
+  /** Deserializes a board from an array of bytes. */
+  static deserialize(buf: Uint8Array): Board | undefined {
+    let board = new Board();
+    let i = 0;
+    while (i < buf.length) {
+      let x;
+      try {
+        x = varint.decode(buf, i);
+      } catch (e /* RangeError */) {
+        return;
+      }
+      if (x > 0xffffffff) return;
+
+      let pos = Point.fromIndex(x >>> 1);
+      let stone = (x & 1) + 1;
+
+      if (!board.set(pos, stone)) return;
+      i += varint.decode.bytes!;
+    }
+    return board;
   }
 }

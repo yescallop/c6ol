@@ -6,8 +6,7 @@ package main
 
 import (
 	"c6ol/game"
-	"encoding/json"
-	"strconv"
+	"encoding/binary"
 )
 
 // Hub maintains the set of active clients and broadcasts messages to the
@@ -45,7 +44,7 @@ func (h *Hub) run() {
 		case client := <-h.register:
 			h.clients[client] = true
 			// Send the board when a client joins.
-			client.send <- h.serializeBoard()
+			client.send <- h.board.Serialize()
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
@@ -57,29 +56,21 @@ func (h *Hub) run() {
 	}
 }
 
-// Serializes the board to bytes.
-// TODO: Use varints instead of JSON array.
-func (h *Hub) serializeBoard() []byte {
-	out := make([]uint32, h.board.Index())
-	for i, move := range h.board.PastMoves() {
-		out[i] = move.Pos.Index()
-	}
-	outJson, err := json.Marshal(out)
-	if err != nil {
-		panic("failed to convert board to JSON")
-	}
-	return outJson
-}
-
 // Handles messages from clients.
 func (h *Hub) handleMessage(msg []byte) {
-	n, err := strconv.ParseInt(string(msg), 10, 32)
-	if err != nil {
-		return
-	}
+	if len(msg) == 0 {
+		// Retract the last move (if any). For testing only.
+		if h.board.Unset() == nil {
+			return
+		}
+	} else {
+		x, read := binary.Uvarint(msg)
+		if read != len(msg) || x > 0xffffffff {
+			// Data remaining or varint out of range.
+			return
+		}
 
-	if n >= 0 {
-		p := game.PointFromIndex(uint32(n))
+		p := game.PointFromIndex(uint32(x))
 		stone, _ := h.board.InferTurn()
 		if !h.board.Set(p, stone) {
 			// Fail if there is already a stone at the position.
@@ -89,14 +80,9 @@ func (h *Hub) handleMessage(msg []byte) {
 			// Clear the board if we detect a win. For testing only.
 			h.board.Jump(0)
 		}
-	} else if n == -1 {
-		// Retract the last move (if any). For testing only.
-		if h.board.Unset() == nil {
-			return
-		}
 	}
 
-	response := h.serializeBoard()
+	response := h.board.Serialize()
 
 	// Broadcast the new board.
 	// TODO: Use incremental updates.
