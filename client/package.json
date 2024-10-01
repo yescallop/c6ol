@@ -11,6 +11,7 @@
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
+    "js-base64": "^3.7.7",
     "varint": "^6.0.0",
     "vue": "^3.4.29"
   },

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue';
 import { Board, type Move, Point, Stone } from '@/c6';
+import { Base64 } from 'js-base64';
 
 const BOARD_COLOR = '#ffcc66';
 const CURSOR_COLOR = 'darkred';
@@ -602,6 +603,18 @@ function draw() {
   }
 }
 
+/**
+ * Handles `copy` events.
+ *
+ * Copies the board URI into the clipboard.
+ */
+function onCopy(e: ClipboardEvent) {
+  let uri = 'c6:' + Base64.fromUint8Array(board.serialize(), true) + ';';
+  e.clipboardData!.setData("text/plain", uri);
+  // `preventDefault` is required for the change to take effect.
+  e.preventDefault();
+}
+
 onMounted(() => {
   ctx = canvas.value!.getContext('2d')!;
 
@@ -610,6 +623,7 @@ onMounted(() => {
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('copy', onCopy);
 
   ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = "arraybuffer";
@@ -626,6 +640,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
+  window.removeEventListener('copy', onCopy);
 });
 </script>
 
