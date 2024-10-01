@@ -13,8 +13,17 @@ body {
   background-color: #ffcc66;
 }
 
-#app {
-  /* Use `svh` to prevent overflow on mobile due to the hidable address bar. */
-  height: 100svh;
+/* Use `svh` to prevent overflow on mobile due to the hidable address bar. */
+@supports (height: 100svh) {
+  #app {
+    height: 100svh;
+  }
+}
+
+/* Old browsers might not support `svh`. */
+@supports not (height: 100svh) {
+  #app {
+    height: 100vh;
+  }
 }
 </style>
