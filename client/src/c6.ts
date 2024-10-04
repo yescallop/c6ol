@@ -131,13 +131,13 @@ export class Board {
   }
 
   /** Makes a move at a point, clearing moves in the future. */
-  set(pos: Point, stone: Stone): boolean {
-    let i = pos.index();
+  set(p: Point, stone: Stone): boolean {
+    let i = p.index();
     if (this.map.has(i)) return false;
     this.map.set(i, stone);
 
     this.moves.splice(this.idx);
-    this.moves.push({ pos, stone });
+    this.moves.push({ pos: p.copy(), stone });
     this.idx++;
     return true;
   }
