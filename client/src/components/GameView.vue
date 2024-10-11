@@ -1,27 +1,51 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from 'vue';
-import { Board, type Move, Point, Stone } from '@/c6';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { Game, MoveKind, Point, Stone } from '@/c6';
 import { Base64 } from 'js-base64';
+
+const { game, ourStone, disabled } = defineProps<{
+  game: Game;
+  ourStone?: Stone;
+  disabled: boolean;
+}>();
+
+const emit = defineEmits<{
+  menu: [];
+  move: [pos: [] | [Point] | [Point, Point]];
+  undo: [];
+  redo: [];
+}>();
+
+defineExpose({
+  draw: () => {
+    phantom = tentative = undefined;
+    draw();
+  }
+});
 
 const BOARD_COLOR = '#ffcc66';
 const CURSOR_COLOR = 'darkred';
 
 // Divide `gridSize` by the following ratios to get the corresponding lengths.
 
-const LINE_WIDTH_RATIO = 24.0;
-const LINE_DASH_RATIO = 5.0;
+const LINE_WIDTH_RATIO = 24;
+const LINE_DASH_RATIO = 5;
 
 const STONE_RADIUS_RATIO = 2.25;
-const STAR_RADIUS_RATIO = 10.0;
+const DOT_RADIUS_RATIO = STONE_RADIUS_RATIO * 6;
 
-const CURSOR_LINE_WIDTH_RATIO = 16.0;
-const CURSOR_OFFSET_RATIO = 8.0;
-const CURSOR_SIDE_RATIO = 4.0;
+const CURSOR_LINE_WIDTH_RATIO = 16;
+const CURSOR_OFFSET_RATIO = 8;
+const CURSOR_SIDE_RATIO = 4;
 
-const TENTATIVE_MOVE_OPACITY = 0.5;
+const PHANTOM_MOVE_OPACITY = 0.5;
 
-const DIST_FOR_PINCH_ZOOM = 2.0 * 96 / 2.54; // 2cm
-const DIST_FOR_SWIPE_RETRACT = 4.0 * 96 / 2.54; // 4cm
+const PASS_FONT_SIZE_RATIO = 4;
+const PASS_BORDER_RATIO = 100;
+const PASS_OPACITY = 0.5;
+
+const DIST_FOR_PINCH_ZOOM = 2 * 96 / 2.54; // 2cm
+const DIST_FOR_SWIPE_RETRACT = 4 * 96 / 2.54; // 4cm
 
 const canvasContainer = ref<Element>();
 const canvas = ref<HTMLCanvasElement>();
@@ -35,7 +59,6 @@ let size: number;
  */
 let gridSize: number;
 
-let board = new Board();
 /**
  * Size of the view. Minimum value is 1.
  *
@@ -50,19 +73,21 @@ let viewSize = 15;
 // - View position is in grids, relative to the top-left corner of the view.
 // - Canvas position is in pixels, relative to the top-left corner of the canvas.
 //
-// The following three variables are board positions.
+// The following are board positions.
 
 let viewCenter = new Point(0, 0);
 // The user can *hit* a cursor by clicking the view or pressing Space or Enter.
-// If a tentative move is at the cursor position, hitting the cursor makes
-// it an actual move. Otherwise, a tentative move is made at the position.
-let cursorPos: Point | undefined;
-let tentativePos: Point | undefined;
+let cursor: Point | undefined;
+let phantom: Point | undefined;
+let tentative: Point | undefined;
 
 interface Pointer {
   /** The `pointerdown` event fired when the pointer became active. */
   down: PointerEvent,
-  /** Last event fired about the pointer. Can be `pointermove` or `pointerdown`. */
+  /**
+   * Last event fired about the pointer.
+   * Can be `pointerenter`, `pointermove`, or `pointerdown`.
+   */
   last: PointerEvent,
   /** Board position the pointer was at when it became active. */
   boardPosOnDown: Point,
@@ -108,8 +133,6 @@ enum ViewState {
 }
 
 let viewState = ViewState.Calm;
-
-let ws: WebSocket;
 
 /** Resizes the canvas to fit its container. */
 function resizeCanvas() {
@@ -180,33 +203,47 @@ function viewToCanvasPos(p: Point): [number, number] {
   return [(p.x + 1) * gridSize, (p.y + 1) * gridSize];
 }
 
-/** Sends the message on the WebSocket connection. */
-function send(msg: Uint8Array) {
-  if (ws.readyState != WebSocket.OPEN)
-    return window.alert('Connection closed, please refresh the page.');
-  ws.send(msg);
+/** Tests if it is our turn to play. */
+function ourTurn(): boolean {
+  return !game.ended() && ourStone == game.turn();
 }
 
-/** Attempts to make a tentative or actual move at the cursor position. */
+/**
+ * Hits the cursor.
+ *
+ * Hitting an empty position puts a phantom stone there. Hitting a phantom stone
+ * makes it tentative. Hitting a tentative stone makes it phantom. When there are
+ * enough tentative stones for this turn, the move is automatically submitted.
+ */
 function hitCursor() {
-  if (!cursorPos || boardToViewPos(cursorPos)[1] /* out */)
-    return;
-  if (board.get(cursorPos)) return;
+  if (!cursor || boardToViewPos(cursor)[1] /* out */) return;
+  if (!ourTurn() || game.stoneAt(cursor)) return;
 
-  if (Point.equal(tentativePos, cursorPos)) {
-    tentativePos = undefined;
-    send(cursorPos.serialize());
+  if (Point.equal(tentative, cursor)) {
+    phantom = tentative;
+    tentative = undefined;
+    draw();
+  } else if (Point.equal(phantom, cursor)) {
+    if (!game.hasPast()) {
+      emit('move', [cursor.copy()]);
+    } else if (tentative) {
+      emit('move', [tentative.copy(), cursor.copy()]);
+    } else {
+      tentative = phantom;
+      phantom = undefined;
+      draw();
+    }
   } else {
-    tentativePos = cursorPos.copy();
+    phantom = cursor.copy();
     draw();
   }
 }
 
 /** Restricts the cursor to the inside of the view. */
 function clampCursor() {
-  if (!cursorPos) return;
-  let [p, out] = boardToViewPos(cursorPos, ClampTo.Inside);
-  if (out) cursorPos = viewToBoardPos(p);
+  if (!cursor) return;
+  let [p, out] = boardToViewPos(cursor, ClampTo.Inside);
+  if (out) cursor = viewToBoardPos(p);
 }
 
 /**
@@ -235,8 +272,8 @@ function updateCursor(e: MouseEvent, noDraw = false) {
   if (out) p = undefined;
 
   // Draw if the cursor should appear, move, or disappear.
-  let shouldDraw = !noDraw && !Point.equal(p, cursorPos);
-  cursorPos = p;
+  let shouldDraw = !noDraw && !Point.equal(p, cursor);
+  cursor = p;
   if (shouldDraw) draw();
 }
 
@@ -278,11 +315,6 @@ function zoom(zoom: Zoom, wheelEvent?: WheelEvent) {
   draw();
 }
 
-/** Retracts the last move (if any). */
-function retract() {
-  send(new Uint8Array());
-}
-
 /** Returns the Euclidean distance between the positions of two pointers. */
 function dist(a: MouseEvent, b: MouseEvent): number {
   return Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY);
@@ -291,12 +323,17 @@ function dist(a: MouseEvent, b: MouseEvent): number {
 /**
  * Handles `keydown` events.
  *
- * - Moves the cursor on WASD keys.
- * - Moves the view center on Arrow keys.
+ * - Moves the cursor on W/A/S/D key.
+ * - Moves the view center on Arrow Up/Left/Down/Right key.
  * - Zooms out on Minus key.
  * - Zooms in on Plus (Equal) key.
+ * - Hits the cursor on Space/Enter key.
+ * - Undoes the last move (if any) on Backspace key.
+ * - Redoes the next move (if any) on Shift+Backspace keys.
  */
 function onKeyDown(e: KeyboardEvent) {
+  if (disabled) return;
+
   let direction;
   switch (e.code) {
     case 'KeyW':
@@ -319,6 +356,25 @@ function onKeyDown(e: KeyboardEvent) {
       return zoom(Zoom.Out);
     case 'Equal':
       return zoom(Zoom.In);
+    case 'KeyP':
+      if (e.repeat || !ourTurn()) return;
+      return emit('move', tentative ? [tentative.copy()] : []);
+    case 'Backspace':
+      if (e.repeat) return;
+      if (e.shiftKey) {
+        if (game.hasFuture()) emit('redo');
+      } else {
+        if (game.hasPast()) emit('undo');
+      }
+      return;
+    case 'Space':
+    case 'Enter':
+      if (e.repeat) return;
+      if (cursor) return hitCursor();
+      // Put a cursor at the view center if there is no cursor.
+      cursor = viewCenter.copy();
+      draw();
+      return;
     default:
       return;
   }
@@ -330,13 +386,13 @@ function onKeyDown(e: KeyboardEvent) {
 
   let [dx, dy] = DIRECTION_OFFSETS[direction];
   if (e.code.startsWith('K') /* Key */) {
-    if (!cursorPos) {
+    if (!cursor) {
       // Put a cursor at the view center if there is no cursor.
-      cursorPos = viewCenter.copy();
+      cursor = viewCenter.copy();
     } else {
-      cursorPos.x += dx, cursorPos.y += dy;
+      cursor.x += dx, cursor.y += dy;
       // If the cursor is going out of view, adjust the view center to keep up.
-      if (boardToViewPos(cursorPos)[1] /* out */)
+      if (boardToViewPos(cursor)[1] /* out */)
         viewCenter.x += dx, viewCenter.y += dy;
     }
   } else {
@@ -345,25 +401,6 @@ function onKeyDown(e: KeyboardEvent) {
     clampCursor();
   }
   draw();
-}
-
-/**
- * Handles `keyup` events.
- *
- * - Hits the cursor on Space and Enter keys.
- * - Retracts the last move on Backspace key.
- */
-function onKeyUp(e: KeyboardEvent) {
-  switch (e.code) {
-    case 'Backspace':
-      return retract();
-    case 'Space':
-    case 'Enter':
-      if (cursorPos) return hitCursor();
-      // Put a cursor at the view center if there is no cursor.
-      cursorPos = viewCenter.copy();
-      return draw();
-  }
 }
 
 /** Handles `wheel` events. */
@@ -386,30 +423,29 @@ function onPointerDown(e: PointerEvent) {
  * Handles `pointerup` events.
  *
  * Attempts to hit the cursor when the pointer is the only active one,
- * the left button is pressed, and the view isn't ever dragged,
- * zoomed, or pinched since the pointer became active.
+ * the view isn't ever dragged, zoomed, or pinched since the pointer
+ * became active, and the left button is pressed.
  */
 function onPointerUp(e: PointerEvent) {
   // Bail out if the pointer is already inactive due to a `pointerleave` event.
   if (!downPointers.delete(e.pointerId)) return;
   if (downPointers.size > 0) return;
 
-  if (e.button != 0) return;
-
   if (viewState != ViewState.Calm) {
     viewState = ViewState.Calm;
     return;
   }
+  if (e.button != 0) return;
 
   let [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
   if (!out) {
-    cursorPos = p;
+    cursor = p;
     hitCursor();
   }
 }
 
 /**
- * Handles `pointermove` events.
+ * Handles `pointerenter` and `pointermove` events.
  *
  * Performs different actions according to the number of active pointers:
  *
@@ -420,7 +456,7 @@ function onPointerUp(e: PointerEvent) {
  * - 3: Retracts the last move if all pointers have moved for at least
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
-function onPointerMove(e: PointerEvent) {
+function onHover(e: PointerEvent) {
   let pointer = downPointers.get(e.pointerId);
   if (pointer) pointer.last = e;
 
@@ -454,7 +490,7 @@ function onPointerMove(e: PointerEvent) {
     }
 
     viewState = ViewState.Retracted;
-    retract();
+    if (game.hasPast()) emit('undo');
   }
 }
 
@@ -464,8 +500,8 @@ function onPointerLeave(e: PointerEvent) {
   if (downPointers.size == 0) viewState = ViewState.Calm;
 
   // Draw if the cursor should disappear.
-  let shouldDraw = cursorPos != undefined;
-  cursorPos = undefined;
+  let shouldDraw = cursor != undefined;
+  cursor = undefined;
   if (shouldDraw) draw();
 }
 
@@ -479,6 +515,7 @@ function drawCircle(p: Point, r: number) {
 
 /** Draws the view. */
 function draw() {
+  console.log("draw");
   // Draw the board background.
   ctx.fillStyle = BOARD_COLOR;
   ctx.fillRect(0, 0, size, size);
@@ -488,7 +525,6 @@ function draw() {
 
   // Draw the solid lines inside the view.
   ctx.beginPath();
-  ctx.setLineDash([]);
   for (let i = 1; i <= viewSize; i++) {
     let pos = gridSize * i;
     ctx.moveTo(gridSize, pos);
@@ -516,72 +552,103 @@ function draw() {
     ctx.lineTo(pos, size);
   }
   ctx.stroke();
+  ctx.setLineDash([]);
 
-  let starRadius = gridSize / STAR_RADIUS_RATIO;
+  let dotRadius = gridSize / DOT_RADIUS_RATIO;
 
   // Draw the board origin.
   let origin = new Point(0, 0);
   let [p, out] = boardToViewPos(origin);
-  if (!out && !board.get(origin)) {
+  if (!out && !game.stoneAt(origin)) {
     ctx.fillStyle = 'black';
-    drawCircle(p, starRadius);
+    drawCircle(p, dotRadius);
   }
 
-  /** Returns the number of successive same-stone moves ending at the given index. */
-  function trailingSuccessiveMoves(moves: Move[], end: number): number {
-    if (end == 0) return 0;
-    let stone = moves[end - 1].stone, count = 1;
-    for (let i = end - 2; i >= 0; i--) {
-      if (moves[i].stone != stone) break;
-      count++;
-    }
-    return count;
-  }
-
-  let moves = board.pastMoves();
-
-  // Count the number of stars we should draw.
-  let stars = trailingSuccessiveMoves(moves, moves.length);
-  if (stars == 1)
-    stars += trailingSuccessiveMoves(moves, moves.length - 1);
-  let starStart = moves.length - stars;
-
+  let moves = game.moves(), moveIndex = game.moveIndex();
   let stoneRadius = gridSize / STONE_RADIUS_RATIO;
   // We project the out-of-view stones onto the view border,
   // and stores the indexes of resulting points in this set.
   let outIndexes = new Set<number>();
 
-  // Draw the stones and the stars.
-  moves.forEach((move, index) => {
-    let { pos, stone } = move;
-    let [p, out] = boardToViewPos(pos);
-    if (out) return outIndexes.add(p.index());
+  // Draw the stones.
+  for (let i = 0; i < moveIndex; i++) {
+    let move = moves[i];
+    if (move.kind != MoveKind.Stone) continue;
+    let stone = Game.turnAt(i);
 
-    ctx.fillStyle = stone == Stone.Black ? 'black' : 'white';
-    drawCircle(p, stoneRadius);
+    for (let p of move.pos) {
+      [p, out] = boardToViewPos(p);
+      if (out) {
+        outIndexes.add(p.index());
+        continue;
+      }
 
-    if (index >= starStart) {
-      ctx.fillStyle = stone == Stone.Black ? 'white' : 'black';
-      drawCircle(p, starRadius);
+      ctx.fillStyle = stone == Stone.Black ? 'black' : 'white';
+      drawCircle(p, stoneRadius);
     }
-  });
+  }
 
   // Draw the out-of-view stones on the view border.
   ctx.fillStyle = 'gray';
   outIndexes.forEach(i => drawCircle(Point.fromIndex(i), stoneRadius));
 
-  // Draw the tentative move.
-  if (tentativePos && ([p, out] = boardToViewPos(tentativePos), !out) && !board.get(tentativePos)) {
-    let [stone,] = board.inferTurn();
+  // Draw the last move.
+  let lastMove = moveIndex > 0 ? moves[moveIndex - 1] : undefined;
+  let lastStone = Game.turnAt(moveIndex - 1);
+  if (lastMove) {
+    switch (lastMove.kind) {
+      case MoveKind.Stone:
+        ctx.fillStyle = lastStone == Stone.Black ? 'white' : 'black';
+        for (let p of lastMove.pos) {
+          [p, out] = boardToViewPos(p);
+          if (!out) drawCircle(p, dotRadius);
+        }
+        break;
+      case MoveKind.Pass:
+        ctx.globalAlpha = PASS_OPACITY;
 
-    ctx.globalAlpha = TENTATIVE_MOVE_OPACITY;
-    ctx.fillStyle = stone == Stone.Black ? 'black' : 'white';
+        let fontSize = size / PASS_FONT_SIZE_RATIO;
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.fillStyle = lastStone == Stone.Black ? 'black' : 'white';
+        ctx.fillText('PASS', size / 2, size / 2);
+
+        ctx.lineWidth = fontSize / PASS_BORDER_RATIO;
+        ctx.strokeStyle = lastStone == Stone.Black ? 'white' : 'black';
+        ctx.strokeText('PASS', size / 2, size / 2);
+
+        ctx.globalAlpha = 1;
+        break;
+      case MoveKind.Win:
+      case MoveKind.Draw:
+      case MoveKind.Resign:
+        // TODO
+        break;
+    }
+  }
+
+  // Draw the phantom stone.
+  if (phantom && ([p, out] = boardToViewPos(phantom), !out)) {
+    ctx.globalAlpha = PHANTOM_MOVE_OPACITY;
+    ctx.fillStyle = ourStone == Stone.Black ? 'black' : 'white';
     drawCircle(p, stoneRadius);
     ctx.globalAlpha = 1;
   }
 
+  // Draw the tentative stone.
+  if (tentative && ([p, out] = boardToViewPos(tentative), !out)) {
+    ctx.fillStyle = ourStone == Stone.Black ? 'black' : 'white';
+    drawCircle(p, stoneRadius);
+
+    let [x, y] = viewToCanvasPos(p);
+    ctx.fillStyle = ourStone == Stone.Black ? 'white' : 'black';
+    ctx.fillRect(x - dotRadius, y - dotRadius, dotRadius * 2, dotRadius * 2);
+  }
+
   // Draw the cursor.
-  if (cursorPos && ([p, out] = boardToViewPos(cursorPos), !out)) {
+  if (cursor && ([p, out] = boardToViewPos(cursor), !out)) {
     let [x, y] = viewToCanvasPos(p);
 
     ctx.lineWidth = gridSize / CURSOR_LINE_WIDTH_RATIO;
@@ -606,10 +673,12 @@ function draw() {
 /**
  * Handles `copy` events.
  *
- * Copies the board URI into the clipboard.
+ * Copies the game URI into the clipboard.
  */
 function onCopy(e: ClipboardEvent) {
-  let uri = 'c6:' + Base64.fromUint8Array(board.serialize(), true) + ';';
+  if (disabled) return;
+
+  let uri = 'c6:' + Base64.fromUint8Array(game.serialize(), true) + ';';
   e.clipboardData!.setData("text/plain", uri);
   // `preventDefault` is required for the change to take effect.
   e.preventDefault();
@@ -622,32 +691,19 @@ onMounted(() => {
   new ResizeObserver(resizeCanvas).observe(canvasContainer.value!);
 
   window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('keyup', onKeyUp);
   window.addEventListener('copy', onCopy);
-
-  ws = new WebSocket('ws://' + document.location.host + '/ws');
-  ws.binaryType = "arraybuffer";
-  ws.onclose = () => window.alert('Connection closed, please refresh the page.');
-  ws.onmessage = e => {
-    let newBoard = Board.deserialize(new Uint8Array(e.data));
-    if (!newBoard) return;
-    board = newBoard;
-    tentativePos = undefined;
-    draw();
-  };
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
-  window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('copy', onCopy);
 });
 </script>
 
 <template>
   <div id="view-container" ref="canvasContainer">
-    <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointermove="onPointerMove"
-      @pointerup="onPointerUp" @pointerleave="onPointerLeave"></canvas>
+    <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointerup="onPointerUp"
+      @pointerenter="onHover" @pointermove="onHover" @pointerleave="onPointerLeave"></canvas>
   </div>
 </template>
 

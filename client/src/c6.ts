@@ -1,32 +1,44 @@
 import * as varint from 'varint';
 
-function zigzagEncode(x: number): number {
-  return ((x << 1) ^ (x >> 31)) >>> 0;
+/** An axis on the board. */
+export enum Axis {
+  Horizontal,
+  Diagonal,
+  Vertical,
+  AntiDiagonal,
 }
 
-function zigzagDecode(x: number): number {
-  return ((x >>> 1) ^ -(x & 1)) >> 0;
-}
+export namespace Axis {
+  /** All axes on the board. */
+  export const VALUES = [Axis.Horizontal, Axis.Diagonal, Axis.Vertical, Axis.AntiDiagonal];
 
-function interleave(x: number, y: number): number {
-  function scatter(x: number): number {
-    x = (x | (x << 8)) & 0x00ff00ff;
-    x = (x | (x << 4)) & 0x0f0f0f0f;
-    x = (x | (x << 2)) & 0x33333333;
-    return (x | (x << 1)) & 0x55555555;
+  /** Returns the unit vector in the direction of the axis. */
+  export function unitVector(axis: Axis): [number, number] {
+    const VECTORS: [number, number][] = [[1, 0], [1, 1], [0, 1], [1, -1]];
+    return VECTORS[axis];
   }
-  return scatter(x) | (scatter(y) << 1);
 }
 
-function deinterleave(x: number): [number, number] {
-  function gather(x: number): number {
-    x &= 0x55555555;
-    x = (x | (x >>> 1)) & 0x33333333;
-    x = (x | (x >>> 2)) & 0x0f0f0f0f;
-    x = (x | (x >>> 4)) & 0x00ff00ff;
-    return (x | (x >>> 8)) & 0x0000ffff;
-  }
-  return [gather(x), gather(x >>> 1)];
+/** Maps an integer to a natural number. */
+function zigzagEncode(n: number): number {
+  return n >= 0 ? 2 * n : -2 * n - 1;
+}
+
+/** Maps a natural number to an integer (undoes `zigzagEncode`). */
+function zigzagDecode(n: number): number {
+  return n % 2 == 0 ? n / 2 : -(n + 1) / 2;
+}
+
+/** Maps two natural numbers to one. */
+function elegantPair(x: number, y: number): number {
+  return x < y ? y * y + x : x * x + x + y;
+}
+
+/** Maps one natural number to two (undoes `elegantPair`).  */
+function elegantUnpair(z: number): [number, number] {
+  let s = Math.floor(Math.sqrt(z));
+  let t = z - s * s;
+  return t < s ? [t, s] : [s, t - s];
 }
 
 /** A 2D point with integer coordinates. */
@@ -40,16 +52,26 @@ export class Point {
     this.y = y;
   }
 
-  /** Maps the point to an unsigned integer. */
+  /** Maps the point to a natural number. */
   index(): number {
     let x = zigzagEncode(this.x), y = zigzagEncode(this.y);
-    return interleave(x, y);
+    return elegantPair(x, y);
   }
 
-  /** Creates a point from an unsigned integer. */
+  /** Maps a natural number to a point (undoes `index`). */
   static fromIndex(i: number): Point {
-    let [x, y] = deinterleave(i);
+    let [x, y] = elegantUnpair(i);
     return new Point(zigzagDecode(x), zigzagDecode(y));
+  }
+
+  /** Returns the adjacent point in the direction of the axis. */
+  adjacent(axis: Axis, forward: boolean): Point {
+    let [dx, dy] = Axis.unitVector(axis);
+    if (forward) {
+      return new Point(this.x + dx, this.y + dy);
+    } else {
+      return new Point(this.x - dx, this.y - dy);
+    }
   }
 
   /** Tests if two possibly undefined points equal. */
@@ -63,10 +85,25 @@ export class Point {
     return new Point(this.x, this.y);
   }
 
-  /** Serializes the point to an array of bytes. */
+  /** Serializes the point to a byte array. */
   serialize(): Uint8Array {
     return new Uint8Array(varint.encode(this.index()));
   }
+
+  /**
+   * Deserializes a point from a byte array.
+   *
+   * Returns the point and the number of bytes read.
+   */
+  static deserialize(buf: Uint8Array): [Point, number] {
+    return [Point.fromIndex(varint.decode(buf)), varint.decode.bytes!];
+  }
+}
+
+/** A contiguous row of stones on the board. */
+export interface Row {
+  start: Point;
+  end: Point;
 }
 
 /** A stone on the board, either black or white. */
@@ -77,152 +114,314 @@ export enum Stone {
 }
 
 export namespace Stone {
+  /** Creates a stone from a number. */
+  export function fromNumber(n: number): Stone {
+    if (n != 1 && n != 2) throw new RangeError('stone out of range');
+    return n;
+  }
+
   /** Returns the opposite stone. */
   export function opposite(stone: Stone): Stone {
     return stone ^ 3;
   }
 }
 
-/** A move on the board, namely a (position, stone) pair. */
-export interface Move {
-  pos: Point;
-  stone: Stone;
+/** Allows room for extension. Equals (2^7-11^2). */
+const STONE_MOVE_OFFSET = 7;
+
+export enum MoveKind {
+  Stone = -1,
+  Pass = 0,
+  Win = 1,
+  Draw = 2,
+  Resign = 3,
 }
 
-/** An infinite Connect6 board. */
-export class Board {
-  private map: Map<number, Stone>;
-  private moves: Move[];
-  private idx: number;
+/** Represents a move made by one player or both players. */
+export type Move = {
+  // One or two stones placed on the board by the current player.
+  kind: MoveKind.Stone;
+  pos: [Point] | [Point, Point];
+} | {
+  // A pass made by the current player.
+  kind: MoveKind.Pass;
+} | {
+  // A win claimed by any player.
+  kind: MoveKind.Win;
+  pos: Point;
+} | {
+  // A draw agreed by both players.
+  kind: MoveKind.Draw;
+} | {
+  // A resignation indicated by the player with the given stone.
+  kind: MoveKind.Resign;
+  stone: Stone;
+};
 
-  /** Creates an empty board. */
-  constructor() {
-    this.map = new Map();
-    this.moves = [];
-    this.idx = 0;
-  }
-
-  /**
-   * Returns the total number of moves, on or off the board,
-   * in the past or in the future.
-   */
-  total(): number {
-    return this.moves.length;
-  }
-
-  /** Returns the current move index. */
-  index(): number {
-    return this.idx;
-  }
-
-  /** Tests if the board is empty. */
-  empty(): boolean {
-    return this.idx == 0;
-  }
-
-  /** Returns the stone at a point. */
-  get(point: Point): Stone | undefined {
-    return this.map.get(point.index());
-  }
-
-  /** Returns an array of moves in the past. */
-  pastMoves(): Move[] {
-    return this.moves.slice(0, this.idx);
-  }
-
-  /** Makes a move at a point, clearing moves in the future. */
-  set(p: Point, stone: Stone): boolean {
-    let i = p.index();
-    if (this.map.has(i)) return false;
-    this.map.set(i, stone);
-
-    this.moves.splice(this.idx);
-    this.moves.push({ pos: p.copy(), stone });
-    this.idx++;
-    return true;
-  }
-
-  /** Undoes the last move (if any). */
-  unset(): Move | undefined {
-    if (this.idx == 0) return;
-    this.idx--;
-    let last = this.moves[this.idx];
-
-    this.map.delete(last.pos.index());
-    return last;
-  }
-
-  /** Redoes the next move (if any). */
-  reset(): Move | undefined {
-    if (this.idx >= this.moves.length) return;
-    let next = this.moves[this.idx];
-    this.idx++;
-
-    this.map.set(next.pos.index(), next.stone);
-    return next;
-  }
-
-  /** Jumps to the given move index by undoing or redoing moves. */
-  jump(index: number) {
-    if (index > this.moves.length) return;
-    if (this.idx < index) {
-      for (let i = this.idx; i < index; i++) {
-        let next = this.moves[i];
-        this.map.set(next.pos.index(), next.stone);
-      }
-    } else {
-      for (let i = this.idx - 1; i >= index; i--) {
-        let last = this.moves[i];
-        this.map.delete(last.pos.index());
-      }
-    }
-    this.idx = index;
-  }
-
-  /**
-   * Infers the next stone to play and whether the opponent
-   * is to play after that, based on past moves.
-   */
-  inferTurn(): [Stone, boolean] {
-    if (this.idx == 0) return [Stone.Black, true];
-
-    let last = this.moves[this.idx - 1].stone;
-    if (this.idx == 1) return [Stone.White, last == Stone.White];
-
-    let prevOfLast = this.moves[this.idx - 2].stone;
-    if (last == prevOfLast) return [Stone.opposite(last), false];
-    return [last, true];
-  }
-
-  /** Serializes the board to an array of bytes. */
-  serialize(): Uint8Array {
+export namespace Move {
+  /** Serializes a move to a byte array. */
+  export function serialize(move: Move, first: boolean): Uint8Array {
     let buf: number[] = [];
-    for (let move of this.moves) {
-      let x = (move.pos.index() << 1) | (move.stone - 1);
-      varint.encode(x, buf, buf.length);
+    switch (move.kind) {
+      case MoveKind.Stone:
+        for (let p of move.pos) {
+          let x = p.index() + STONE_MOVE_OFFSET;
+          varint.encode(x, buf, buf.length);
+        }
+        if (move.pos.length == 1 && !first)
+          buf.push(MoveKind.Pass);
+        break;
+      case MoveKind.Win:
+        buf.push(MoveKind.Win, ...move.pos.serialize());
+        break;
+      case MoveKind.Resign:
+        buf.push(MoveKind.Resign, move.stone);
+        break;
+      case MoveKind.Pass:
+      case MoveKind.Draw:
+        buf.push(move.kind);
+        break;
     }
     return new Uint8Array(buf);
   }
 
-  /** Deserializes a board from an array of bytes. */
-  static deserialize(buf: Uint8Array): Board | undefined {
-    let board = new Board();
-    let i = 0;
-    while (i < buf.length) {
-      let x;
-      try {
-        x = varint.decode(buf, i);
-      } catch (e /* RangeError */) {
-        return;
+  /** Deserializes a move from a byte array. */
+  export function deserialize(buf: Uint8Array, first: boolean): [Move, number] {
+    let x = varint.decode(buf);
+    let n = varint.decode.bytes!;
+
+    if (x >= STONE_MOVE_OFFSET) {
+      let pos: [Point] | [Point, Point];
+      pos = [Point.fromIndex(x - STONE_MOVE_OFFSET)];
+      if (first) return [{ kind: MoveKind.Stone, pos }, n];
+
+      x = varint.decode(buf, n);
+      n += varint.decode.bytes!;
+
+      if (x >= STONE_MOVE_OFFSET) {
+        // We don't use `push` as it breaks the type system.
+        pos = [pos[0], Point.fromIndex(x - STONE_MOVE_OFFSET)];
+      } else if (x != MoveKind.Pass) {
+        throw new RangeError('expected stone or pass');
       }
-      if (x > 0xffffffff) return;
-
-      let pos = Point.fromIndex(x >>> 1);
-      let stone = (x & 1) + 1;
-
-      if (!board.set(pos, stone)) return;
-      i += varint.decode.bytes!;
+      return [{ kind: MoveKind.Stone, pos }, n];
     }
-    return board;
+
+    switch (x) {
+      case MoveKind.Win:
+        x = varint.decode(buf, n);
+        n += varint.decode.bytes!;
+
+        let pos = Point.fromIndex(x);
+        return [{ kind: MoveKind.Win, pos }, n];
+      case MoveKind.Resign:
+        if (n == buf.length)
+          throw new RangeError('expected stone');
+        let stone = Stone.fromNumber(buf[n++]);
+        return [{ kind: MoveKind.Resign, stone }, n];
+      case MoveKind.Pass:
+      case MoveKind.Draw:
+        return [{ kind: x }, n];
+      default:
+        throw new RangeError('unknown move kind');
+    }
+  }
+}
+
+/** A Connect6 game on an infinite board. */
+export class Game {
+  private map: Map<number, Stone> = new Map();
+  private mov: Move[] = [];
+  private idx: number = 0;
+
+  /**
+   * Assigns to this game the moves and the move index of another.
+   *
+   * The other game will be cleared.
+   */
+  assign(other: Game) {
+    this.map = other.map;
+    this.mov = other.mov;
+    this.idx = other.idx;
+    other.clear();
+  }
+
+  /** Clears the game. */
+  clear() {
+    this.map = new Map();
+    this.mov = [];
+    this.idx = 0;
+  }
+
+  /** Returns an array of all moves, in the past or in the future. */
+  moves(): Move[] {
+    return this.mov;
+  }
+
+  /** Returns the current move index. */
+  moveIndex(): number {
+    return this.idx;
+  }
+
+  /** Tests if there is any move in the past. */
+  hasPast(): boolean {
+    return this.idx > 0;
+  }
+
+  /** Tests if there is any move in the future. */
+  hasFuture(): boolean {
+    return this.idx < this.mov.length;
+  }
+
+  /** Tests if the game is ended. */
+  ended(): boolean {
+    if (this.idx == 0) return false;
+    let kind = this.mov[this.idx - 1].kind;
+    return kind == MoveKind.Win || kind == MoveKind.Draw || kind == MoveKind.Resign;
+  }
+
+  /** Returns the stone to play at the given move index. */
+  static turnAt(index: number) {
+    return index % 2 == 0 ? Stone.Black : Stone.White;
+  }
+
+  /** Returns the current stone to play */
+  turn(): Stone {
+    return Game.turnAt(this.idx);
+  }
+
+  /** Returns the stone at the given position. */
+  stoneAt(pos: Point): Stone | undefined {
+    return this.map.get(pos.index());
+  }
+
+  /**
+   * Makes a move, clearing moves in the future.
+   *
+   * Returns whether the move succeeded.
+   */
+  makeMove(move: Move): boolean {
+    if (this.ended()) return false;
+
+    if (move.kind == MoveKind.Stone) {
+      if (this.idx == 0 && move.pos.length != 1)
+        return false;
+
+      let stone = this.turn();
+      for (let p of move.pos) {
+        let i = p.index();
+        if (this.map.has(i)) return false;
+        this.map.set(i, stone);
+      }
+    } else if (move.kind == MoveKind.Win) {
+      if (!this.findWinRow(move.pos))
+        return false;
+    }
+
+    this.mov.length = this.idx;
+    this.mov.push(move);
+    this.idx++;
+    return true;
+  }
+
+  /** Undoes the previous move (if any). */
+  undoMove(): Move | undefined {
+    if (this.idx == 0) return;
+    this.idx--;
+    let prev = this.mov[this.idx];
+
+    if (prev.kind == MoveKind.Stone)
+      for (let p of prev.pos) this.map.delete(p.index());
+    return prev;
+  }
+
+  /** Redoes the next move (if any). */
+  redoMove(): Move | undefined {
+    if (this.idx == this.mov.length) return;
+    let next = this.mov[this.idx];
+    let stone = this.turn();
+    this.idx++;
+
+    if (next.kind == MoveKind.Stone)
+      for (let p of next.pos) this.map.set(p.index(), stone);
+    return next;
+  }
+
+  /** Jumps to the given move index by undoing or redoing moves. */
+  jump(index: number): boolean {
+    if (index > this.mov.length) return false;
+    let diff = this.idx - index;
+    if (diff > 0) {
+      for (let i = 0; i < diff; i++)
+        this.undoMove();
+    } else {
+      for (let i = 0; i < -diff; i++)
+        this.redoMove();
+    }
+    return true;
+  }
+
+  /** Scans the row through a position in the direction of the axis. */
+  scanRow(pos: Point, axis: Axis): [Row, number] {
+    let stone = this.stoneAt(pos);
+    if (!stone) return [{ start: pos, end: pos }, 0];
+
+    let len = 1;
+    let scan = (cur: Point, forward: boolean) => {
+      let next = cur.adjacent(axis, forward);
+      while (this.stoneAt(next) == stone) {
+        len += 1;
+        cur = next;
+        next = cur.adjacent(axis, forward);
+      }
+      return cur;
+    };
+
+    let start = scan(pos, false);
+    let end = scan(pos, true);
+    return [{ start, end }, len];
+  }
+
+  /** Searches for a win row through the point. */
+  findWinRow(pos: Point): Row | undefined {
+    if (!this.stoneAt(pos)) return;
+    for (let axis of Axis.VALUES) {
+      let [row, len] = this.scanRow(pos, axis);
+      if (len >= 6) return row;
+    }
+  }
+
+  /**
+   * Serializes the game to a byte array.
+   *
+   * If `all`, includes all moves prefixed with the current move index.
+   */
+  serialize(all = false): Uint8Array {
+    let buf = all ? varint.encode(this.idx) : [];
+    let end = all ? this.mov.length : this.idx;
+    for (let i = 0; i < end; i++)
+      buf.push(...Move.serialize(this.mov[i], i == 0));
+    return new Uint8Array(buf);
+  }
+
+  /** Deserializes a game from a byte array. */
+  static deserialize(buf: Uint8Array, all = false): Game {
+    let game = new Game(), index;
+    if (all) {
+      index = varint.decode(buf);
+      buf = buf.subarray(varint.decode.bytes!);
+    }
+
+    while (buf.length > 0) {
+      let [move, n] = Move.deserialize(buf, !game.hasPast());
+      if (!game.makeMove(move))
+        throw new RangeError('move failed');
+      buf = buf.subarray(n);
+    }
+
+    if (index != undefined && !game.jump(index))
+      throw new RangeError('move index exceeds total number of moves');
+
+    return game;
   }
 }
