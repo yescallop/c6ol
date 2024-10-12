@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { Game, MoveKind, Point, Stone } from '@/c6';
+import { Game, MoveKind, Point, Stone } from '@/game';
 import { Base64 } from 'js-base64';
 
 const { game, ourStone, disabled } = defineProps<{

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, useTemplateRef } from 'vue';
 import GameView from './components/GameView.vue';
-import { Game, Move, MoveKind, Point, Stone } from './c6';
+import { Game, Move, MoveKind, Point, Stone } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
 import { Base64 } from 'js-base64';
 

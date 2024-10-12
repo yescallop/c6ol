@@ -1,4 +1,4 @@
-import { Game, Move, Stone } from './c6';
+import { Game, Move, Stone } from './game';
 
 export enum MessageKind {
   // Client messages.
