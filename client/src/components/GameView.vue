@@ -328,7 +328,7 @@ function dist(a: MouseEvent, b: MouseEvent): number {
  * - Zooms out on Minus key.
  * - Zooms in on Plus (Equal) key.
  * - Hits the cursor on Space/Enter key.
- * - Undoes the last move (if any) on Backspace key.
+ * - Undoes the previous move (if any) on Backspace key.
  * - Redoes the next move (if any) on Shift+Backspace keys.
  */
 function onKeyDown(e: KeyboardEvent) {
@@ -453,7 +453,7 @@ function onPointerUp(e: PointerEvent) {
  * - 1: Drags the view if it isn't ever pinched since the pointer became active.
  * - 2: Roughly speaking, whenever the distance of pointers increases (decreases)
  *      by `DIST_FOR_PINCH_ZOOM`, `viewSize` will be decreased (increased) by 2.
- * - 3: Retracts the last move if all pointers have moved for at least
+ * - 3: Retracts the previous move if all pointers have moved for at least
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
 function onHover(e: PointerEvent) {
@@ -592,14 +592,14 @@ function draw() {
   ctx.fillStyle = 'gray';
   outIndexes.forEach(i => drawCircle(Point.fromIndex(i), stoneRadius));
 
-  // Draw the last move.
-  let lastMove = moveIndex > 0 ? moves[moveIndex - 1] : undefined;
-  let lastStone = Game.turnAt(moveIndex - 1);
-  if (lastMove) {
-    switch (lastMove.kind) {
+  // Draw the previous move.
+  let prevMove = game.prevMove();
+  if (prevMove) {
+    let prevStone = Game.turnAt(moveIndex - 1);
+    switch (prevMove.kind) {
       case MoveKind.Stone:
-        ctx.fillStyle = lastStone == Stone.Black ? 'white' : 'black';
-        for (let p of lastMove.pos) {
+        ctx.fillStyle = prevStone == Stone.Black ? 'white' : 'black';
+        for (let p of prevMove.pos) {
           [p, out] = boardToViewPos(p);
           if (!out) drawCircle(p, dotRadius);
         }
@@ -612,11 +612,11 @@ function draw() {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        ctx.fillStyle = lastStone == Stone.Black ? 'black' : 'white';
+        ctx.fillStyle = prevStone == Stone.Black ? 'black' : 'white';
         ctx.fillText('PASS', size / 2, size / 2);
 
         ctx.lineWidth = fontSize / PASS_BORDER_RATIO;
-        ctx.strokeStyle = lastStone == Stone.Black ? 'white' : 'black';
+        ctx.strokeStyle = prevStone == Stone.Black ? 'white' : 'black';
         ctx.strokeText('PASS', size / 2, size / 2);
 
         ctx.globalAlpha = 1;

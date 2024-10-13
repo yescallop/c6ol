@@ -72,7 +72,7 @@ export type ServerMessage = {
   kind: MessageKind.Move;
   move: Move;
 } | {
-  // The last move was retracted.
+  // The previous move was retracted.
   kind: MessageKind.Retract;
 };
 
