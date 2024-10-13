@@ -1,10 +1,13 @@
 [package]
-name = "c6ol"
+name = "c6ol-server"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
+bytes = "1"
+bytes-varint = "1"
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
