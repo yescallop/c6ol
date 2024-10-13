@@ -205,7 +205,7 @@ function viewToCanvasPos(p: Point): [number, number] {
 
 /** Tests if it is our turn to play. */
 function ourTurn(): boolean {
-  return !game.ended() && ourStone == game.turn();
+  return !game.isEnded() && ourStone == game.turn();
 }
 
 /**

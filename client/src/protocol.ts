@@ -1,26 +1,25 @@
 import { Game, Move, Stone } from './game';
 
+/// The kind of a WebSocket message.
 export enum MessageKind {
   // Client messages.
-  Start,
-  Join,
-
+  Start = 0,
+  Join = 1,
   // Server messages.
-  Started,
-  Game,
-
+  Started = 2,
+  Game = 3,
   // Common messages.
-  Move,
-  Retract,
+  Move = 4,
+  Retract = 5,
 }
 
 export type ClientMessage = {
-  // When sent upon connection, starts a new game.
-  // When sent after `Join`, authenticates the user.
+  // When sent upon connection, requests to start a new game.
+  // When sent after `Join`, requests to authenticate.
   kind: MessageKind.Start;
   passcode: string;
 } | {
-  // When sent upon connection, adds the user to an existing game.
+  // When sent upon connection, requests to join an existing game.
   kind: MessageKind.Join;
   gameId: string;
 } | {
@@ -28,7 +27,7 @@ export type ClientMessage = {
   kind: MessageKind.Move;
   move: Move;
 } | {
-  // Requests to retract the last move.
+  // Requests to retract the previous move.
   kind: MessageKind.Retract;
 };
 
@@ -57,7 +56,7 @@ export namespace ClientMessage {
 }
 
 export type ServerMessage = {
-  // Successfully authenticated.
+  // The user is authenticated.
   // Sent before `Game` if a new game is started.
   kind: MessageKind.Started;
   /** The user's stone. */

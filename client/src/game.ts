@@ -2,9 +2,13 @@ import * as varint from 'varint';
 
 /** An axis on the board. */
 export enum Axis {
+  /** The horizontal axis, with a unit vector of `(1, 0)`. */
   Horizontal,
+  /** The diagonal axis, with a unit vector of `(1, 1)`. */
   Diagonal,
+  /** The vertical axis, with a unit vector of `(0, 1)`. */
   Vertical,
+  /** The anti-diagonal axis, with a unit vector of `(1, -1)`. */
   AntiDiagonal,
 }
 
@@ -84,20 +88,6 @@ export class Point {
   copy(): Point {
     return new Point(this.x, this.y);
   }
-
-  /** Serializes the point to a byte array. */
-  serialize(): Uint8Array {
-    return new Uint8Array(varint.encode(this.index()));
-  }
-
-  /**
-   * Deserializes a point from a byte array.
-   *
-   * Returns the point and the number of bytes read.
-   */
-  static deserialize(buf: Uint8Array): [Point, number] {
-    return [Point.fromIndex(varint.decode(buf)), varint.decode.bytes!];
-  }
 }
 
 /** A contiguous row of stones on the board. */
@@ -127,7 +117,7 @@ export namespace Stone {
 }
 
 /** Allows room for extension. Equals (2^7-11^2). */
-const STONE_MOVE_OFFSET = 7;
+const MOVE_STONE_OFFSET = 7;
 
 export enum MoveKind {
   Stone = -1,
@@ -137,7 +127,7 @@ export enum MoveKind {
   Resign = 3,
 }
 
-/** Represents a move made by one player or both players. */
+/** A move made by one player or both players. */
 export type Move = {
   // One or two stones placed on the board by the current player.
   kind: MoveKind.Stone;
@@ -159,20 +149,27 @@ export type Move = {
 };
 
 export namespace Move {
+  /** Tests if the move is an ending move. */
+  export function isEndingMove(move: Move): boolean {
+    let kind = move.kind;
+    return kind == MoveKind.Win || kind == MoveKind.Draw || kind == MoveKind.Resign;
+  }
+
   /** Serializes a move to a byte array. */
   export function serialize(move: Move, first: boolean): Uint8Array {
     let buf: number[] = [];
     switch (move.kind) {
       case MoveKind.Stone:
         for (let p of move.pos) {
-          let x = p.index() + STONE_MOVE_OFFSET;
+          let x = p.index() + MOVE_STONE_OFFSET;
           varint.encode(x, buf, buf.length);
         }
         if (move.pos.length == 1 && !first)
           buf.push(MoveKind.Pass);
         break;
       case MoveKind.Win:
-        buf.push(MoveKind.Win, ...move.pos.serialize());
+        buf.push(MoveKind.Win);
+        varint.encode(move.pos.index(), buf, buf.length);
         break;
       case MoveKind.Resign:
         buf.push(MoveKind.Resign, move.stone);
@@ -190,17 +187,17 @@ export namespace Move {
     let x = varint.decode(buf);
     let n = varint.decode.bytes!;
 
-    if (x >= STONE_MOVE_OFFSET) {
+    if (x >= MOVE_STONE_OFFSET) {
       let pos: [Point] | [Point, Point];
-      pos = [Point.fromIndex(x - STONE_MOVE_OFFSET)];
+      pos = [Point.fromIndex(x - MOVE_STONE_OFFSET)];
       if (first) return [{ kind: MoveKind.Stone, pos }, n];
 
       x = varint.decode(buf, n);
       n += varint.decode.bytes!;
 
-      if (x >= STONE_MOVE_OFFSET) {
+      if (x >= MOVE_STONE_OFFSET) {
         // We don't use `push` as it breaks the type system.
-        pos = [pos[0], Point.fromIndex(x - STONE_MOVE_OFFSET)];
+        pos = [pos[0], Point.fromIndex(x - MOVE_STONE_OFFSET)];
       } else if (x != MoveKind.Pass) {
         throw new RangeError('expected stone or pass');
       }
@@ -263,6 +260,16 @@ export class Game {
     return this.idx;
   }
 
+  /** Returns the previous move (if any). */
+  prevMove(): Move | undefined {
+    return this.idx > 0 ? this.mov[this.idx - 1] : undefined;
+  }
+
+  /** Returns the next move (if any). */
+  nextMove(): Move | undefined {
+    return this.idx < this.mov.length ? this.mov[this.idx] : undefined;
+  }
+
   /** Tests if there is any move in the past. */
   hasPast(): boolean {
     return this.idx > 0;
@@ -274,10 +281,9 @@ export class Game {
   }
 
   /** Tests if the game is ended. */
-  ended(): boolean {
-    if (this.idx == 0) return false;
-    let kind = this.mov[this.idx - 1].kind;
-    return kind == MoveKind.Win || kind == MoveKind.Draw || kind == MoveKind.Resign;
+  isEnded(): boolean {
+    let prev = this.prevMove();
+    return prev != undefined && Move.isEndingMove(prev);
   }
 
   /** Returns the stone to play at the given move index. */
@@ -285,12 +291,12 @@ export class Game {
     return index % 2 == 0 ? Stone.Black : Stone.White;
   }
 
-  /** Returns the current stone to play */
+  /** Returns the current stone to play. */
   turn(): Stone {
     return Game.turnAt(this.idx);
   }
 
-  /** Returns the stone at the given position. */
+  /** Returns the stone at the given position (if any). */
   stoneAt(pos: Point): Stone | undefined {
     return this.map.get(pos.index());
   }
@@ -301,7 +307,7 @@ export class Game {
    * Returns whether the move succeeded.
    */
   makeMove(move: Move): boolean {
-    if (this.ended()) return false;
+    if (this.isEnded()) return false;
 
     if (move.kind == MoveKind.Stone) {
       if (this.idx == 0 && move.pos.length != 1)
@@ -326,9 +332,9 @@ export class Game {
 
   /** Undoes the previous move (if any). */
   undoMove(): Move | undefined {
-    if (this.idx == 0) return;
+    let prev = this.prevMove();
+    if (!prev) return;
     this.idx--;
-    let prev = this.mov[this.idx];
 
     if (prev.kind == MoveKind.Stone)
       for (let p of prev.pos) this.map.delete(p.index());
@@ -337,11 +343,11 @@ export class Game {
 
   /** Redoes the next move (if any). */
   redoMove(): Move | undefined {
-    if (this.idx == this.mov.length) return;
-    let next = this.mov[this.idx];
-    let stone = this.turn();
+    let next = this.nextMove();
+    if (!next) return;
     this.idx++;
 
+    let stone = this.turn();
     if (next.kind == MoveKind.Stone)
       for (let p of next.pos) this.map.set(p.index(), stone);
     return next;
