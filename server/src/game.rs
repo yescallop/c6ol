@@ -1,11 +1,8 @@
-//! The game logic.
+//! Connect6 game logic, record, and serialization.
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut};
 use bytes_varint::{VarIntSupport, VarIntSupportMut};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    iter,
-};
+use std::{collections::HashMap, iter};
 
 /// An axis on the board.
 #[derive(Clone, Copy)]
@@ -67,7 +64,7 @@ fn elegant_unpair(z: u64) -> (u32, u32) {
 }
 
 /// A 2D point with integer coordinates.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Point {
     /// The horizontal coordinate.
     pub x: i32,
@@ -101,6 +98,11 @@ impl Point {
             Self::new(self.x - dx, self.y - dy)
         }
     }
+
+    /// Deserializes a point from a buffer.
+    pub fn deserialize(buf: &mut &[u8]) -> Option<Self> {
+        buf.get_u64_varint().ok().map(Self::from_index)
+    }
 }
 
 /// A contiguous row of stones on the board.
@@ -112,15 +114,8 @@ pub struct Row {
     pub end: Point,
 }
 
-impl Row {
-    /// Creates a row with the given starting and ending positions.
-    pub fn new(start: Point, end: Point) -> Self {
-        Self { start, end }
-    }
-}
-
 /// A stone on the board, either black or white.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Stone {
     /// The black stone.
@@ -157,7 +152,7 @@ const MOVE_DRAW: u64 = 2;
 const MOVE_RESIGN: u64 = 3;
 
 /// A move made by one player or both players.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Move {
     /// One or two stones placed on the board by the current player.
     Stone(Point, Option<Point>),
@@ -172,33 +167,31 @@ pub enum Move {
 }
 
 impl Move {
-    /// Tests if this move is an ending move.
-    pub fn is_ending_move(self) -> bool {
+    /// Tests if the move is an ending move.
+    pub fn is_ending(self) -> bool {
         matches!(self, Self::Win(_) | Self::Draw | Self::Resign(_))
     }
 
-    /// Serializes a move into a buffer.
-    pub fn serialize(self, buf: &mut BytesMut, first: bool) {
+    /// Serializes a move to a buffer.
+    ///
+    /// If `compact`, omits the pass after a 1-stone move.
+    pub fn serialize(self, buf: &mut Vec<u8>, compact: bool) {
         match self {
             Self::Stone(fst, snd) => {
                 for pos in iter::once(fst).chain(snd) {
                     let x = pos.index() + MOVE_STONE_OFFSET;
                     buf.put_u64_varint(x);
                 }
-                if snd.is_none() && !first {
+                if snd.is_none() && !compact {
                     buf.put_u8(MOVE_PASS as u8);
                 }
             }
-            Self::Pass => {
-                buf.put_u8(MOVE_PASS as u8);
-            }
+            Self::Pass => buf.put_u8(MOVE_PASS as u8),
             Self::Win(pos) => {
                 buf.put_u8(MOVE_WIN as u8);
                 buf.put_u64_varint(pos.index());
             }
-            Self::Draw => {
-                buf.put_u8(MOVE_DRAW as u8);
-            }
+            Self::Draw => buf.put_u8(MOVE_DRAW as u8),
             Self::Resign(stone) => {
                 buf.put_u8(MOVE_RESIGN as u8);
                 buf.put_u8(stone as u8);
@@ -207,11 +200,13 @@ impl Move {
     }
 
     /// Deserializes a move from a buffer.
-    pub fn deserialize(buf: &mut Bytes, first: bool) -> Option<Self> {
+    ///
+    /// If `first`, eagerly returns a 1-stone move.
+    pub fn deserialize(buf: &mut &[u8], first: bool) -> Option<Self> {
         let x = buf.get_u64_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
             let fst = Point::from_index(x - MOVE_STONE_OFFSET);
-            if first {
+            if first || !buf.has_remaining() {
                 return Some(Self::Stone(fst, None));
             }
 
@@ -227,8 +222,8 @@ impl Move {
 
         match x {
             MOVE_WIN => {
-                let x = buf.get_u64_varint().ok()?;
-                Some(Self::Win(Point::from_index(x)))
+                let pos = Point::deserialize(buf)?;
+                Some(Self::Win(pos))
             }
             MOVE_RESIGN => {
                 if !buf.has_remaining() {
@@ -244,16 +239,16 @@ impl Move {
     }
 }
 
-/// A Connect6 game on an infinite board.
+/// A Connect6 game record on an infinite board.
 #[derive(Clone, Default)]
-pub struct Game {
+pub struct Record {
     map: HashMap<Point, Stone>,
     moves: Vec<Move>,
     index: usize,
 }
 
-impl Game {
-    /// Creates a new empty game.
+impl Record {
+    /// Creates a new empty record.
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -262,7 +257,7 @@ impl Game {
         }
     }
 
-    /// Clears the game.
+    /// Clears the record.
     pub fn clear(&mut self) {
         self.map.clear();
         self.moves.clear();
@@ -301,7 +296,7 @@ impl Game {
 
     /// Tests if the game is ended.
     pub fn is_ended(&self) -> bool {
-        self.prev_move().is_some_and(Move::is_ending_move)
+        self.prev_move().is_some_and(Move::is_ending)
     }
 
     /// Returns the stone to play at the given move index.
@@ -335,13 +330,13 @@ impl Game {
             if self.index == 0 && snd.is_some() {
                 return false;
             }
+            if self.map.contains_key(&fst) || snd.is_some_and(|pos| self.map.contains_key(&pos)) {
+                return false;
+            }
 
             let stone = self.turn();
             for pos in iter::once(fst).chain(snd) {
-                match self.map.entry(pos) {
-                    Entry::Occupied(_) => return false,
-                    Entry::Vacant(e) => e.insert(stone),
-                };
+                self.map.insert(pos, stone);
             }
         } else if let Move::Win(pos) = mov {
             if self.find_win_row(pos).is_none() {
@@ -401,8 +396,10 @@ impl Game {
 
     /// Scans the row through a position in the direction of the axis.
     pub fn scan_row(&self, pos: Point, axis: Axis) -> (Row, u32) {
+        let (start, end);
         let Some(stone) = self.stone_at(pos) else {
-            return (Row::new(pos, pos), 0);
+            (start, end) = (pos, pos);
+            return (Row { start, end }, 0);
         };
 
         let mut len = 1;
@@ -416,8 +413,7 @@ impl Game {
             cur
         };
 
-        let start = scan(pos, false);
-        let end = scan(pos, true);
+        (start, end) = (scan(pos, false), scan(pos, true));
         (Row { start, end }, len)
     }
 
@@ -433,10 +429,10 @@ impl Game {
         None
     }
 
-    /// Serializes the game to a buffer.
+    /// Serializes the record to a buffer.
     ///
     /// If `all`, includes all moves prefixed with the current move index.
-    pub fn serialize(&self, buf: &mut BytesMut, all: bool) {
+    pub fn serialize(&self, buf: &mut Vec<u8>, all: bool) {
         if all {
             buf.put_u64_varint(self.index as u64);
         }
@@ -446,9 +442,9 @@ impl Game {
         }
     }
 
-    /// Deserializes a game from a buffer.
-    pub fn deserialize(buf: &mut Bytes, all: bool) -> Option<Self> {
-        let mut game = Self::new();
+    /// Deserializes a record from a buffer.
+    pub fn deserialize(buf: &mut &[u8], all: bool) -> Option<Self> {
+        let mut rec = Self::new();
         let index = if all {
             Some(usize::try_from(buf.get_u64_varint().ok()?).ok()?)
         } else {
@@ -456,17 +452,17 @@ impl Game {
         };
 
         while buf.has_remaining() {
-            let mov = Move::deserialize(buf, !game.has_past())?;
-            if !game.make_move(mov) {
+            let mov = Move::deserialize(buf, !rec.has_past())?;
+            if !rec.make_move(mov) {
                 return None;
             }
         }
 
         if let Some(index) = index {
-            if !game.jump(index) {
+            if !rec.jump(index) {
                 return None;
             }
         }
-        Some(game)
+        Some(rec)
     }
 }

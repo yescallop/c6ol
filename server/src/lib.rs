@@ -13,4 +13,8 @@
 #![feature(isqrt)]
 
 pub mod game;
+pub mod manager;
 pub mod protocol;
+mod ws;
+
+pub use ws::handle_websocket_upgrade;

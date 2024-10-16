@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
-import { Game, MoveKind, Point, Stone } from '@/game';
-import { Base64 } from 'js-base64';
+import { MoveKind, Point, Record, Stone } from '@/game';
+import { encodeBase64Url } from '@std/encoding/base64url';
 
-const { game, ourStone, disabled } = defineProps<{
-  game: Game;
+const { rec, ourStone, disabled } = defineProps<{
+  rec: Record;
   ourStone?: Stone;
   disabled: boolean;
 }>();
@@ -205,7 +205,7 @@ function viewToCanvasPos(p: Point): [number, number] {
 
 /** Tests if it is our turn to play. */
 function ourTurn(): boolean {
-  return !game.isEnded() && ourStone == game.turn();
+  return !rec.isEnded() && ourStone == rec.turn();
 }
 
 /**
@@ -217,14 +217,14 @@ function ourTurn(): boolean {
  */
 function hitCursor() {
   if (!cursor || boardToViewPos(cursor)[1] /* out */) return;
-  if (!ourTurn() || game.stoneAt(cursor)) return;
+  if (!ourTurn() || rec.stoneAt(cursor)) return;
 
   if (Point.equal(tentative, cursor)) {
     phantom = tentative;
     tentative = undefined;
     draw();
   } else if (Point.equal(phantom, cursor)) {
-    if (!game.hasPast()) {
+    if (!rec.hasPast()) {
       emit('move', [cursor.copy()]);
     } else if (tentative) {
       emit('move', [tentative.copy(), cursor.copy()]);
@@ -362,9 +362,9 @@ function onKeyDown(e: KeyboardEvent) {
     case 'Backspace':
       if (e.repeat) return;
       if (e.shiftKey) {
-        if (game.hasFuture()) emit('redo');
+        if (rec.hasFuture()) emit('redo');
       } else {
-        if (game.hasPast()) emit('undo');
+        if (rec.hasPast()) emit('undo');
       }
       return;
     case 'Space':
@@ -490,7 +490,7 @@ function onHover(e: PointerEvent) {
     }
 
     viewState = ViewState.Retracted;
-    if (game.hasPast()) emit('undo');
+    if (rec.hasPast()) emit('undo');
   }
 }
 
@@ -559,12 +559,12 @@ function draw() {
   // Draw the board origin.
   let origin = new Point(0, 0);
   let [p, out] = boardToViewPos(origin);
-  if (!out && !game.stoneAt(origin)) {
+  if (!out && !rec.stoneAt(origin)) {
     ctx.fillStyle = 'black';
     drawCircle(p, dotRadius);
   }
 
-  let moves = game.moves(), moveIndex = game.moveIndex();
+  let moves = rec.moves(), moveIndex = rec.moveIndex();
   let stoneRadius = gridSize / STONE_RADIUS_RATIO;
   // We project the out-of-view stones onto the view border,
   // and stores the indexes of resulting points in this set.
@@ -574,7 +574,7 @@ function draw() {
   for (let i = 0; i < moveIndex; i++) {
     let move = moves[i];
     if (move.kind != MoveKind.Stone) continue;
-    let stone = Game.turnAt(i);
+    let stone = Record.turnAt(i);
 
     for (let p of move.pos) {
       [p, out] = boardToViewPos(p);
@@ -593,9 +593,9 @@ function draw() {
   outIndexes.forEach(i => drawCircle(Point.fromIndex(i), stoneRadius));
 
   // Draw the previous move.
-  let prevMove = game.prevMove();
+  let prevMove = rec.prevMove();
   if (prevMove) {
-    let prevStone = Game.turnAt(moveIndex - 1);
+    let prevStone = Record.turnAt(moveIndex - 1);
     switch (prevMove.kind) {
       case MoveKind.Stone:
         ctx.fillStyle = prevStone == Stone.Black ? 'white' : 'black';
@@ -622,9 +622,13 @@ function draw() {
         ctx.globalAlpha = 1;
         break;
       case MoveKind.Win:
+        // TODO.
+        break;
       case MoveKind.Draw:
+        // TODO.
+        break;
       case MoveKind.Resign:
-        // TODO
+        // TODO.
         break;
     }
   }
@@ -673,12 +677,12 @@ function draw() {
 /**
  * Handles `copy` events.
  *
- * Copies the game URI into the clipboard.
+ * Copies the record URI into the clipboard.
  */
 function onCopy(e: ClipboardEvent) {
   if (disabled) return;
 
-  let uri = 'c6:' + Base64.fromUint8Array(game.serialize(), true) + ';';
+  let uri = 'c6:' + encodeBase64Url(rec.serialize(true)) + ';';
   e.clipboardData!.setData("text/plain", uri);
   // `preventDefault` is required for the change to take effect.
   e.preventDefault();

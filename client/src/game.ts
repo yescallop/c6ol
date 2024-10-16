@@ -1,4 +1,5 @@
-import * as varint from 'varint';
+import { concat } from "@std/bytes/concat";
+import { decodeVarint32, encodeVarint } from "@std/encoding/varint";
 
 /** An axis on the board. */
 export enum Axis {
@@ -58,8 +59,7 @@ export class Point {
 
   /** Maps the point to a natural number. */
   index(): number {
-    let x = zigzagEncode(this.x), y = zigzagEncode(this.y);
-    return elegantPair(x, y);
+    return elegantPair(zigzagEncode(this.x), zigzagEncode(this.y));
   }
 
   /** Maps a natural number to a point (undoes `index`). */
@@ -79,7 +79,7 @@ export class Point {
   }
 
   /** Tests if two possibly undefined points equal. */
-  static equal(a: Point | undefined, b: Point | undefined): boolean {
+  static equal(a?: Point, b?: Point): boolean {
     if (a == undefined) return b == undefined;
     return b != undefined && a.x == b.x && a.y == b.y;
   }
@@ -87,6 +87,17 @@ export class Point {
   /** Copies the point. */
   copy(): Point {
     return new Point(this.x, this.y);
+  }
+
+  /** Serializes the point to a buffer. */
+  serialize(buf: Uint8Array[]) {
+    buf.push(encodeVarint(this.index())[0]);
+  }
+
+  /** Deserializes a point from a buffer. */
+  static deserialize(buf: Uint8Array, offset: number): [Point, number] {
+    let [x, i] = decodeVarint32(buf, offset);
+    return [Point.fromIndex(x), i];
   }
 }
 
@@ -150,100 +161,101 @@ export type Move = {
 
 export namespace Move {
   /** Tests if the move is an ending move. */
-  export function isEndingMove(move: Move): boolean {
+  export function isEnding(move: Move): boolean {
     let kind = move.kind;
     return kind == MoveKind.Win || kind == MoveKind.Draw || kind == MoveKind.Resign;
   }
 
-  /** Serializes a move to a byte array. */
-  export function serialize(move: Move, first: boolean): Uint8Array {
-    let buf: number[] = [];
+  /**
+   * Serializes a move to a buffer.
+   * 
+   * If `compact`, omits the pass after a 1-stone move.
+   */
+  export function serialize(move: Move, buf: Uint8Array[], compact: boolean) {
     switch (move.kind) {
       case MoveKind.Stone:
-        for (let p of move.pos) {
-          let x = p.index() + MOVE_STONE_OFFSET;
-          varint.encode(x, buf, buf.length);
+        for (let pos of move.pos) {
+          let x = pos.index() + MOVE_STONE_OFFSET;
+          buf.push(encodeVarint(x)[0]);
         }
-        if (move.pos.length == 1 && !first)
-          buf.push(MoveKind.Pass);
+        if (move.pos.length == 1 && !compact)
+          buf.push(Uint8Array.of(MoveKind.Pass));
         break;
       case MoveKind.Win:
-        buf.push(MoveKind.Win);
-        varint.encode(move.pos.index(), buf, buf.length);
+        buf.push(Uint8Array.of(move.kind));
+        buf.push(encodeVarint(move.pos.index())[0]);
         break;
       case MoveKind.Resign:
-        buf.push(MoveKind.Resign, move.stone);
+        buf.push(Uint8Array.of(move.kind, move.stone));
         break;
       case MoveKind.Pass:
       case MoveKind.Draw:
-        buf.push(move.kind);
+        buf.push(Uint8Array.of(move.kind));
         break;
     }
-    return new Uint8Array(buf);
   }
 
-  /** Deserializes a move from a byte array. */
-  export function deserialize(buf: Uint8Array, first: boolean): [Move, number] {
-    let x = varint.decode(buf);
-    let n = varint.decode.bytes!;
-
+  /**
+   * Deserializes a move from a buffer.
+   * 
+   * If `first`, eagerly returns a 1-stone move.
+   */
+  export function deserialize(buf: Uint8Array, offset: number, first: boolean): [Move, number] {
+    let [x, i] = decodeVarint32(buf, offset);
     if (x >= MOVE_STONE_OFFSET) {
       let pos: [Point] | [Point, Point];
       pos = [Point.fromIndex(x - MOVE_STONE_OFFSET)];
-      if (first) return [{ kind: MoveKind.Stone, pos }, n];
+      if (first || i >= buf.length)
+        return [{ kind: MoveKind.Stone, pos }, i];
 
-      x = varint.decode(buf, n);
-      n += varint.decode.bytes!;
-
+      [x, i] = decodeVarint32(buf, i);
       if (x >= MOVE_STONE_OFFSET) {
         // We don't use `push` as it breaks the type system.
         pos = [pos[0], Point.fromIndex(x - MOVE_STONE_OFFSET)];
       } else if (x != MoveKind.Pass) {
         throw new RangeError('expected stone or pass');
       }
-      return [{ kind: MoveKind.Stone, pos }, n];
+      return [{ kind: MoveKind.Stone, pos }, i];
     }
 
     switch (x) {
       case MoveKind.Win:
-        x = varint.decode(buf, n);
-        n += varint.decode.bytes!;
-
-        let pos = Point.fromIndex(x);
-        return [{ kind: MoveKind.Win, pos }, n];
+        let pos;
+        [pos, i] = Point.deserialize(buf, i);
+        return [{ kind: MoveKind.Win, pos }, i];
       case MoveKind.Resign:
-        if (n == buf.length)
+        if (i >= buf.length)
           throw new RangeError('expected stone');
-        let stone = Stone.fromNumber(buf[n++]);
-        return [{ kind: MoveKind.Resign, stone }, n];
+        let stone = Stone.fromNumber(buf[i++]);
+        return [{ kind: MoveKind.Resign, stone }, i];
       case MoveKind.Pass:
       case MoveKind.Draw:
-        return [{ kind: x }, n];
+        return [{ kind: x }, i];
       default:
         throw new RangeError('unknown move kind');
     }
   }
 }
 
-/** A Connect6 game on an infinite board. */
-export class Game {
+/** A Connect6 game record on an infinite board. */
+export class Record {
   private map: Map<number, Stone> = new Map();
   private mov: Move[] = [];
   private idx: number = 0;
 
   /**
-   * Assigns to this game the moves and the move index of another.
+   * Assigns to this record the fields of another.
    *
-   * The other game will be cleared.
+   * The other record will be cleared.
    */
-  assign(other: Game) {
+  assign(other: Record) {
     this.map = other.map;
     this.mov = other.mov;
     this.idx = other.idx;
     other.clear();
   }
 
-  /** Clears the game. */
+  /** Clears the record. */
   clear() {
     this.map = new Map();
     this.mov = [];
@@ -283,7 +295,7 @@ export class Game {
   /** Tests if the game is ended. */
   isEnded(): boolean {
     let prev = this.prevMove();
-    return prev != undefined && Move.isEndingMove(prev);
+    return prev != undefined && Move.isEnding(prev);
   }
 
   /** Returns the stone to play at the given move index. */
@@ -293,7 +305,7 @@ export class Game {
 
   /** Returns the current stone to play. */
   turn(): Stone {
-    return Game.turnAt(this.idx);
+    return Record.turnAt(this.idx);
   }
 
   /** Returns the stone at the given position (if any). */
@@ -312,13 +324,12 @@ export class Game {
     if (move.kind == MoveKind.Stone) {
       if (this.idx == 0 && move.pos.length != 1)
         return false;
+      for (let pos of move.pos)
+        if (this.map.has(pos.index())) return false;
 
       let stone = this.turn();
-      for (let p of move.pos) {
-        let i = p.index();
-        if (this.map.has(i)) return false;
-        this.map.set(i, stone);
-      }
+      for (let pos of move.pos)
+        this.map.set(pos.index(), stone);
     } else if (move.kind == MoveKind.Win) {
       if (!this.findWinRow(move.pos))
         return false;
@@ -337,7 +348,8 @@ export class Game {
     this.idx--;
 
     if (prev.kind == MoveKind.Stone)
-      for (let p of prev.pos) this.map.delete(p.index());
+      for (let pos of prev.pos)
+        this.map.delete(pos.index());
     return prev;
   }
 
@@ -349,7 +361,8 @@ export class Game {
 
     let stone = this.turn();
     if (next.kind == MoveKind.Stone)
-      for (let p of next.pos) this.map.set(p.index(), stone);
+      for (let pos of next.pos)
+        this.map.set(pos.index(), stone);
     return next;
   }
 
@@ -383,8 +396,7 @@ export class Game {
       return cur;
     };
 
-    let start = scan(pos, false);
-    let end = scan(pos, true);
+    let start = scan(pos, false), end = scan(pos, true);
     return [{ start, end }, len];
   }
 
@@ -398,36 +410,33 @@ export class Game {
   }
 
   /**
-   * Serializes the game to a byte array.
+   * Serializes the record to a buffer.
    *
    * If `all`, includes all moves prefixed with the current move index.
    */
-  serialize(all = false): Uint8Array {
-    let buf = all ? varint.encode(this.idx) : [];
+  serialize(all: boolean): Uint8Array {
+    let buf = all ? [encodeVarint(this.idx)[0]] : [];
     let end = all ? this.mov.length : this.idx;
     for (let i = 0; i < end; i++)
-      buf.push(...Move.serialize(this.mov[i], i == 0));
-    return new Uint8Array(buf);
+      Move.serialize(this.mov[i], buf, i == 0);
+    return concat(buf);
   }
 
-  /** Deserializes a game from a byte array. */
-  static deserialize(buf: Uint8Array, all = false): Game {
-    let game = new Game(), index;
-    if (all) {
-      index = varint.decode(buf);
-      buf = buf.subarray(varint.decode.bytes!);
-    }
+  /** Deserializes a record from a buffer. */
+  static deserialize(buf: Uint8Array, offset: number, all: boolean): Record {
+    let rec = new Record(), index, i = offset;
+    if (all) [index, i] = decodeVarint32(buf, i);
 
-    while (buf.length > 0) {
-      let [move, n] = Move.deserialize(buf, !game.hasPast());
-      if (!game.makeMove(move))
+    while (i < buf.length) {
+      let move;
+      [move, i] = Move.deserialize(buf, i, !rec.hasPast());
+      if (!rec.makeMove(move))
         throw new RangeError('move failed');
-      buf = buf.subarray(n);
     }
 
-    if (index != undefined && !game.jump(index))
+    if (index != undefined && !rec.jump(index))
       throw new RangeError('move index exceeds total number of moves');
 
-    return game;
+    return rec;
   }
 }

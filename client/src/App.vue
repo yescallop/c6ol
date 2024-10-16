@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref, useTemplateRef } from 'vue';
 import GameView from './components/GameView.vue';
-import { Game, Move, MoveKind, Point, Stone } from './game';
+import { Move, MoveKind, Point, Record, Stone } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
-import { Base64 } from 'js-base64';
+import { decodeBase64, encodeBase64 } from '@std/encoding/base64';
 
 const openDialog = ref<HTMLDialogElement>();
 
@@ -15,7 +15,7 @@ const onlineAction = ref('start');
 const gameId = ref('');
 const passcode = ref('');
 
-const game = new Game();
+const rec = new Record();
 const ourStone = ref<Stone>();
 const view = useTemplateRef('view');
 
@@ -23,54 +23,63 @@ let ws: WebSocket | undefined;
 
 /** Sends the message on the WebSocket connection. */
 function send(msg: ClientMessage) {
-  if (ws!.readyState != WebSocket.OPEN)
-    return window.alert('Connection closed, please refresh the page.');
-  ClientMessage.serialize(msg).then(buf => ws!.send(buf));
+  ClientMessage.serialize(msg).then(buf => {
+    if (!ws || ws.readyState != WebSocket.OPEN)
+      return window.alert('Connection closed, please refresh the page.');
+    ws.send(buf);
+  });
 }
 
-/** Saves the game to local storage. */
+/** Saves the record to local storage. */
 function save() {
-  let buf = Base64.fromUint8Array(game.serialize(true));
-  localStorage.setItem("game", buf);
+  let buf = encodeBase64(rec.serialize(true));
+  localStorage.setItem("record", buf);
 }
 
 function onMove(pos: [] | [Point] | [Point, Point]) {
-  let move: Move;
-  if (pos.length == 0) {
-    move = { kind: MoveKind.Pass };
-  } else {
-    move = { kind: MoveKind.Stone, pos };
-  }
-
   if (ws) {
-    send({ kind: MessageKind.Move, move });
+    let msg: ClientMessage;
+    if (pos.length == 0) {
+      msg = { kind: MessageKind.Pass };
+    } else {
+      msg = { kind: MessageKind.Place, pos };
+    }
+
+    send(msg);
   } else {
-    game.makeMove(move);
+    let move: Move;
+    if (pos.length == 0) {
+      move = { kind: MoveKind.Pass };
+    } else {
+      move = { kind: MoveKind.Stone, pos };
+    }
+
+    rec.makeMove(move);
     save();
 
-    ourStone.value = game.turn();
+    ourStone.value = rec.turn();
     view.value!.draw();
   }
 }
 
 function onUndo() {
   if (ws) {
-    send({ kind: MessageKind.Retract });
+    send({ kind: MessageKind.RequestRetract });
   } else {
-    game.undoMove();
+    rec.undoMove();
     save();
 
-    ourStone.value = game.turn();
+    ourStone.value = rec.turn();
     view.value!.draw();
   }
 }
 
 function onRedo() {
   if (!ws) {
-    game.redoMove();
+    rec.redoMove();
     save();
 
-    ourStone.value = game.turn();
+    ourStone.value = rec.turn();
     view.value!.draw();
   }
 }
@@ -119,18 +128,18 @@ function setGameId(id: string) {
   ourStone.value = undefined;
 
   if (id == '') {
-    game.clear();
+    rec.clear();
     return view.value!.draw();
   }
 
   if (id == 'local') {
-    let encodedGame = localStorage.getItem('game');
-    if (encodedGame) {
-      game.assign(Game.deserialize(Base64.toUint8Array(encodedGame), true));
+    let encodedRec = localStorage.getItem('record');
+    if (encodedRec) {
+      rec.assign(Record.deserialize(decodeBase64(encodedRec), 0, true));
     } else {
-      game.clear();
+      rec.clear();
     }
-    ourStone.value = game.turn();
+    ourStone.value = rec.turn();
     return view.value!.draw();
   }
 
@@ -146,8 +155,13 @@ function connect(initMsg: ClientMessage) {
 }
 
 function onMessage(e: MessageEvent) {
-  let buf = new Uint8Array(e.data);
-  let msg = ServerMessage.deserialize(buf);
+  let buf = new Uint8Array(e.data), msg;
+  try {
+    msg = ServerMessage.deserialize(buf);
+  } catch (e) {
+    ws!.close();
+    return;
+  }
 
   switch (msg.kind) {
     case MessageKind.Started:
@@ -155,18 +169,24 @@ function onMessage(e: MessageEvent) {
       if (msg.gameId)
         history.pushState(null, "", '#' + msg.gameId);
       break;
-    case MessageKind.Game:
-      game.assign(msg.game);
+    case MessageKind.Record:
+      rec.assign(msg.rec);
       view.value!.draw();
       if (!ourStone.value) show(joinDialog.value!);
       break;
     case MessageKind.Move:
-      game.makeMove(msg.move);
+      rec.makeMove(msg.move);
       view.value!.draw();
       break;
     case MessageKind.Retract:
-      game.undoMove();
+      rec.undoMove();
       view.value!.draw();
+      break;
+    case MessageKind.RequestDraw:
+      // TODO.
+      break;
+    case MessageKind.RequestRetract:
+      // TODO.
       break;
   }
 }
@@ -191,7 +211,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <GameView :game="game" :our-stone="ourStone" :disabled="openDialog != undefined" ref="view" @move="onMove"
+  <GameView :rec="rec" :our-stone="ourStone" :disabled="openDialog != undefined" ref="view" @move="onMove"
     @undo="onUndo" @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
