@@ -27,24 +27,24 @@ impl Axis {
     ];
 
     /// Returns the unit vector in the direction of the axis.
-    pub fn unit_vector(self) -> (i32, i32) {
+    pub fn unit_vector(self) -> (i16, i16) {
         [(1, 0), (1, 1), (0, 1), (1, -1)][self as usize]
     }
 }
 
 /// Maps an integer to a natural number.
-fn zigzag_encode(n: i32) -> u32 {
-    ((n << 1) ^ (n >> 31)) as u32
+fn zigzag_encode(n: i16) -> u16 {
+    ((n << 1) ^ (n >> 15)) as u16
 }
 
 /// Maps a natural number to an integer (undoes `zigzag_encode`).
-fn zigzag_decode(n: u32) -> i32 {
-    ((n >> 1) ^ (n & 1).wrapping_neg()) as i32
+fn zigzag_decode(n: u16) -> i16 {
+    ((n >> 1) ^ (n & 1).wrapping_neg()) as i16
 }
 
 /// Maps two natural numbers to one.
-fn elegant_pair(x: u32, y: u32) -> u64 {
-    let (x, y) = (x as u64, y as u64);
+fn elegant_pair(x: u16, y: u16) -> u32 {
+    let (x, y) = (x as u32, y as u32);
     if x < y {
         y * y + x
     } else {
@@ -53,13 +53,13 @@ fn elegant_pair(x: u32, y: u32) -> u64 {
 }
 
 /// Maps one natural number to two (undoes `elegant_pair`).
-fn elegant_unpair(z: u64) -> (u32, u32) {
-    let s = z.isqrt();
+fn elegant_unpair(z: u32) -> (u16, u16) {
+    let s = (z as f64).sqrt() as u32;
     let t = z - s * s;
     if t < s {
-        (t as u32, s as u32)
+        (t as u16, s as u16)
     } else {
-        (s as u32, (t - s) as u32)
+        (s as u16, (t - s) as u16)
     }
 }
 
@@ -67,24 +67,24 @@ fn elegant_unpair(z: u64) -> (u32, u32) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Point {
     /// The horizontal coordinate.
-    pub x: i32,
+    pub x: i16,
     /// The vertical coordinate.
-    pub y: i32,
+    pub y: i16,
 }
 
 impl Point {
     /// Creates a point with the given coordinates.
-    pub fn new(x: i32, y: i32) -> Self {
+    pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
 
     /// Maps the point to a natural number.
-    pub fn index(self) -> u64 {
+    pub fn index(self) -> u32 {
         elegant_pair(zigzag_encode(self.x), zigzag_encode(self.y))
     }
 
     /// Maps a natural number to a point (undoes `index`).
-    pub fn from_index(i: u64) -> Self {
+    pub fn from_index(i: u32) -> Self {
         let (x, y) = elegant_unpair(i);
         Self::new(zigzag_decode(x), zigzag_decode(y))
     }
@@ -101,7 +101,7 @@ impl Point {
 
     /// Deserializes a point from a buffer.
     pub fn deserialize(buf: &mut &[u8]) -> Option<Self> {
-        buf.get_u64_varint().ok().map(Self::from_index)
+        buf.get_u32_varint().ok().map(Self::from_index)
     }
 }
 
@@ -144,12 +144,12 @@ impl Stone {
 }
 
 /// Allows room for extension. Equals (2^7-11^2).
-const MOVE_STONE_OFFSET: u64 = 7;
+const MOVE_STONE_OFFSET: u32 = 7;
 
-const MOVE_PASS: u64 = 0;
-const MOVE_WIN: u64 = 1;
-const MOVE_DRAW: u64 = 2;
-const MOVE_RESIGN: u64 = 3;
+const MOVE_PASS: u32 = 0;
+const MOVE_WIN: u32 = 1;
+const MOVE_DRAW: u32 = 2;
+const MOVE_RESIGN: u32 = 3;
 
 /// A move made by one player or both players.
 #[derive(Debug, Clone, Copy)]
@@ -180,7 +180,7 @@ impl Move {
             Self::Stone(fst, snd) => {
                 for pos in iter::once(fst).chain(snd) {
                     let x = pos.index() + MOVE_STONE_OFFSET;
-                    buf.put_u64_varint(x);
+                    buf.put_u32_varint(x);
                 }
                 if snd.is_none() && !compact {
                     buf.put_u8(MOVE_PASS as u8);
@@ -189,7 +189,7 @@ impl Move {
             Self::Pass => buf.put_u8(MOVE_PASS as u8),
             Self::Win(pos) => {
                 buf.put_u8(MOVE_WIN as u8);
-                buf.put_u64_varint(pos.index());
+                buf.put_u32_varint(pos.index());
             }
             Self::Draw => buf.put_u8(MOVE_DRAW as u8),
             Self::Resign(stone) => {
@@ -203,7 +203,7 @@ impl Move {
     ///
     /// If `first`, eagerly returns a 1-stone move.
     pub fn deserialize(buf: &mut &[u8], first: bool) -> Option<Self> {
-        let x = buf.get_u64_varint().ok()?;
+        let x = buf.get_u32_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
             let fst = Point::from_index(x - MOVE_STONE_OFFSET);
             if first || !buf.has_remaining() {
@@ -211,7 +211,7 @@ impl Move {
             }
 
             let mut snd = None;
-            let x = buf.get_u64_varint().ok()?;
+            let x = buf.get_u32_varint().ok()?;
             if x >= MOVE_STONE_OFFSET {
                 snd = Some(Point::from_index(x - MOVE_STONE_OFFSET));
             } else if x != MOVE_PASS {

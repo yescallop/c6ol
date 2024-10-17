@@ -6,7 +6,7 @@ A web app for playing [Connect6] games online.
 
 ## Setup
 
-Install Node.js v20.14+ and nightly Rust.
+Install Node.js v20.14+ and Rust.
 
 ```sh
 git clone https://github.com/yescallop/c6ol

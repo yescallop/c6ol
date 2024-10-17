@@ -297,5 +297,5 @@ async fn host_game(
     }
     let _ = manage_cmd_tx.send(ManageCommand::Cleanup(id)).await;
 
-    tracing::debug!("game ended: {}", id.escape_ascii())
+    tracing::debug!("game ended: {}", id.escape_ascii());
 }

@@ -7,10 +7,19 @@
     missing_docs,
     nonstandard_style,
     rust_2018_idioms,
-    clippy::use_self
+    clippy::checked_conversions,
+    clippy::if_not_else,
+    clippy::ignored_unit_patterns,
+    clippy::map_unwrap_or,
+    clippy::missing_errors_doc,
+    // clippy::must_use_candidate,
+    // clippy::redundant_closure_for_method_calls,
+    clippy::semicolon_if_nothing_returned,
+    clippy::single_match_else,
+    clippy::redundant_else,
+    clippy::use_self,
 )]
 #![forbid(unsafe_code)]
-#![feature(isqrt)]
 
 pub mod game;
 pub mod manager;
