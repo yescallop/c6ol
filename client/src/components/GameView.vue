@@ -3,11 +3,12 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { MoveKind, Point, Record, Stone } from '@/game';
 import { encodeBase64Url } from '@std/encoding/base64url';
 
-const { rec, ourStone, disabled } = defineProps<{
+const { rec, disabled } = defineProps<{
   rec: Record;
-  ourStone?: Stone;
   disabled: boolean;
 }>();
+
+let ourStone: Stone | undefined;
 
 const emit = defineEmits<{
   menu: [];
@@ -17,14 +18,21 @@ const emit = defineEmits<{
 }>();
 
 defineExpose({
-  draw: () => {
+  draw() {
     phantom = tentative = undefined;
     draw();
-  }
+  },
+  get stone(): Stone | undefined {
+    return ourStone;
+  },
+  set stone(stone: Stone | undefined) {
+    ourStone = stone;
+  },
 });
 
 const BOARD_COLOR = '#ffcc66';
-const CURSOR_COLOR = 'darkred';
+const CURSOR_COLOR_ACTIVE = 'darkred';
+const CURSOR_COLOR_INACTIVE = 'grey';
 
 // Divide `gridSize` by the following ratios to get the corresponding lengths.
 
@@ -662,7 +670,7 @@ function draw() {
     let inOffset = offset - ctx.lineWidth / 2;
     let outOffset = offset + side;
 
-    ctx.strokeStyle = CURSOR_COLOR;
+    ctx.strokeStyle = ourTurn() ? CURSOR_COLOR_ACTIVE : CURSOR_COLOR_INACTIVE;
     ctx.beginPath();
     for (let [dx, dy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
       ctx.moveTo(x + inOffset * dx, y + offset * dy);

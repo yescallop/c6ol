@@ -16,7 +16,6 @@ const gameId = ref('');
 const passcode = ref('');
 
 const rec = new Record();
-const ourStone = ref<Stone>();
 const view = useTemplateRef('view');
 
 let ws: WebSocket | undefined;
@@ -55,7 +54,7 @@ function onMove(pos: [] | [Point] | [Point, Point]) {
     rec.makeMove(move);
     save();
 
-    ourStone.value = rec.turn();
+    view.value!.stone = rec.turn();
     view.value!.draw();
   }
 }
@@ -67,7 +66,7 @@ function onUndo() {
     rec.undoMove();
     save();
 
-    ourStone.value = rec.turn();
+    view.value!.stone = rec.turn();
     view.value!.draw();
   }
 }
@@ -77,7 +76,7 @@ function onRedo() {
     rec.redoMove();
     save();
 
-    ourStone.value = rec.turn();
+    view.value!.stone = rec.turn();
     view.value!.draw();
   }
 }
@@ -123,7 +122,7 @@ function setGameId(id: string) {
     ws = undefined;
   }
 
-  ourStone.value = undefined;
+  view.value!.stone = undefined;
 
   if (id == '') {
     rec.clear();
@@ -137,7 +136,7 @@ function setGameId(id: string) {
     } else {
       rec.clear();
     }
-    ourStone.value = rec.turn();
+    view.value!.stone = rec.turn();
     return view.value!.draw();
   }
 
@@ -163,14 +162,15 @@ function onMessage(e: MessageEvent) {
 
   switch (msg.kind) {
     case MessageKind.Started:
-      ourStone.value = msg.stone;
+      view.value!.stone = msg.stone;
+      view.value!.draw();
       if (msg.gameId)
         history.pushState(null, "", '#' + msg.gameId);
       break;
     case MessageKind.Record:
       rec.assign(msg.rec);
       view.value!.draw();
-      if (!ourStone.value) show(joinDialog.value!);
+      if (!view.value!.stone) show(joinDialog.value!);
       break;
     case MessageKind.Move:
       rec.makeMove(msg.move);
@@ -209,8 +209,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <GameView :rec="rec" :our-stone="ourStone" :disabled="openDialog != undefined" ref="view" @move="onMove"
-    @undo="onUndo" @redo="onRedo" />
+  <GameView :rec="rec" :disabled="openDialog != undefined" ref="view" @move="onMove" @undo="onUndo" @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
