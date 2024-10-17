@@ -225,8 +225,18 @@ impl GameState {
 
         let action = match msg {
             Msg::Start(_) | Msg::Join(_) => return,
-            Msg::Place(fst, snd) => Action::Move(Move::Stone(fst, snd)),
-            Msg::Pass => Action::Move(Move::Pass),
+            Msg::Place(fst, snd) => {
+                if self.rec.turn() != stone {
+                    return;
+                }
+                Action::Move(Move::Stone(fst, snd))
+            }
+            Msg::Pass => {
+                if self.rec.turn() != stone {
+                    return;
+                }
+                Action::Move(Move::Pass)
+            }
             Msg::ClaimWin(pos) => Action::Move(Move::Win(pos)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
             Msg::RequestDraw => {
@@ -257,20 +267,22 @@ impl GameState {
             }
         };
 
-        match action {
+        let msg = match action {
             Action::Move(mov) => {
                 if !self.rec.make_move(mov) {
                     return;
                 }
-                let _ = self.msg_tx.send(ServerMessage::Move(mov));
+                ServerMessage::Move(mov)
             }
             Action::Retract => {
                 self.rec.undo_move();
-                let _ = self.msg_tx.send(ServerMessage::Retract);
+                ServerMessage::Retract
             }
-        }
+        };
+
         self.req_draw = None;
         self.req_retract = None;
+        let _ = self.msg_tx.send(msg);
     }
 }
 
