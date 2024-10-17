@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, useTemplateRef } from 'vue';
 import GameView from './components/GameView.vue';
-import { Move, MoveKind, Point, Record, Stone } from './game';
+import { Move, MoveKind, Point, Record } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
 import { decodeBase64, encodeBase64 } from '@std/encoding/base64';
 
@@ -29,8 +29,8 @@ function send(msg: ClientMessage) {
 
 /** Saves the record to local storage. */
 function save() {
-  let buf = encodeBase64(rec.serialize(true));
-  localStorage.setItem("record", buf);
+  const buf = encodeBase64(rec.serialize(true));
+  localStorage.setItem('record', buf);
 }
 
 function onMove(pos: [] | [Point] | [Point, Point]) {
@@ -90,7 +90,7 @@ function show(dialog: HTMLDialogElement) {
 function onDialogClose() {
   if (!openDialog.value) return;
 
-  let dialog = openDialog.value;
+  const dialog = openDialog.value;
 
   if (dialog == mainMenuDialog.value) {
     if (dialog.returnValue == 'online')
@@ -130,7 +130,7 @@ function setGameId(id: string) {
   }
 
   if (id == 'local') {
-    let encodedRec = localStorage.getItem('record');
+    const encodedRec = localStorage.getItem('record');
     if (encodedRec) {
       rec.assign(Record.deserialize(decodeBase64(encodedRec), 0, true));
     } else {
@@ -145,17 +145,18 @@ function setGameId(id: string) {
 
 function connect(initMsg: ClientMessage) {
   ws = new WebSocket('ws://' + document.location.host + '/ws');
-  ws.binaryType = "arraybuffer";
+  ws.binaryType = 'arraybuffer';
   ws.onopen = () => send(initMsg);
   ws.onclose = () => window.alert('Connection closed, please refresh the page.');
   ws.onmessage = onMessage;
 }
 
 function onMessage(e: MessageEvent) {
-  let buf = new Uint8Array(e.data), msg;
+  let msg;
   try {
-    msg = ServerMessage.deserialize(buf);
+    msg = ServerMessage.deserialize(new Uint8Array(e.data));
   } catch (e) {
+    console.error(e);
     ws!.close();
     return;
   }
@@ -165,7 +166,7 @@ function onMessage(e: MessageEvent) {
       view.value!.stone = msg.stone;
       view.value!.draw();
       if (msg.gameId)
-        history.pushState(null, "", '#' + msg.gameId);
+        history.pushState(null, '', '#' + msg.gameId);
       break;
     case MessageKind.Record:
       rec.assign(msg.rec);
@@ -190,7 +191,7 @@ function onMessage(e: MessageEvent) {
 }
 
 function onHashChange() {
-  let dialog = openDialog.value;
+  const dialog = openDialog.value;
   if (dialog) {
     openDialog.value = undefined;
     dialog.close();

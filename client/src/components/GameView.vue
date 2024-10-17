@@ -83,7 +83,7 @@ let viewSize = 15;
 //
 // The following are board positions.
 
-let viewCenter = new Point(0, 0);
+const viewCenter = new Point(0, 0);
 // The user can *hit* a cursor by clicking the view or pressing Space or Enter.
 let cursor: Point | undefined;
 let phantom: Point | undefined;
@@ -91,14 +91,14 @@ let tentative: Point | undefined;
 
 interface Pointer {
   /** The `pointerdown` event fired when the pointer became active. */
-  down: PointerEvent,
+  down: PointerEvent;
   /**
    * Last event fired about the pointer.
    * Can be `pointerenter`, `pointermove`, or `pointerdown`.
    */
-  last: PointerEvent,
+  last: PointerEvent;
   /** Board position the pointer was at when it became active. */
-  boardPosOnDown: Point,
+  boardPosOnDown: Point;
 }
 
 /**
@@ -107,7 +107,7 @@ interface Pointer {
  * A pointer is added to this map on a `pointerdown` event,
  * and removed on a `pointerup` or `pointerleave` event.
  */
-let downPointers = new Map<number, Pointer>();
+const downPointers = new Map<number, Pointer>();
 /** Set as the current `viewSize` when a 2-pointer gesture begins. */
 let prevViewSize: number;
 
@@ -144,23 +144,23 @@ let viewState = ViewState.Calm;
 
 /** Resizes the canvas to fit its container. */
 function resizeCanvas() {
-  let rect = canvasContainer.value!.getBoundingClientRect();
-  let newSize = Math.min(rect.width, rect.height);
+  const rect = canvasContainer.value!.getBoundingClientRect();
+  const newSize = Math.min(rect.width, rect.height);
   if (newSize == size) return;
 
   size = newSize;
   gridSize = size / (viewSize + 1);
 
-  let c = canvas.value!;
+  const c = canvas.value!;
   c.style.width = c.style.height = size + 'px';
 
   // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio
-  let dpr = window.devicePixelRatio;
+  const dpr = window.devicePixelRatio;
   c.width = c.height = size * dpr;
   ctx.scale(dpr, dpr);
 
   draw();
-};
+}
 
 /** Tests if a view position is out of view. */
 function outOfView(x: number, y: number): boolean {
@@ -169,20 +169,21 @@ function outOfView(x: number, y: number): boolean {
 
 /** Converts a canvas position to view position, testing if it is out of view. */
 function canvasToViewPos(x: number, y: number): [Point, boolean] {
-  x = Math.round(x / gridSize) - 1, y = Math.round(y / gridSize) - 1;
+  x = Math.round(x / gridSize) - 1;
+  y = Math.round(y / gridSize) - 1;
   return [new Point(x, y), outOfView(x, y)];
 }
 
 /** Converts a view position to board position. */
 function viewToBoardPos(p: Point): Point {
-  let x = p.x - (viewSize >>> 1) + viewCenter.x;
-  let y = p.y - (viewSize >>> 1) + viewCenter.y;
+  const x = p.x - (viewSize >>> 1) + viewCenter.x;
+  const y = p.y - (viewSize >>> 1) + viewCenter.y;
   return new Point(x, y);
 }
 
 /** Converts a canvas position to board position, testing if it is out of view. */
 function canvasToBoardPos(x: number, y: number): [Point, boolean] {
-  let [p, out] = canvasToViewPos(x, y);
+  const [p, out] = canvasToViewPos(x, y);
   return [viewToBoardPos(p), out];
 }
 
@@ -198,11 +199,11 @@ enum ClampTo {
 
 /** Converts a board position to view position, restricting it to the given area. */
 function boardToViewPos(p: Point, clampTo = ClampTo.InsideAndBorder): [Point, boolean] {
-  let x = p.x + (viewSize >>> 1) - viewCenter.x;
-  let y = p.y + (viewSize >>> 1) - viewCenter.y;
-  let out = outOfView(x, y);
+  const x = p.x + (viewSize >>> 1) - viewCenter.x;
+  const y = p.y + (viewSize >>> 1) - viewCenter.y;
+  const out = outOfView(x, y);
 
-  let [min, max] = clampTo == ClampTo.Inside ? [0, viewSize - 1] : [-1, viewSize];
+  const [min, max] = clampTo == ClampTo.Inside ? [0, viewSize - 1] : [-1, viewSize];
   return [new Point(clamp(x, min, max), clamp(y, min, max)), out];
 }
 
@@ -250,7 +251,7 @@ function hitCursor() {
 /** Restricts the cursor to the inside of the view. */
 function clampCursor() {
   if (!cursor) return;
-  let [p, out] = boardToViewPos(cursor, ClampTo.Inside);
+  const [p, out] = boardToViewPos(cursor, ClampTo.Inside);
   if (out) cursor = viewToBoardPos(p);
 }
 
@@ -261,13 +262,14 @@ function clampCursor() {
  * Returns whether the view center is changed.
  */
 function followBoardPosOnDown(): boolean {
-  let [pointer] = downPointers.values();
-  let p0 = pointer.boardPosOnDown;
-  let [p,] = canvasToBoardPos(pointer.last.offsetX, pointer.last.offsetY);
+  const [pointer] = downPointers.values();
+  const p0 = pointer.boardPosOnDown;
+  const [p] = canvasToBoardPos(pointer.last.offsetX, pointer.last.offsetY);
 
-  let dx = p.x - p0.x, dy = p.y - p0.y;
+  const dx = p.x - p0.x, dy = p.y - p0.y;
   if (dx != 0 || dy != 0) {
-    viewCenter.x -= dx, viewCenter.y -= dy;
+    viewCenter.x -= dx;
+    viewCenter.y -= dy;
     return true;
   }
   return false;
@@ -275,13 +277,12 @@ function followBoardPosOnDown(): boolean {
 
 /** Moves the cursor to the pointer position, or removes it when out of view. */
 function updateCursor(e: MouseEvent, noDraw = false) {
-  let p: Point | undefined, out;
-  [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
-  if (out) p = undefined;
+  const [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
+  const newCursor = out ? undefined : p;
 
   // Draw if the cursor should appear, move, or disappear.
-  let shouldDraw = !noDraw && !Point.equal(p, cursor);
-  cursor = p;
+  const shouldDraw = !noDraw && !Point.equal(newCursor, cursor);
+  cursor = newCursor;
   if (shouldDraw) draw();
 }
 
@@ -392,19 +393,23 @@ function onKeyDown(e: KeyboardEvent) {
 
   const DIRECTION_OFFSETS = [[0, -1], [-1, 0], [0, 1], [1, 0]];
 
-  let [dx, dy] = DIRECTION_OFFSETS[direction];
+  const [dx, dy] = DIRECTION_OFFSETS[direction];
   if (e.code.startsWith('K') /* Key */) {
     if (!cursor) {
       // Put a cursor at the view center if there is no cursor.
       cursor = viewCenter.copy();
     } else {
-      cursor.x += dx, cursor.y += dy;
+      cursor.x += dx;
+      cursor.y += dy;
       // If the cursor is going out of view, adjust the view center to keep up.
-      if (boardToViewPos(cursor)[1] /* out */)
-        viewCenter.x += dx, viewCenter.y += dy;
+      if (boardToViewPos(cursor)[1] /* out */) {
+        viewCenter.x += dx;
+        viewCenter.y += dy;
+      }
     }
   } else {
-    viewCenter.x += dx, viewCenter.y += dy;
+    viewCenter.x += dx;
+    viewCenter.y += dy;
     // Restrict the cursor so that it doesn't go out of view.
     clampCursor();
   }
@@ -418,7 +423,7 @@ function onWheel(e: WheelEvent) {
 
 /** Handles `pointerdown` events. */
 function onPointerDown(e: PointerEvent) {
-  let [p,] = canvasToBoardPos(e.offsetX, e.offsetY);
+  const [p] = canvasToBoardPos(e.offsetX, e.offsetY);
   downPointers.set(e.pointerId, { down: e, last: e, boardPosOnDown: p });
 
   if (downPointers.size == 2) {
@@ -445,7 +450,7 @@ function onPointerUp(e: PointerEvent) {
   }
   if (e.button != 0) return;
 
-  let [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
+  const [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
   if (!out) {
     cursor = p;
     hitCursor();
@@ -465,7 +470,7 @@ function onPointerUp(e: PointerEvent) {
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
 function onHover(e: PointerEvent) {
-  let pointer = downPointers.get(e.pointerId);
+  const pointer = downPointers.get(e.pointerId);
   if (pointer) pointer.last = e;
 
   if (downPointers.size == 0) {
@@ -478,9 +483,9 @@ function onHover(e: PointerEvent) {
       draw();
     }
   } else if (downPointers.size == 2) {
-    let [p1, p2] = [...downPointers.values()];
+    const [p1, p2] = [...downPointers.values()];
 
-    let distDiff = dist(p1.last, p2.last) - dist(p1.down, p2.down);
+    const distDiff = dist(p1.last, p2.last) - dist(p1.down, p2.down);
 
     let newViewSize = prevViewSize - ((distDiff / DIST_FOR_PINCH_ZOOM) << 1);
     if (newViewSize < 1) newViewSize = 1;
@@ -493,7 +498,7 @@ function onHover(e: PointerEvent) {
   } else if (downPointers.size == 3) {
     if (viewState == ViewState.Retracted) return;
 
-    for (let p of downPointers.values()) {
+    for (const p of downPointers.values()) {
       if (dist(p.last, p.down) < DIST_FOR_SWIPE_RETRACT) return;
     }
 
@@ -508,14 +513,14 @@ function onPointerLeave(e: PointerEvent) {
   if (downPointers.size == 0) viewState = ViewState.Calm;
 
   // Draw if the cursor should disappear.
-  let shouldDraw = cursor != undefined;
+  const shouldDraw = cursor != undefined;
   cursor = undefined;
   if (shouldDraw) draw();
 }
 
 /** Draws a circle at a view position with the given radius. */
 function drawCircle(p: Point, r: number) {
-  let [x, y] = viewToCanvasPos(p);
+  const [x, y] = viewToCanvasPos(p);
   ctx.beginPath();
   ctx.arc(x, y, r, 0, 2 * Math.PI);
   ctx.fill();
@@ -523,7 +528,7 @@ function drawCircle(p: Point, r: number) {
 
 /** Draws the view. */
 function draw() {
-  console.log("draw");
+  console.log('draw');
   // Draw the board background.
   ctx.fillStyle = BOARD_COLOR;
   ctx.fillRect(0, 0, size, size);
@@ -534,7 +539,7 @@ function draw() {
   // Draw the solid lines inside the view.
   ctx.beginPath();
   for (let i = 1; i <= viewSize; i++) {
-    let pos = gridSize * i;
+    const pos = gridSize * i;
     ctx.moveTo(gridSize, pos);
     ctx.lineTo(size - gridSize, pos);
     ctx.moveTo(pos, gridSize);
@@ -542,13 +547,13 @@ function draw() {
   }
   ctx.stroke();
 
-  let lineSeg = gridSize / LINE_DASH_RATIO;
+  const lineSeg = gridSize / LINE_DASH_RATIO;
 
   // Draw the dashed lines outside the view.
   ctx.beginPath();
   ctx.setLineDash([lineSeg, lineSeg]);
   for (let i = 1; i <= viewSize; i++) {
-    let pos = gridSize * i;
+    const pos = gridSize * i;
     ctx.moveTo(0, pos);
     ctx.lineTo(gridSize, pos);
     ctx.moveTo(size - gridSize, pos);
@@ -562,27 +567,27 @@ function draw() {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  let dotRadius = gridSize / DOT_RADIUS_RATIO;
+  const dotRadius = gridSize / DOT_RADIUS_RATIO;
 
   // Draw the board origin.
-  let origin = new Point(0, 0);
+  const origin = new Point(0, 0);
   let [p, out] = boardToViewPos(origin);
   if (!out && !rec.stoneAt(origin)) {
     ctx.fillStyle = 'black';
     drawCircle(p, dotRadius);
   }
 
-  let moves = rec.moves(), moveIndex = rec.moveIndex();
-  let stoneRadius = gridSize / STONE_RADIUS_RATIO;
+  const moves = rec.moves(), moveIndex = rec.moveIndex();
+  const stoneRadius = gridSize / STONE_RADIUS_RATIO;
   // We project the out-of-view stones onto the view border,
   // and stores the indexes of resulting points in this set.
-  let outIndexes = new Set<number>();
+  const outIndexes = new Set<number>();
 
   // Draw the stones.
   for (let i = 0; i < moveIndex; i++) {
-    let move = moves[i];
+    const move = moves[i];
     if (move.kind != MoveKind.Stone) continue;
-    let stone = Record.turnAt(i);
+    const stone = Record.turnAt(i);
 
     for (let p of move.pos) {
       [p, out] = boardToViewPos(p);
@@ -601,9 +606,9 @@ function draw() {
   outIndexes.forEach(i => drawCircle(Point.fromIndex(i), stoneRadius));
 
   // Draw the previous move.
-  let prevMove = rec.prevMove();
+  const prevMove = rec.prevMove();
   if (prevMove) {
-    let prevStone = Record.turnAt(moveIndex - 1);
+    const prevStone = Record.turnAt(moveIndex - 1);
     switch (prevMove.kind) {
       case MoveKind.Stone:
         ctx.fillStyle = prevStone == Stone.Black ? 'white' : 'black';
@@ -615,7 +620,7 @@ function draw() {
       case MoveKind.Pass:
         ctx.globalAlpha = PASS_OPACITY;
 
-        let fontSize = size / PASS_FONT_SIZE_RATIO;
+        const fontSize = size / PASS_FONT_SIZE_RATIO;
         ctx.font = `${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -654,25 +659,25 @@ function draw() {
     ctx.fillStyle = ourStone == Stone.Black ? 'black' : 'white';
     drawCircle(p, stoneRadius);
 
-    let [x, y] = viewToCanvasPos(p);
+    const [x, y] = viewToCanvasPos(p);
     ctx.fillStyle = ourStone == Stone.Black ? 'white' : 'black';
     ctx.fillRect(x - dotRadius, y - dotRadius, dotRadius * 2, dotRadius * 2);
   }
 
   // Draw the cursor.
   if (cursor && ([p, out] = boardToViewPos(cursor), !out)) {
-    let [x, y] = viewToCanvasPos(p);
+    const [x, y] = viewToCanvasPos(p);
 
     ctx.lineWidth = gridSize / CURSOR_LINE_WIDTH_RATIO;
 
-    let offset = gridSize / CURSOR_OFFSET_RATIO;
-    let side = gridSize / CURSOR_SIDE_RATIO;
-    let inOffset = offset - ctx.lineWidth / 2;
-    let outOffset = offset + side;
+    const offset = gridSize / CURSOR_OFFSET_RATIO;
+    const side = gridSize / CURSOR_SIDE_RATIO;
+    const inOffset = offset - ctx.lineWidth / 2;
+    const outOffset = offset + side;
 
     ctx.strokeStyle = ourTurn() ? CURSOR_COLOR_ACTIVE : CURSOR_COLOR_INACTIVE;
     ctx.beginPath();
-    for (let [dx, dy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, -1], [-1, 1]]) {
       ctx.moveTo(x + inOffset * dx, y + offset * dy);
       ctx.lineTo(x + outOffset * dx, y + offset * dy);
       ctx.moveTo(x + offset * dx, y + inOffset * dy);
@@ -690,8 +695,8 @@ function draw() {
 function onCopy(e: ClipboardEvent) {
   if (disabled) return;
 
-  let uri = 'c6:' + encodeBase64Url(rec.serialize(true)) + ';';
-  e.clipboardData!.setData("text/plain", uri);
+  const uri = 'c6:' + encodeBase64Url(rec.serialize(true)) + ';';
+  e.clipboardData!.setData('text/plain', uri);
   // `preventDefault` is required for the change to take effect.
   e.preventDefault();
 }

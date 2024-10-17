@@ -1,5 +1,5 @@
-import { concat } from "@std/bytes/concat";
-import { decodeVarint32, encodeVarint } from "@std/encoding/varint";
+import { concat } from '@std/bytes/concat';
+import { decodeVarint32, encodeVarint } from '@std/encoding/varint';
 
 /** An axis on the board. */
 export enum Axis {
@@ -41,8 +41,8 @@ function elegantPair(x: number, y: number): number {
 
 /** Maps one natural number to two (undoes `elegantPair`).  */
 function elegantUnpair(z: number): [number, number] {
-  let s = Math.floor(Math.sqrt(z));
-  let t = z - s * s;
+  const s = Math.floor(Math.sqrt(z));
+  const t = z - s * s;
   return t < s ? [t, s] : [s, t - s];
 }
 
@@ -64,13 +64,13 @@ export class Point {
 
   /** Maps a natural number to a point (undoes `index`). */
   static fromIndex(i: number): Point {
-    let [x, y] = elegantUnpair(i);
+    const [x, y] = elegantUnpair(i);
     return new Point(zigzagDecode(x), zigzagDecode(y));
   }
 
   /** Returns the adjacent point in the direction of the axis. */
   adjacent(axis: Axis, forward: boolean): Point {
-    let [dx, dy] = Axis.unitVector(axis);
+    const [dx, dy] = Axis.unitVector(axis);
     if (forward) {
       return new Point(this.x + dx, this.y + dy);
     } else {
@@ -96,7 +96,7 @@ export class Point {
 
   /** Deserializes a point from a buffer. */
   static deserialize(buf: Uint8Array, offset: number): [Point, number] {
-    let [x, i] = decodeVarint32(buf, offset);
+    const [x, i] = decodeVarint32(buf, offset);
     return [Point.fromIndex(x), i];
   }
 }
@@ -162,20 +162,20 @@ export type Move = {
 export namespace Move {
   /** Tests if the move is an ending move. */
   export function isEnding(move: Move): boolean {
-    let kind = move.kind;
+    const kind = move.kind;
     return kind == MoveKind.Win || kind == MoveKind.Draw || kind == MoveKind.Resign;
   }
 
   /**
    * Serializes a move to a buffer.
-   * 
+   *
    * If `compact`, omits the pass after a 1-stone move.
    */
   export function serialize(move: Move, buf: Uint8Array[], compact: boolean) {
     switch (move.kind) {
       case MoveKind.Stone:
-        for (let pos of move.pos) {
-          let x = pos.index() + MOVE_STONE_OFFSET;
+        for (const pos of move.pos) {
+          const x = pos.index() + MOVE_STONE_OFFSET;
           buf.push(encodeVarint(x)[0]);
         }
         if (move.pos.length == 1 && !compact)
@@ -197,7 +197,7 @@ export namespace Move {
 
   /**
    * Deserializes a move from a buffer.
-   * 
+   *
    * If `first`, eagerly returns a 1-stone move.
    */
   export function deserialize(buf: Uint8Array, offset: number, first: boolean): [Move, number] {
@@ -226,7 +226,7 @@ export namespace Move {
       case MoveKind.Resign:
         if (i >= buf.length)
           throw new RangeError('expected stone');
-        let stone = Stone.fromNumber(buf[i++]);
+        const stone = Stone.fromNumber(buf[i++]);
         return [{ kind: MoveKind.Resign, stone }, i];
       case MoveKind.Pass:
       case MoveKind.Draw:
@@ -294,7 +294,7 @@ export class Record {
 
   /** Tests if the game is ended. */
   isEnded(): boolean {
-    let prev = this.prevMove();
+    const prev = this.prevMove();
     return prev != undefined && Move.isEnding(prev);
   }
 
@@ -324,11 +324,11 @@ export class Record {
     if (move.kind == MoveKind.Stone) {
       if (this.idx == 0 && move.pos.length != 1)
         return false;
-      for (let pos of move.pos)
+      for (const pos of move.pos)
         if (this.map.has(pos.index())) return false;
 
-      let stone = this.turn();
-      for (let pos of move.pos)
+      const stone = this.turn();
+      for (const pos of move.pos)
         this.map.set(pos.index(), stone);
     } else if (move.kind == MoveKind.Win) {
       if (!this.findWinRow(move.pos))
@@ -343,25 +343,25 @@ export class Record {
 
   /** Undoes the previous move (if any). */
   undoMove(): Move | undefined {
-    let prev = this.prevMove();
+    const prev = this.prevMove();
     if (!prev) return;
     this.idx--;
 
     if (prev.kind == MoveKind.Stone)
-      for (let pos of prev.pos)
+      for (const pos of prev.pos)
         this.map.delete(pos.index());
     return prev;
   }
 
   /** Redoes the next move (if any). */
   redoMove(): Move | undefined {
-    let next = this.nextMove();
+    const next = this.nextMove();
     if (!next) return;
     this.idx++;
 
-    let stone = this.turn();
+    const stone = this.turn();
     if (next.kind == MoveKind.Stone)
-      for (let pos of next.pos)
+      for (const pos of next.pos)
         this.map.set(pos.index(), stone);
     return next;
   }
@@ -369,7 +369,7 @@ export class Record {
   /** Jumps to the given move index by undoing or redoing moves. */
   jump(index: number): boolean {
     if (index > this.mov.length) return false;
-    let diff = this.idx - index;
+    const diff = this.idx - index;
     if (diff > 0) {
       for (let i = 0; i < diff; i++)
         this.undoMove();
@@ -382,11 +382,11 @@ export class Record {
 
   /** Scans the row through a position in the direction of the axis. */
   scanRow(pos: Point, axis: Axis): [Row, number] {
-    let stone = this.stoneAt(pos);
+    const stone = this.stoneAt(pos);
     if (!stone) return [{ start: pos, end: pos }, 0];
 
     let len = 1;
-    let scan = (cur: Point, forward: boolean) => {
+    const scan = (cur: Point, forward: boolean) => {
       let next = cur.adjacent(axis, forward);
       while (this.stoneAt(next) == stone) {
         len += 1;
@@ -396,15 +396,15 @@ export class Record {
       return cur;
     };
 
-    let start = scan(pos, false), end = scan(pos, true);
+    const start = scan(pos, false), end = scan(pos, true);
     return [{ start, end }, len];
   }
 
   /** Searches for a win row through the point. */
   findWinRow(pos: Point): Row | undefined {
     if (!this.stoneAt(pos)) return;
-    for (let axis of Axis.VALUES) {
-      let [row, len] = this.scanRow(pos, axis);
+    for (const axis of Axis.VALUES) {
+      const [row, len] = this.scanRow(pos, axis);
       if (len >= 6) return row;
     }
   }
@@ -415,8 +415,8 @@ export class Record {
    * If `all`, includes all moves prefixed with the current move index.
    */
   serialize(all: boolean): Uint8Array {
-    let buf = all ? [encodeVarint(this.idx)[0]] : [];
-    let end = all ? this.mov.length : this.idx;
+    const buf = all ? [encodeVarint(this.idx)[0]] : [];
+    const end = all ? this.mov.length : this.idx;
     for (let i = 0; i < end; i++)
       Move.serialize(this.mov[i], buf, i == 0);
     return concat(buf);
@@ -424,7 +424,8 @@ export class Record {
 
   /** Deserializes a record from a buffer. */
   static deserialize(buf: Uint8Array, offset: number, all: boolean): Record {
-    let rec = new Record(), index, i = offset;
+    const rec = new Record();
+    let index, i = offset;
     if (all) [index, i] = decodeVarint32(buf, i);
 
     while (i < buf.length) {

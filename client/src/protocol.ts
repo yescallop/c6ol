@@ -53,7 +53,7 @@ export type ClientMessage = {
 
 export namespace ClientMessage {
   export function serialize(msg: ClientMessage) {
-    let buf = [Uint8Array.of(msg.kind)];
+    const buf = [Uint8Array.of(msg.kind)];
     switch (msg.kind) {
       case MessageKind.Start:
         buf.push(new TextEncoder().encode(msg.passcode));
@@ -62,7 +62,7 @@ export namespace ClientMessage {
         buf.push(new TextEncoder().encode(msg.gameId));
         break;
       case MessageKind.Place:
-        for (let p of msg.pos) p.serialize(buf);
+        for (const p of msg.pos) p.serialize(buf);
         break;
       case MessageKind.ClaimWin:
         msg.pos.serialize(buf);
@@ -106,7 +106,8 @@ export namespace ServerMessage {
     let i = 0;
     if (i >= buf.length) throw new RangeError('empty message');
 
-    let kind = buf[i++], msg, stone;
+    const kind = buf[i++];
+    let msg, stone;
     switch (kind) {
       case MessageKind.Started:
         if (i >= buf.length) throw new RangeError('empty payload');
