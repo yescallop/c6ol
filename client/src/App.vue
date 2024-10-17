@@ -10,6 +10,7 @@ const openDialog = ref<HTMLDialogElement>();
 const mainMenuDialog = useTemplateRef('main-menu-dialog');
 const onlineMenuDialog = useTemplateRef('online-menu-dialog');
 const joinDialog = useTemplateRef('join-dialog');
+const closedDialog = useTemplateRef('closed-dialog');
 
 const onlineAction = ref('start');
 const gameId = ref('');
@@ -23,7 +24,7 @@ let ws: WebSocket | undefined;
 /** Sends the message on the WebSocket connection. */
 function send(msg: ClientMessage) {
   if (!ws || ws.readyState != WebSocket.OPEN)
-    return window.alert('Connection closed, please refresh the page.');
+    return onClose('Failed to send a message.');
   ws.send(ClientMessage.serialize(msg));
 }
 
@@ -110,6 +111,12 @@ function onDialogClose() {
     if (dialog.returnValue == 'join') {
       send({ kind: MessageKind.Start, passcode: passcode.value });
     }
+  } else if (dialog == closedDialog.value) {
+    if (dialog.returnValue == 'refresh') {
+      location.reload();
+    } else if (dialog.returnValue == 'menu') {
+      return show(mainMenuDialog.value!);
+    }
   }
 
   openDialog.value = undefined;
@@ -147,8 +154,17 @@ function connect(initMsg: ClientMessage) {
   ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => send(initMsg);
-  ws.onclose = () => window.alert('Connection closed, please refresh the page.');
+  ws.onclose = e => onClose(e.reason);
   ws.onmessage = onMessage;
+}
+
+const CLOSE_CODE_POLICY = 1008;
+
+const closedReason = ref('');
+
+function onClose(reason: string) {
+  closedReason.value = reason;
+  show(closedDialog.value!);
 }
 
 function onMessage(e: MessageEvent) {
@@ -157,7 +173,7 @@ function onMessage(e: MessageEvent) {
     msg = ServerMessage.deserialize(new Uint8Array(e.data));
   } catch (e) {
     console.error(e);
-    ws!.close();
+    ws!.close(CLOSE_CODE_POLICY, 'malformed message');
     return;
   }
 
@@ -216,7 +232,7 @@ onMounted(() => {
     <form method="dialog">
       <p><strong>Main Menu</strong></p>
       <div class="menu-btn-group">
-        <button>Play Offline</button>
+        <button value="offline">Play Offline</button>
         <button value="online">Play Online</button>
       </div>
     </form>
@@ -240,9 +256,9 @@ onMounted(() => {
           placeholder="10 number/letters" />
       </template>
       <div class="btn-group">
-        <button formnovalidate>Cancel</button>
         <button v-if="onlineAction == 'start'" value="start">Start</button>
         <button v-else value="join">Join</button>
+        <button formnovalidate>Cancel</button>
       </div>
     </form>
   </dialog>
@@ -254,8 +270,19 @@ onMounted(() => {
       <input type="text" id="passcode" v-model="passcode" autocomplete="on" required size="12"
         placeholder="Yours, not shared" />
       <div class="btn-group">
-        <button formnovalidate>View Only</button>
         <button value="join">Join</button>
+        <button formnovalidate>View Only</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog ref="closed-dialog" @close="onDialogClose">
+    <form method="dialog">
+      <p><strong>Disconnected</strong></p>
+      <p>{{ closedReason }}</p>
+      <div class="btn-group">
+        <button value="refresh">Refresh</button>
+        <button value="menu">Menu</button>
       </div>
     </form>
   </dialog>
@@ -321,7 +348,11 @@ input[type="text"] {
   width: 100%;
 }
 
-.btn-group button:not(:last-child) {
+.btn-group button:last-child {
   margin-right: 10px;
+}
+
+.btn-group button:first-child {
+  order: 1;
 }
 </style>

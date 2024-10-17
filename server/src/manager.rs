@@ -39,8 +39,11 @@ impl GameHandle {
     }
 
     async fn exec<T>(&self, cmd: GameCommand, rx: oneshot::Receiver<T>) -> T {
-        self.cmd_tx.send(cmd).await.unwrap();
-        rx.await.unwrap()
+        self.cmd_tx
+            .send(cmd)
+            .await
+            .expect("game task should be running");
+        rx.await.expect("game task should return a value")
     }
 
     /// Returns the game ID.
@@ -83,7 +86,7 @@ impl GameHandle {
         self.cmd_tx
             .send(GameCommand::Play(stone, msg))
             .await
-            .unwrap();
+            .expect("game task should be running");
     }
 }
 
@@ -113,8 +116,11 @@ impl GameManager {
     }
 
     async fn exec<T>(&self, cmd: ManageCommand, rx: oneshot::Receiver<T>) -> T {
-        self.cmd_tx.send(cmd).await.unwrap();
-        rx.await.unwrap()
+        self.cmd_tx
+            .send(cmd)
+            .await
+            .expect("game task should be running");
+        rx.await.expect("game task should return a value")
     }
 
     /// Creates a new game.
@@ -134,31 +140,33 @@ async fn manage_games(
     mut cmd_rx: mpsc::Receiver<ManageCommand>,
     cmd_tx: mpsc::Sender<ManageCommand>,
 ) {
-    let mut handles = HashMap::new();
+    let mut weak_handles = HashMap::new();
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             ManageCommand::New(resp_tx) => loop {
                 let id = rand_game_id();
-                if handles.contains_key(&id) {
+                if weak_handles.contains_key(&id) {
                     continue;
                 }
 
                 let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
-                handles.insert(id, game_cmd_tx.downgrade());
+                weak_handles.insert(id, game_cmd_tx.downgrade());
                 tokio::spawn(host_game(id, game_cmd_rx, cmd_tx.clone()));
 
                 let _ = resp_tx.send(GameHandle::new(id, game_cmd_tx));
                 break;
             },
             ManageCommand::Find(id, resp_tx) => {
-                let resp = handles
+                // There is a chance that all strong handles to the game have
+                // dropped and we have not yet received a `Cleanup` message.
+                let resp = weak_handles
                     .get(&id)
-                    .map(|tx| GameHandle::new(id, tx.upgrade().unwrap()));
+                    .and_then(|tx| tx.upgrade().map(|tx| GameHandle::new(id, tx)));
                 let _ = resp_tx.send(resp);
             }
             ManageCommand::Cleanup(id) => {
-                handles.remove(&id);
+                weak_handles.remove(&id);
             }
         }
     }
