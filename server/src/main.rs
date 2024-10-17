@@ -1,5 +1,6 @@
 use axum::{routing::get, Router};
 use c6ol_server::{handle_websocket_upgrade, manager::GameManager};
+use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -18,9 +19,15 @@ async fn main() {
         .with_state(GameManager::spawn())
         .fallback_service(ServeDir::new("../client/dist"));
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8086")
-        .await
-        .unwrap();
-    tracing::debug!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app).await.unwrap();
+    let listener_v4 = TcpListener::bind("0.0.0.0:8086").await.unwrap();
+    tracing::debug!("listening on {}", listener_v4.local_addr().unwrap());
+
+    let listener_v6 = TcpListener::bind("[::]:8086").await.unwrap();
+    tracing::debug!("listening on {}", listener_v6.local_addr().unwrap());
+
+    tokio::try_join!(
+        axum::serve(listener_v4, app.clone()),
+        axum::serve(listener_v6, app)
+    )
+    .unwrap();
 }

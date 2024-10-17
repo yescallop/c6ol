@@ -52,13 +52,11 @@ export type ClientMessage = {
 };
 
 export namespace ClientMessage {
-  export async function serialize(msg: ClientMessage): Promise<Uint8Array> {
+  export function serialize(msg: ClientMessage) {
     let buf = [Uint8Array.of(msg.kind)];
     switch (msg.kind) {
       case MessageKind.Start:
-        let pass = new TextEncoder().encode(msg.passcode);
-        let hash = await crypto.subtle.digest('SHA-256', pass);
-        buf.push(new Uint8Array(hash));
+        buf.push(new TextEncoder().encode(msg.passcode));
         break;
       case MessageKind.Join:
         buf.push(new TextEncoder().encode(msg.gameId));

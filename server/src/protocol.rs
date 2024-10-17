@@ -2,18 +2,18 @@
 
 use crate::game::{Move, Point, Record, Stone};
 use bytes::{Buf, BufMut};
+use std::mem;
 use strum::{EnumDiscriminants, FromRepr};
 
-const PASSCODE_SIZE: usize = 32;
 const GAME_ID_SIZE: usize = 10;
 
-/// The SHA-256 hash of a passcode.
-pub type Passcode = [u8; PASSCODE_SIZE];
+/// A passcode.
+pub type Passcode = Box<[u8]>;
 /// A game ID.
 pub type GameId = [u8; GAME_ID_SIZE];
 
 /// A client message.
-#[derive(Debug, Clone, Copy, EnumDiscriminants)]
+#[derive(Debug, Clone, EnumDiscriminants)]
 #[repr(u8)]
 #[strum_discriminants(derive(FromRepr), name(ClientMessageKind), vis(pub(self)))]
 pub enum ClientMessage {
@@ -36,15 +36,6 @@ pub enum ClientMessage {
     RequestRetract = 11,
 }
 
-fn get_u8s<const N: usize>(buf: &mut &[u8]) -> Option<[u8; N]> {
-    if buf.remaining() < N {
-        return None;
-    }
-    let mut arr = [0; N];
-    buf.copy_to_slice(&mut arr);
-    Some(arr)
-}
-
 impl ClientMessage {
     /// Deserializes a client message from a buffer.
     pub fn deserialize(mut buf: &[u8]) -> Option<Self> {
@@ -54,8 +45,8 @@ impl ClientMessage {
             return None;
         }
         let msg = match Kind::from_repr(buf.get_u8())? {
-            Kind::Start => Self::Start(get_u8s(&mut buf)?),
-            Kind::Join => Self::Join(get_u8s(&mut buf)?),
+            Kind::Start => Self::Start(Box::from(mem::take(&mut buf))),
+            Kind::Join => Self::Join(mem::take(&mut buf).try_into().ok()?),
             Kind::Place => {
                 let fst = Point::deserialize(&mut buf)?;
                 let snd = if buf.has_remaining() {

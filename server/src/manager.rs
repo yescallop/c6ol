@@ -4,7 +4,6 @@ use crate::{
     game::{Move, Record, Stone},
     protocol::{ClientMessage, GameId, Passcode, ServerMessage},
 };
-use constant_time_eq::constant_time_eq_n as hash_eq;
 use rand::{distributions::Alphanumeric, Rng};
 use std::{array, collections::HashMap, iter};
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -197,11 +196,11 @@ impl GameState {
     }
 
     fn authenticate(&mut self, pass: Passcode) -> Option<Stone> {
-        if let Some(pass_black) = self.pass_black {
-            if hash_eq(&pass, &pass_black) {
+        if let Some(pass_black) = &self.pass_black {
+            if pass == *pass_black {
                 Some(Stone::Black)
-            } else if let Some(pass_white) = self.pass_white {
-                if hash_eq(&pass, &pass_white) {
+            } else if let Some(pass_white) = &self.pass_white {
+                if pass == *pass_white {
                     Some(Stone::White)
                 } else {
                     None

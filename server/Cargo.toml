@@ -8,9 +8,8 @@ publish = false
 axum = { version = "0.7", features = ["ws"] }
 bytes = "1"
 bytes-varint = "1"
-constant_time_eq = "0.3"
 futures-util = "0.3"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.6", features = ["fs"] }
 rand = "0.8"
 strum = { version = "0.26", features = ["derive"] }

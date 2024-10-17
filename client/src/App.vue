@@ -23,11 +23,9 @@ let ws: WebSocket | undefined;
 
 /** Sends the message on the WebSocket connection. */
 function send(msg: ClientMessage) {
-  ClientMessage.serialize(msg).then(buf => {
-    if (!ws || ws.readyState != WebSocket.OPEN)
-      return window.alert('Connection closed, please refresh the page.');
-    ws.send(buf);
-  });
+  if (!ws || ws.readyState != WebSocket.OPEN)
+    return window.alert('Connection closed, please refresh the page.');
+  ws.send(ClientMessage.serialize(msg));
 }
 
 /** Saves the record to local storage. */
@@ -147,7 +145,7 @@ function setGameId(id: string) {
 }
 
 function connect(initMsg: ClientMessage) {
-  ws = new WebSocket('ws://' + document.location.hostname + ':8086/ws');
+  ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = "arraybuffer";
   ws.onopen = () => send(initMsg);
   ws.onclose = () => window.alert('Connection closed, please refresh the page.');
