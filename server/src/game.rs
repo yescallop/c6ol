@@ -117,7 +117,6 @@ pub struct Row {
 
 /// A stone on the board, either black or white.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
 pub enum Stone {
     /// The black stone.
     Black = 1,
