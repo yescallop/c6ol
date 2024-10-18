@@ -16,7 +16,7 @@ pub(crate) struct AppState {
 ///
 /// # Errors
 ///
-/// Returns `Err` if listening or serving failed.
+/// Returns `Err` if an error occurred when binding or serving.
 pub async fn run() -> io::Result<()> {
     tracing_subscriber::registry()
         .with(
@@ -30,7 +30,7 @@ pub async fn run() -> io::Result<()> {
     //
     // - All WebSocket handlers are cancelled. Shutdown messages are sent to clients.
     //   All `Game`s and `GameManager`s are dropped, except the ones in Axum servers.
-    // - Axum servers shut down, dropping the last `GameManager`s.
+    // - Axum servers shut down, dropping the remaining `GameManager`s.
     // - All game futures run to completion because no `Game`s are alive, followed by
     //   the game manager future because no `GameManager`s or game futures are alive.
     let (shutdown_tx, shutdown_rx) = shutdown::channel();

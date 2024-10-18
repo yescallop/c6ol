@@ -17,7 +17,7 @@ export namespace Axis {
   /** All axes on the board. */
   export const VALUES = [Axis.Horizontal, Axis.Diagonal, Axis.Vertical, Axis.AntiDiagonal];
 
-  /** Returns the unit vector in the direction of the axis. */
+  /** Returns the unit vector in the forward direction of the axis. */
   export function unitVector(axis: Axis): [number, number] {
     const VECTORS: [number, number][] = [[1, 0], [1, 1], [0, 1], [1, -1]];
     return VECTORS[axis];
@@ -68,7 +68,7 @@ export class Point {
     return new Point(zigzagDecode(x), zigzagDecode(y));
   }
 
-  /** Returns the adjacent point in the direction of the axis. */
+  /** Returns the adjacent point in the given direction. */
   adjacent(axis: Axis, forward: boolean): Point {
     const [dx, dy] = Axis.unitVector(axis);
     if (forward) {
@@ -147,7 +147,7 @@ export type Move = {
   // A pass made by the current player.
   kind: MoveKind.Pass;
 } | {
-  // A win claimed by any player.
+  // A winning row at the given position claimed by any player.
   kind: MoveKind.Win;
   pos: Point;
 } | {
@@ -380,7 +380,7 @@ export class Record {
     return true;
   }
 
-  /** Scans the row through a position in the direction of the axis. */
+  /** Scans the row through a position in both directions of an axis. */
   scanRow(pos: Point, axis: Axis): [Row, number] {
     const stone = this.stoneAt(pos);
     if (!stone) return [{ start: pos, end: pos }, 0];

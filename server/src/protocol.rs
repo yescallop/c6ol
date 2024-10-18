@@ -92,7 +92,7 @@ pub enum ServerMessage {
 }
 
 impl ServerMessage {
-    /// Serializes a server message to a new buffer.
+    /// Serializes the server message to a new buffer.
     pub fn serialize(self) -> Vec<u8> {
         let mut buf = vec![ServerMessageKind::from(&self) as u8];
         match self {

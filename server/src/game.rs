@@ -26,7 +26,7 @@ impl Axis {
         Self::AntiDiagonal,
     ];
 
-    /// Returns the unit vector in the direction of the axis.
+    /// Returns the unit vector in the forward direction of the axis.
     pub fn unit_vector(self) -> (i16, i16) {
         [(1, 0), (1, 1), (0, 1), (1, -1)][self as usize]
     }
@@ -89,7 +89,7 @@ impl Point {
         Self::new(zigzag_decode(x), zigzag_decode(y))
     }
 
-    /// Returns the adjacent point in the direction of the axis,
+    /// Returns the adjacent point in the given direction,
     /// or `None` if overflow occurred.
     pub fn adjacent(self, axis: Axis, forward: bool) -> Option<Self> {
         let (dx, dy) = axis.unit_vector();
@@ -158,7 +158,7 @@ pub enum Move {
     Stone(Point, Option<Point>),
     /// A pass made by the current player.
     Pass,
-    /// A win claimed by any player.
+    /// A winning row at the given position claimed by any player.
     Win(Point),
     /// A draw agreed by both players.
     Draw,
@@ -172,7 +172,7 @@ impl Move {
         matches!(self, Self::Win(_) | Self::Draw | Self::Resign(_))
     }
 
-    /// Serializes a move to a buffer.
+    /// Serializes the move to a buffer.
     ///
     /// If `compact`, omits the pass after a 1-stone move.
     pub fn serialize(self, buf: &mut Vec<u8>, compact: bool) {
@@ -394,7 +394,7 @@ impl Record {
         true
     }
 
-    /// Scans the row through a position in the direction of the axis.
+    /// Scans the row through a position in both directions of an axis.
     pub fn scan_row(&self, pos: Point, axis: Axis) -> (Row, u16) {
         let (start, end);
         let Some(stone) = self.stone_at(pos) else {
@@ -419,7 +419,7 @@ impl Record {
         (Row { start, end }, len)
     }
 
-    /// Searches for a win row through the point.
+    /// Searches for a win row through a position.
     pub fn find_win_row(&self, pos: Point) -> Option<Row> {
         let _ = self.stone_at(pos)?;
         for axis in Axis::VALUES {

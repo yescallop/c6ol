@@ -71,7 +71,7 @@ impl Game {
         self.stone
     }
 
-    /// Returns the assigned stone, if authenticated.
+    /// Returns the assigned stone, or `None` if the handle is unauthenticated.
     pub fn stone(&self) -> Option<Stone> {
         self.stone
     }
