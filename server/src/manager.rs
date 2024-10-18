@@ -1,17 +1,17 @@
-//! Game manager task.
+//! Game manager.
 
 use crate::{
     game::{Move, Record, Stone},
     protocol::{ClientMessage, GameId, Passcode, ServerMessage},
 };
 use rand::{distributions::Alphanumeric, Rng};
-use std::{array, collections::HashMap, iter};
+use std::{array, collections::HashMap, future::Future, iter};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// A subscription to a game.
 pub struct GameSubscription {
     /// The initial messages.
-    pub init_msgs: Vec<ServerMessage>,
+    pub init_msgs: Box<[ServerMessage]>,
     /// The receiver for future messages.
     pub msg_rx: broadcast::Receiver<ServerMessage>,
 }
@@ -22,14 +22,14 @@ enum GameCommand {
     Play(Stone, ClientMessage),
 }
 
-/// A handle to a game.
-pub struct GameHandle {
+/// A command handle to a game.
+pub struct Game {
     id: GameId,
     cmd_tx: mpsc::Sender<GameCommand>,
     stone: Option<Stone>,
 }
 
-impl GameHandle {
+impl Game {
     fn new(id: GameId, cmd_tx: mpsc::Sender<GameCommand>) -> Self {
         Self {
             id,
@@ -42,8 +42,8 @@ impl GameHandle {
         self.cmd_tx
             .send(cmd)
             .await
-            .expect("game task should be running");
-        rx.await.expect("game task should return a value")
+            .expect("command receiver should be alive");
+        rx.await.expect("command should return")
     }
 
     /// Returns the game ID.
@@ -86,90 +86,105 @@ impl GameHandle {
         self.cmd_tx
             .send(GameCommand::Play(stone, msg))
             .await
-            .expect("game task should be running");
+            .expect("command receiver should be alive");
     }
 }
 
 enum ManageCommand {
-    New(oneshot::Sender<GameHandle>),
-    Find(GameId, oneshot::Sender<Option<GameHandle>>),
-    Cleanup(GameId),
+    New(oneshot::Sender<Game>),
+    Find(GameId, oneshot::Sender<Option<Game>>),
 }
 
+/// Generates a random alphanumeric game ID.
 fn rand_game_id() -> GameId {
     let mut rng = rand::thread_rng();
     array::from_fn(|_| rng.sample(Alphanumeric))
 }
 
-/// A handle to a game manager task.
+/// Creates a game manager.
+///
+/// Returns a command handle to it and a future to run it.
+pub fn create() -> (GameManager, impl Future<Output = ()>) {
+    let (cmd_tx, cmd_rx) = mpsc::channel::<ManageCommand>(100);
+    (GameManager { cmd_tx }, manage_games(cmd_rx))
+}
+
+/// A command handle to a game manager.
 #[derive(Clone)]
 pub struct GameManager {
     cmd_tx: mpsc::Sender<ManageCommand>,
 }
 
 impl GameManager {
-    /// Spawns a game manager task and returns a handle to it.
-    pub fn spawn() -> Self {
-        let (cmd_tx, cmd_rx) = mpsc::channel::<ManageCommand>(100);
-        tokio::spawn(manage_games(cmd_rx, cmd_tx.clone()));
-        Self { cmd_tx }
-    }
-
     async fn exec<T>(&self, cmd: ManageCommand, rx: oneshot::Receiver<T>) -> T {
         self.cmd_tx
             .send(cmd)
             .await
-            .expect("game task should be running");
-        rx.await.expect("game task should return a value")
+            .expect("command receiver should be alive");
+        rx.await.expect("command should return")
     }
 
     /// Creates a new game.
-    pub async fn new_game(&self) -> GameHandle {
+    pub async fn new_game(&self) -> Game {
         let (tx, rx) = oneshot::channel();
         self.exec(ManageCommand::New(tx), rx).await
     }
 
     /// Searches for a game with the given ID.
-    pub async fn find_game(&self, id: GameId) -> Option<GameHandle> {
+    pub async fn find_game(&self, id: GameId) -> Option<Game> {
         let (tx, rx) = oneshot::channel();
         self.exec(ManageCommand::Find(id, tx), rx).await
     }
 }
 
-async fn manage_games(
-    mut cmd_rx: mpsc::Receiver<ManageCommand>,
-    cmd_tx: mpsc::Sender<ManageCommand>,
-) {
-    let mut weak_handles = HashMap::new();
+async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
+    tracing::debug!("game manager started");
 
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            ManageCommand::New(resp_tx) => loop {
-                let id = rand_game_id();
-                if weak_handles.contains_key(&id) {
-                    continue;
+    let mut games = HashMap::new();
+    let (cleanup_tx, mut cleanup_rx) = mpsc::channel(100);
+
+    loop {
+        tokio::select! {
+            opt = cmd_rx.recv() => {
+                let Some(cmd) = opt else {
+                    // All command senders are dropped.
+                    break;
+                };
+                match cmd {
+                    ManageCommand::New(resp_tx) => loop {
+                        let id = rand_game_id();
+                        if games.contains_key(&id) {
+                            continue;
+                        }
+
+                        let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
+                        games.insert(id, game_cmd_tx.downgrade());
+                        tokio::spawn(host_game(id, game_cmd_rx, cleanup_tx.clone()));
+
+                        let _ = resp_tx.send(Game::new(id, game_cmd_tx));
+                        break;
+                    },
+                    ManageCommand::Find(id, resp_tx) => {
+                        // There is a chance that we have not yet received a cleanup message.
+                        let resp = games
+                            .get(&id)
+                            .and_then(|tx| tx.upgrade().map(|tx| Game::new(id, tx)));
+                        let _ = resp_tx.send(resp);
+                    }
                 }
-
-                let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
-                weak_handles.insert(id, game_cmd_tx.downgrade());
-                tokio::spawn(host_game(id, game_cmd_rx, cmd_tx.clone()));
-
-                let _ = resp_tx.send(GameHandle::new(id, game_cmd_tx));
-                break;
-            },
-            ManageCommand::Find(id, resp_tx) => {
-                // There is a chance that all strong handles to the game have
-                // dropped and we have not yet received a `Cleanup` message.
-                let resp = weak_handles
-                    .get(&id)
-                    .and_then(|tx| tx.upgrade().map(|tx| GameHandle::new(id, tx)));
-                let _ = resp_tx.send(resp);
             }
-            ManageCommand::Cleanup(id) => {
-                weak_handles.remove(&id);
+            opt = cleanup_rx.recv() => {
+                let id = opt.expect("at least one sender should be alive");
+                games.remove(&id);
             }
         }
     }
+
+    // Wait for all game futures to complete.
+    drop(cleanup_tx);
+    while cleanup_rx.recv().await.is_some() {}
+
+    tracing::debug!("game manager stopped");
 }
 
 struct GameState {
@@ -296,14 +311,12 @@ impl GameState {
 
 async fn host_game(
     id: GameId,
-    mut game_cmd_rx: mpsc::Receiver<GameCommand>,
-    manage_cmd_tx: mpsc::Sender<ManageCommand>,
+    mut cmd_rx: mpsc::Receiver<GameCommand>,
+    cleanup_tx: mpsc::Sender<GameId>,
 ) {
     tracing::debug!("game started: {}", id.escape_ascii());
-
     let mut state = GameState::new();
-
-    while let Some(cmd) = game_cmd_rx.recv().await {
+    while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             GameCommand::Subscribe(resp_tx) => {
                 let _ = resp_tx.send(state.subscribe());
@@ -314,7 +327,7 @@ async fn host_game(
             GameCommand::Play(stone, msg) => state.play(stone, msg),
         }
     }
-    let _ = manage_cmd_tx.send(ManageCommand::Cleanup(id)).await;
-
+    // All command senders are dropped.
     tracing::debug!("game ended: {}", id.escape_ascii());
+    let _ = cleanup_tx.send(id).await;
 }

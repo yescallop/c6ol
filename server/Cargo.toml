@@ -9,7 +9,7 @@ axum = { version = "0.7", features = ["ws"] }
 bytes = "1"
 bytes-varint = "1"
 futures-util = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
 rand = "0.8"
 remain = "0.2"

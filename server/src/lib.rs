@@ -24,6 +24,8 @@
 pub mod game;
 pub mod manager;
 pub mod protocol;
+mod server;
+mod shutdown;
 mod ws;
 
-pub use ws::handle_websocket_upgrade;
+pub use server::run;

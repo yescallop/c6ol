@@ -3,6 +3,7 @@
 use crate::{
     manager::GameManager,
     protocol::{ClientMessage, ServerMessage},
+    server::AppState,
 };
 use axum::{
     extract::{
@@ -11,35 +12,41 @@ use axum::{
     },
     response::Response,
 };
-use futures_util::{future, stream, SinkExt, StreamExt, TryStreamExt};
+use futures_util::{future, SinkExt, StreamExt};
 use std::convert::Infallible;
+use tokio::sync::broadcast::error::RecvError;
 
 /// Handles a WebSocket upgrade.
 #[remain::check]
 pub async fn handle_websocket_upgrade(
     upgrade: WebSocketUpgrade,
-    State(manager): State<GameManager>,
+    State(state): State<AppState>,
 ) -> Response {
     upgrade.on_upgrade(|mut socket| async move {
-        // FIXME: Remove the else block when Rust 1.82 is out.
-        let Err(e) = handle_websocket(&mut socket, manager).await else {
-            return;
+        let err = tokio::select! {
+            res = handle_websocket(&mut socket, state.manager) => {
+                res.expect_err("must be an error")
+            }
+            () = state.shutdown_rx.recv() => {
+                Error::Shutdown
+            }
         };
 
         #[sorted]
-        let code = match &e {
+        let code = match &err {
             Error::Axum(_) => close_code::ERROR,
             Error::Closed => return,
             Error::GameNotFound => close_code::NORMAL,
             Error::Lagged => close_code::AGAIN,
             Error::MalformedMessage => close_code::POLICY,
+            Error::Shutdown => close_code::AWAY,
             Error::TextMessage => close_code::UNSUPPORTED,
             Error::UnexpectedMessage => close_code::POLICY,
             Error::WrongPasscode => close_code::NORMAL,
         };
         let msg = Message::Close(Some(CloseFrame {
             code,
-            reason: e.to_string().into(),
+            reason: err.to_string().into(),
         }));
         let _ = socket.send(msg).await;
     })
@@ -50,7 +57,7 @@ pub async fn handle_websocket_upgrade(
 enum Error {
     #[error("Axum error: {0}.")]
     Axum(#[from] axum::Error),
-    #[error("WebSocket closed")]
+    #[error("Connection closed.")]
     Closed,
     #[error("Game not found.")]
     GameNotFound,
@@ -58,6 +65,8 @@ enum Error {
     Lagged,
     #[error("Malformed message.")]
     MalformedMessage,
+    #[error("The server is going down.")]
+    Shutdown,
     #[error("Text message not supported.")]
     TextMessage,
     #[error("Unexpected message.")]
@@ -72,22 +81,22 @@ async fn handle_websocket(
     manager: GameManager,
 ) -> Result<Infallible, Error> {
     let mut socket = socket
-        .flat_map(|res| {
-            stream::iter(match res {
+        .filter_map(|res| {
+            future::ready(match res {
                 Ok(Message::Binary(data)) => match ClientMessage::deserialize(&data) {
                     Some(msg) => Some(Ok(msg)),
                     None => Some(Err(Error::MalformedMessage)),
                 },
                 Ok(Message::Text(_)) => Some(Err(Error::TextMessage)),
                 Ok(_) => None,
-                Err(e) => Some(Err(e.into())),
+                Err(err) => Some(Err(err.into())),
             })
         })
         .with(|msg: ServerMessage| future::ok::<_, axum::Error>(Message::Binary(msg.serialize())));
 
     let mut game;
 
-    match socket.try_next().await?.ok_or(Error::Closed)? {
+    match socket.next().await.ok_or(Error::Closed)?? {
         ClientMessage::Start(passcode) => {
             game = manager.new_game().await;
             game.authenticate(passcode)
@@ -114,13 +123,14 @@ async fn handle_websocket(
     loop {
         tokio::select! {
             res = sub.msg_rx.recv() => {
-                // The sender (in the game task) cannot have dropped
-                // because we're holding a handle to the game.
-                let msg = res.map_err(|_| Error::Lagged)?;
+                let msg = res.map_err(|err| match err {
+                    RecvError::Closed => Error::Shutdown,
+                    RecvError::Lagged(_) => Error::Lagged,
+                })?;
                 socket.send(msg).await?;
             }
-            res = socket.try_next() => {
-                let msg = res?.ok_or(Error::Closed)?;
+            opt = socket.next() => {
+                let msg = opt.ok_or(Error::Closed)??;
                 match msg {
                     ClientMessage::Start(passcode) if game.stone().is_none() => {
                         game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
