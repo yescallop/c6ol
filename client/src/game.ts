@@ -387,11 +387,10 @@ export class Record {
 
     let len = 1;
     const scan = (cur: Point, forward: boolean) => {
-      let next = cur.adjacent(axis, forward);
-      while (this.stoneAt(next) == stone) {
+      let next;
+      while (next = cur.adjacent(axis, forward), this.stoneAt(next) == stone) {
         len += 1;
         cur = next;
-        next = cur.adjacent(axis, forward);
       }
       return cur;
     };

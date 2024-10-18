@@ -89,14 +89,15 @@ impl Point {
         Self::new(zigzag_decode(x), zigzag_decode(y))
     }
 
-    /// Returns the adjacent point in the direction of the axis.
-    pub fn adjacent(self, axis: Axis, forward: bool) -> Self {
+    /// Returns the adjacent point in the direction of the axis,
+    /// or `None` if overflow occurred.
+    pub fn adjacent(self, axis: Axis, forward: bool) -> Option<Self> {
         let (dx, dy) = axis.unit_vector();
-        if forward {
-            Self::new(self.x + dx, self.y + dy)
+        Some(if forward {
+            Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?)
         } else {
-            Self::new(self.x - dx, self.y - dy)
-        }
+            Self::new(self.x.checked_sub(dx)?, self.y.checked_sub(dy)?)
+        })
     }
 
     /// Deserializes a point from a buffer.
@@ -395,7 +396,7 @@ impl Record {
     }
 
     /// Scans the row through a position in the direction of the axis.
-    pub fn scan_row(&self, pos: Point, axis: Axis) -> (Row, u32) {
+    pub fn scan_row(&self, pos: Point, axis: Axis) -> (Row, u16) {
         let (start, end);
         let Some(stone) = self.stone_at(pos) else {
             (start, end) = (pos, pos);
@@ -404,11 +405,13 @@ impl Record {
 
         let mut len = 1;
         let mut scan = |mut cur: Point, forward| {
-            let mut next = cur.adjacent(axis, forward);
-            while self.stone_at(next) == Some(stone) {
-                len += 1;
-                cur = next;
-                next = cur.adjacent(axis, forward);
+            while let Some(next) = cur.adjacent(axis, forward) {
+                if self.stone_at(next) == Some(stone) {
+                    len += 1;
+                    cur = next;
+                } else {
+                    break;
+                }
             }
             cur
         };
