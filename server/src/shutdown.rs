@@ -1,23 +1,24 @@
-use tokio::sync::watch;
+use std::sync::Arc;
+use tokio::sync::Notify;
 
-pub struct Sender(watch::Sender<()>);
+pub struct Sender(Arc<Notify>);
 
 impl Sender {
     pub fn send(self) {
-        let _ = self.0.send(());
+        self.0.notify_waiters();
     }
 }
 
 #[derive(Clone)]
-pub struct Receiver(watch::Receiver<()>);
+pub struct Receiver(Arc<Notify>);
 
 impl Receiver {
-    pub async fn recv(mut self) {
-        let _ = self.0.changed().await;
+    pub async fn recv(self) {
+        self.0.notified().await;
     }
 }
 
 pub fn channel() -> (Sender, Receiver) {
-    let (tx, rx) = watch::channel(());
-    (Sender(tx), Receiver(rx))
+    let notify = Arc::new(Notify::new());
+    (Sender(notify.clone()), Receiver(notify))
 }
