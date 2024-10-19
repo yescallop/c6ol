@@ -10,7 +10,7 @@ const openDialogs = reactive(new Set<HTMLDialogElement>());
 const mainMenuDialog = useTemplateRef('main-menu-dialog');
 const onlineMenuDialog = useTemplateRef('online-menu-dialog');
 const joinDialog = useTemplateRef('join-dialog');
-const closedDialog = useTemplateRef('closed-dialog');
+const connClosedDialog = useTemplateRef('conn-closed-dialog');
 
 const onlineAction = ref('start');
 const gameId = ref('');
@@ -24,7 +24,7 @@ let ws: WebSocket | undefined;
 /** Sends the message on the WebSocket connection. */
 function send(msg: ClientMessage) {
   if (!ws || ws.readyState != WebSocket.OPEN)
-    return onClose('Failed to send a message.');
+    return onClose();
   ws.send(ClientMessage.serialize(msg));
 }
 
@@ -113,7 +113,7 @@ function onDialogClose(e: Event) {
     if (ret == 'join') {
       send({ kind: MessageKind.Start, passcode: passcode.value });
     }
-  } else if (dialog == closedDialog.value) {
+  } else if (dialog == connClosedDialog.value) {
     if (ret == 'reconnect') {
       onHashChange();
     } else if (ret == 'menu') {
@@ -154,17 +154,27 @@ function connect(initMsg: ClientMessage) {
   ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => send(initMsg);
-  ws.onclose = e => onClose(e.reason);
+  ws.onclose = e => onClose(e.code, e.reason);
   ws.onmessage = onMessage;
 }
 
+const CLOSE_CODE_ABNORMAL = 1006;
 const CLOSE_CODE_POLICY = 1008;
 
-const closedReason = ref('');
+const connClosedReason = ref('');
 
-function onClose(reason: string) {
-  closedReason.value = reason;
-  show(closedDialog.value!);
+function onClose(code?: number, reason?: string) {
+  if (code != undefined && reason != undefined) {
+    if (reason == '') {
+      if (code == CLOSE_CODE_ABNORMAL) {
+        reason = 'Closed abnormally.';
+      } else {
+        reason = `Closed with code ${code}.`;
+      }
+    }
+    connClosedReason.value = reason;
+  }
+  show(connClosedDialog.value!);
 }
 
 function onMessage(e: MessageEvent) {
@@ -173,7 +183,7 @@ function onMessage(e: MessageEvent) {
     msg = ServerMessage.deserialize(new Uint8Array(e.data));
   } catch (e) {
     console.error(e);
-    ws!.close(CLOSE_CODE_POLICY, 'malformed message');
+    ws?.close(CLOSE_CODE_POLICY, 'Malformed message.');
     return;
   }
 
@@ -273,10 +283,10 @@ onMounted(() => {
     </form>
   </dialog>
 
-  <dialog ref="closed-dialog" @close="onDialogClose">
+  <dialog ref="conn-closed-dialog" @close="onDialogClose">
     <form method="dialog">
-      <p><strong>Disconnected</strong></p>
-      <p>{{ closedReason }}</p>
+      <p><strong>Connection Closed</strong></p>
+      <p>{{ connClosedReason }}</p>
       <div class="btn-group">
         <button value="reconnect">Reconnect</button>
         <button value="menu">Menu</button>
