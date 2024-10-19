@@ -6,7 +6,22 @@ use crate::{
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::{array, collections::HashMap, future::Future, iter};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::{
+    sync::{broadcast, mpsc, oneshot},
+    task::JoinSet,
+};
+
+/// Convenience macro for command execution.
+macro_rules! execute {
+    ($cmd_tx:expr, $variant:path, $($args:expr),*) => {{
+        let (tx, rx) = oneshot::channel();
+        $cmd_tx.send($variant(tx, $($args),*)).await.expect("receiver should be alive");
+        rx.await.expect("command should return")
+    }};
+    ($cmd_tx:expr, $cmd:expr) => {
+        $cmd_tx.send($cmd).await.expect("receiver should be alive")
+    };
+}
 
 /// A subscription to a game.
 pub struct GameSubscription {
@@ -18,7 +33,7 @@ pub struct GameSubscription {
 
 enum GameCommand {
     Subscribe(oneshot::Sender<GameSubscription>),
-    Authenticate(Passcode, oneshot::Sender<Option<Stone>>),
+    Authenticate(oneshot::Sender<Option<Stone>>, Passcode),
     Play(Stone, ClientMessage),
 }
 
@@ -38,14 +53,6 @@ impl Game {
         }
     }
 
-    async fn exec<T>(&self, cmd: GameCommand, rx: oneshot::Receiver<T>) -> T {
-        self.cmd_tx
-            .send(cmd)
-            .await
-            .expect("command receiver should be alive");
-        rx.await.expect("command should return")
-    }
-
     /// Returns the game ID.
     pub fn id(&self) -> GameId {
         self.id
@@ -53,8 +60,7 @@ impl Game {
 
     /// Subscribes to the game.
     pub async fn subscribe(&self) -> GameSubscription {
-        let (tx, rx) = oneshot::channel();
-        self.exec(GameCommand::Subscribe(tx), rx).await
+        execute!(self.cmd_tx, GameCommand::Subscribe,)
     }
 
     /// Attempts to authenticate with the given passcode.
@@ -66,8 +72,7 @@ impl Game {
     /// Panics if the handle is already authenticated.
     pub async fn authenticate(&mut self, passcode: Passcode) -> Option<Stone> {
         assert!(self.stone.is_none(), "already authenticated");
-        let (tx, rx) = oneshot::channel();
-        self.stone = self.exec(GameCommand::Authenticate(passcode, tx), rx).await;
+        self.stone = execute!(self.cmd_tx, GameCommand::Authenticate, passcode);
         self.stone
     }
 
@@ -83,16 +88,13 @@ impl Game {
     /// Panics if the handle is unauthenticated.
     pub async fn play(&self, msg: ClientMessage) {
         let stone = self.stone.expect("unauthenticated");
-        self.cmd_tx
-            .send(GameCommand::Play(stone, msg))
-            .await
-            .expect("command receiver should be alive");
+        execute!(self.cmd_tx, GameCommand::Play(stone, msg));
     }
 }
 
 enum ManageCommand {
     New(oneshot::Sender<Game>),
-    Find(GameId, oneshot::Sender<Option<Game>>),
+    Find(oneshot::Sender<Option<Game>>, GameId),
 }
 
 /// Generates a random alphanumeric game ID.
@@ -116,32 +118,22 @@ pub struct GameManager {
 }
 
 impl GameManager {
-    async fn exec<T>(&self, cmd: ManageCommand, rx: oneshot::Receiver<T>) -> T {
-        self.cmd_tx
-            .send(cmd)
-            .await
-            .expect("command receiver should be alive");
-        rx.await.expect("command should return")
-    }
-
     /// Creates a new game.
     pub async fn new_game(&self) -> Game {
-        let (tx, rx) = oneshot::channel();
-        self.exec(ManageCommand::New(tx), rx).await
+        execute!(self.cmd_tx, ManageCommand::New,)
     }
 
     /// Searches for a game with the given ID.
     pub async fn find_game(&self, id: GameId) -> Option<Game> {
-        let (tx, rx) = oneshot::channel();
-        self.exec(ManageCommand::Find(id, tx), rx).await
+        execute!(self.cmd_tx, ManageCommand::Find, id)
     }
 }
 
 async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
-    tracing::debug!("game manager started");
+    tracing::info!("game manager started");
 
-    let mut games = HashMap::new();
-    let (cleanup_tx, mut cleanup_rx) = mpsc::channel(100);
+    let mut game_cmd_txs = HashMap::new();
+    let mut game_tasks = JoinSet::new();
 
     loop {
         tokio::select! {
@@ -153,38 +145,40 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                 match cmd {
                     ManageCommand::New(resp_tx) => loop {
                         let id = rand_game_id();
-                        if games.contains_key(&id) {
+                        if game_cmd_txs.contains_key(&id) {
                             continue;
                         }
 
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
-                        games.insert(id, game_cmd_tx.downgrade());
-                        tokio::spawn(host_game(id, game_cmd_rx, cleanup_tx.clone()));
+                        game_cmd_txs.insert(id, game_cmd_tx.downgrade());
+                        game_tasks.spawn(host_game(id, game_cmd_rx));
 
                         let _ = resp_tx.send(Game::new(id, game_cmd_tx));
                         break;
                     },
-                    ManageCommand::Find(id, resp_tx) => {
-                        // There is a chance that we have not yet received a cleanup message.
-                        let resp = games
+                    ManageCommand::Find(resp_tx, id) => {
+                        // There is a chance that all senders have been dropped
+                        // but the game task has not finished yet.
+                        let resp = game_cmd_txs
                             .get(&id)
                             .and_then(|tx| tx.upgrade().map(|tx| Game::new(id, tx)));
                         let _ = resp_tx.send(resp);
                     }
                 }
             }
-            opt = cleanup_rx.recv() => {
-                let id = opt.expect("at least one sender should be alive");
-                games.remove(&id);
+            // When `join_next` returns `None`, `select!` will disable
+            // this branch and still wait on the other branch.
+            Some(res) = game_tasks.join_next() => {
+                let id = res.expect("game task should not panic");
+                game_cmd_txs.remove(&id);
             }
         }
     }
 
-    // Wait for all game futures to complete.
-    drop(cleanup_tx);
-    while cleanup_rx.recv().await.is_some() {}
+    // Wait for all game tasks to finish.
+    while game_tasks.join_next().await.is_some() {}
 
-    tracing::debug!("game manager stopped");
+    tracing::info!("game manager stopped");
 }
 
 struct GameState {
@@ -250,12 +244,14 @@ impl GameState {
             Msg::Start(_) | Msg::Join(_) => return,
             Msg::Place(fst, snd) => {
                 if self.rec.turn() != stone {
+                    // Not their turn.
                     return;
                 }
                 Action::Move(Move::Stone(fst, snd))
             }
             Msg::Pass => {
                 if self.rec.turn() != stone {
+                    // Not their turn.
                     return;
                 }
                 Action::Move(Move::Pass)
@@ -276,8 +272,8 @@ impl GameState {
                 Action::Move(Move::Draw)
             }
             Msg::RequestRetract => {
-                if !self.rec.has_past() || self.req_retract == Some(stone) {
-                    // No move in the past or duplicate request.
+                if self.req_retract == Some(stone) || !self.rec.has_past() {
+                    // Duplicate request or no moves in the past.
                     return;
                 }
                 if self.req_retract.is_none() {
@@ -293,41 +289,42 @@ impl GameState {
         let msg = match action {
             Action::Move(mov) => {
                 if !self.rec.make_move(mov) {
+                    // The move failed.
                     return;
                 }
                 ServerMessage::Move(mov)
             }
             Action::Retract => {
+                // We have checked that there is a previous move.
                 self.rec.undo_move();
                 ServerMessage::Retract
             }
         };
 
+        // Clear the requests.
         self.req_draw = None;
         self.req_retract = None;
         let _ = self.msg_tx.send(msg);
     }
 }
 
-async fn host_game(
-    id: GameId,
-    mut cmd_rx: mpsc::Receiver<GameCommand>,
-    cleanup_tx: mpsc::Sender<GameId>,
-) {
+async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) -> GameId {
     tracing::debug!("game started: {}", id.escape_ascii());
+
     let mut state = GameState::new();
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             GameCommand::Subscribe(resp_tx) => {
                 let _ = resp_tx.send(state.subscribe());
             }
-            GameCommand::Authenticate(pass, resp_tx) => {
+            GameCommand::Authenticate(resp_tx, pass) => {
                 let _ = resp_tx.send(state.authenticate(pass));
             }
             GameCommand::Play(stone, msg) => state.play(stone, msg),
         }
     }
+
     // All command senders are dropped.
     tracing::debug!("game ended: {}", id.escape_ascii());
-    let _ = cleanup_tx.send(id).await;
+    id
 }
