@@ -1,7 +1,8 @@
 use crate::{manager, shutdown, ws};
 use axum::{routing::get, Router};
-use std::io;
-use tokio::{net::TcpListener, signal};
+use futures_util::FutureExt;
+use std::{io, net::Ipv6Addr};
+use tokio::{net::TcpSocket, signal};
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -16,8 +17,8 @@ pub(crate) struct AppState {
 ///
 /// # Errors
 ///
-/// Returns `Err` if an error occurred when binding or serving.
-pub async fn run() -> io::Result<()> {
+/// Returns `Err` if an error occurred when listening or serving.
+pub async fn run(port: u16) -> io::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -51,18 +52,21 @@ pub async fn run() -> io::Result<()> {
         .with_state(app_state)
         .fallback_service(ServeDir::new("../client/dist"));
 
-    let listener_v4 = TcpListener::bind("0.0.0.0:8086").await?;
-    tracing::debug!("listening on {}", listener_v4.local_addr()?);
+    let listener = {
+        let socket = TcpSocket::new_v6()?;
+        socket2::SockRef::from(&socket).set_only_v6(false)?;
+        #[cfg(not(windows))]
+        socket.set_reuseaddr(true)?;
+        socket.bind((Ipv6Addr::UNSPECIFIED, port).into())?;
+        socket.listen(1024)?
+    };
+    tracing::debug!("listening on {}", listener.local_addr()?);
 
-    let listener_v6 = TcpListener::bind("[::]:8086").await?;
-    tracing::debug!("listening on {}", listener_v6.local_addr()?);
-
-    let ret = tokio::join!(
-        manager_fut,
-        axum::serve(listener_v4, app.clone()).with_graceful_shutdown(shutdown_rx.clone().recv()),
-        axum::serve(listener_v6, app).with_graceful_shutdown(shutdown_rx.recv()),
-    );
-    ret.1.or(ret.2)
+    tokio::try_join!(
+        manager_fut.map(Ok),
+        axum::serve(listener, app).with_graceful_shutdown(shutdown_rx.recv()),
+    )?;
+    Ok(())
 }
 
 async fn shutdown_signal() {

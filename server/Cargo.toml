@@ -2,6 +2,7 @@
 name = "c6ol-server"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.80"
 publish = false
 
 [dependencies]
@@ -13,6 +14,7 @@ tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
 rand = "0.8"
 remain = "0.2"
+socket2 = "0.5"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"

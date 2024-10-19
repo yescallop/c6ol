@@ -341,6 +341,7 @@ input[type="text"] {
 .btn-group {
   margin-top: 10px;
   display: flex;
+  flex-direction: row-reverse;
   justify-content: space-evenly;
 }
 
@@ -348,11 +349,7 @@ input[type="text"] {
   width: 100%;
 }
 
-.btn-group button:last-child {
-  margin-right: 10px;
-}
-
-.btn-group button:first-child {
-  order: 1;
+.btn-group button:not(:last-child) {
+  margin-left: 10px;
 }
 </style>
