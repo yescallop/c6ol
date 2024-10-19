@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, useTemplateRef } from 'vue';
+import { onMounted, reactive, ref, useTemplateRef } from 'vue';
 import GameView from './components/GameView.vue';
 import { Move, MoveKind, Point, Record } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
 import { decodeBase64, encodeBase64 } from '@std/encoding/base64';
 
-const openDialog = ref<HTMLDialogElement>();
+const openDialogs = reactive(new Set<HTMLDialogElement>());
 
 const mainMenuDialog = useTemplateRef('main-menu-dialog');
 const onlineMenuDialog = useTemplateRef('online-menu-dialog');
@@ -83,43 +83,43 @@ function onRedo() {
 }
 
 function show(dialog: HTMLDialogElement) {
-  openDialog.value = dialog;
+  openDialogs.add(dialog);
   dialog.returnValue = '';
   dialog.showModal();
 }
 
-function onDialogClose() {
-  if (!openDialog.value) return;
+function onDialogClose(e: Event) {
+  const dialog = e.target as HTMLDialogElement;
+  const ret = dialog.returnValue;
 
-  const dialog = openDialog.value;
+  openDialogs.delete(dialog);
+  if (ret == 'hashchange') return;
 
   if (dialog == mainMenuDialog.value) {
-    if (dialog.returnValue == 'online')
-      return show(onlineMenuDialog.value!);
-
-    location.hash = '#local';
+    if (ret == 'offline') {
+      location.hash = '#local';
+    } else if (ret == 'online') {
+      show(onlineMenuDialog.value!);
+    }
   } else if (dialog == onlineMenuDialog.value) {
-    if (dialog.returnValue == '')
-      return show(mainMenuDialog.value!);
-
-    if (dialog.returnValue == 'start') {
+    if (ret == 'start') {
       connect({ kind: MessageKind.Start, passcode: passcode.value });
-    } else if (dialog.returnValue == 'join') {
+    } else if (ret == 'join') {
       location.hash = '#' + gameId.value;
+    } else if (ret == '') {
+      show(mainMenuDialog.value!);
     }
   } else if (dialog == joinDialog.value) {
-    if (dialog.returnValue == 'join') {
+    if (ret == 'join') {
       send({ kind: MessageKind.Start, passcode: passcode.value });
     }
   } else if (dialog == closedDialog.value) {
-    if (dialog.returnValue == 'refresh') {
-      location.reload();
-    } else if (dialog.returnValue == 'menu') {
-      return show(mainMenuDialog.value!);
+    if (ret == 'reconnect') {
+      onHashChange();
+    } else if (ret == 'menu') {
+      location.hash = '';
     }
   }
-
-  openDialog.value = undefined;
 }
 
 function setGameId(id: string) {
@@ -207,11 +207,8 @@ function onMessage(e: MessageEvent) {
 }
 
 function onHashChange() {
-  const dialog = openDialog.value;
-  if (dialog) {
-    openDialog.value = undefined;
-    dialog.close();
-  }
+  for (const dialog of openDialogs)
+    dialog.close('hashchange');
 
   setGameId(location.hash.slice(1));
 
@@ -226,7 +223,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <GameView :rec="rec" :disabled="openDialog != undefined" ref="view" @move="onMove" @undo="onUndo" @redo="onRedo" />
+  <GameView :rec="rec" :disabled="openDialogs.size != 0" ref="view" @move="onMove" @undo="onUndo" @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
@@ -281,7 +278,7 @@ onMounted(() => {
       <p><strong>Disconnected</strong></p>
       <p>{{ closedReason }}</p>
       <div class="btn-group">
-        <button value="refresh">Refresh</button>
+        <button value="reconnect">Reconnect</button>
         <button value="menu">Menu</button>
       </div>
     </form>
@@ -315,8 +312,12 @@ p {
   text-align: center;
 }
 
+.menu-btn-group {
+  display: flex;
+  flex-direction: column;
+}
+
 .menu-btn-group button {
-  display: block;
   width: 100%;
 }
 
