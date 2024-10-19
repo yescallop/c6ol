@@ -6,7 +6,7 @@ use tower_http::services::ServeDir;
 
 /// Shared state for WebSocket handlers.
 #[derive(Clone)]
-pub(crate) struct AppState {
+pub struct AppState {
     pub shutdown_rx: shutdown::Receiver,
     pub manager: manager::GameManager,
 }

@@ -3,7 +3,7 @@ use tokio::sync::watch;
 pub struct Sender(watch::Sender<()>);
 
 impl Sender {
-    pub(crate) fn send(self) {
+    pub fn send(self) {
         let _ = self.0.send(());
     }
 }
