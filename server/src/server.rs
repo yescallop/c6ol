@@ -33,7 +33,7 @@ pub async fn run(
     let (shutdown_tx, shutdown_rx) = shutdown::channel();
     tokio::spawn(async move {
         shutdown_signal.await;
-        shutdown_tx.send();
+        shutdown_tx.request();
     });
 
     let (manager, manager_fut) = manager::create();
@@ -50,7 +50,7 @@ pub async fn run(
         .fallback_service(ServeDir::new(static_root));
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_rx.recv())
+        .with_graceful_shutdown(shutdown_rx.requested())
         .await?;
 
     manager_task.await.expect("manager task should not panic");

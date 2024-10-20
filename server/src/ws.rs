@@ -27,7 +27,7 @@ pub async fn handle_websocket_upgrade(
             res = handle_websocket(&mut socket, state.manager) => {
                 res.expect_err("must be an error")
             }
-            () = state.shutdown_rx.recv() => {
+            () = state.shutdown_rx.requested() => {
                 Error::Shutdown
             }
         };
