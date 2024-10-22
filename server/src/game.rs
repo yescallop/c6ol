@@ -1,7 +1,7 @@
 //! Connect6 game logic, record, and serialization.
 
 use bytes::{Buf, BufMut};
-use bytes_varint::{VarIntSupport, VarIntSupportMut};
+use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
 use std::{collections::HashMap, iter};
 
 /// An axis on the board.
@@ -102,7 +102,7 @@ impl Point {
 
     /// Deserializes a point from a buffer.
     pub fn deserialize(buf: &mut &[u8]) -> Option<Self> {
-        buf.get_u32_varint().ok().map(Self::from_index)
+        buf.try_get_u32_varint().ok().map(Self::from_index)
     }
 }
 
@@ -203,7 +203,7 @@ impl Move {
     ///
     /// If `first`, eagerly returns a 1-stone move.
     pub fn deserialize(buf: &mut &[u8], first: bool) -> Option<Self> {
-        let x = buf.get_u32_varint().ok()?;
+        let x = buf.try_get_u32_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
             let fst = Point::from_index(x - MOVE_STONE_OFFSET);
             if first || !buf.has_remaining() {
@@ -211,7 +211,7 @@ impl Move {
             }
 
             let mut snd = None;
-            let x = buf.get_u32_varint().ok()?;
+            let x = buf.try_get_u32_varint().ok()?;
             if x >= MOVE_STONE_OFFSET {
                 snd = Some(Point::from_index(x - MOVE_STONE_OFFSET));
             } else if x != MOVE_PASS {
@@ -226,10 +226,7 @@ impl Move {
                 Some(Self::Win(pos))
             }
             MOVE_RESIGN => {
-                if !buf.has_remaining() {
-                    return None;
-                }
-                let stone = Stone::from_u8(buf.get_u8())?;
+                let stone = Stone::from_u8(buf.try_get_u8().ok()?)?;
                 Some(Self::Resign(stone))
             }
             MOVE_PASS => Some(Self::Pass),
@@ -448,7 +445,7 @@ impl Record {
     pub fn deserialize(buf: &mut &[u8], all: bool) -> Option<Self> {
         let mut rec = Self::new();
         let index = if all {
-            Some(usize::try_from(buf.get_u64_varint().ok()?).ok()?)
+            buf.try_get_usize_varint().ok()
         } else {
             None
         };

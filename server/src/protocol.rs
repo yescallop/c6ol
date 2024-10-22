@@ -2,6 +2,7 @@
 
 use crate::game::{Move, Point, Record, Stone};
 use bytes::{Buf, BufMut};
+use bytes_varint::try_get_fixed::TryGetFixedSupport;
 use std::mem;
 use strum::{EnumDiscriminants, FromRepr};
 
@@ -41,10 +42,7 @@ impl ClientMessage {
     pub fn deserialize(mut buf: &[u8]) -> Option<Self> {
         use ClientMessageKind as Kind;
 
-        if !buf.has_remaining() {
-            return None;
-        }
-        let msg = match Kind::from_repr(buf.get_u8())? {
+        let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
             Kind::Start => Self::Start(Box::from(mem::take(&mut buf))),
             Kind::Join => Self::Join(mem::take(&mut buf).try_into().ok()?),
             Kind::Place => {
