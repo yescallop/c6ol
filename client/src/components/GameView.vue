@@ -264,6 +264,7 @@ function clampCursor() {
 function followBoardPosOnDown(): boolean {
   const [pointer] = downPointers.values();
   const p0 = pointer.boardPosOnDown;
+  // FIXME: This does not work correctly when zooming with Firefox.
   const [p] = canvasToBoardPos(pointer.last.offsetX, pointer.last.offsetY);
 
   const dx = p.x - p0.x, dy = p.y - p0.y;
@@ -743,6 +744,7 @@ onBeforeUnmount(() => {
     Touch input by default triggers browser behavior such as refresh and zooming.
     Disable it to make the pointer events fire.
   */
+  /* FIXME: This does not work correctly with Safari. */
   touch-action: none;
 }
 </style>

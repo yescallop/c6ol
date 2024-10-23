@@ -96,7 +96,7 @@ function onDialogClose(e: Event) {
   if (ret == 'hashchange') return;
 
   if (dialog == mainMenuDialog.value) {
-    if (ret == 'offline') {
+    if (ret == 'offline' || ret == '') {
       location.hash = '#local';
     } else if (ret == 'online') {
       show(onlineMenuDialog.value!);
@@ -116,7 +116,7 @@ function onDialogClose(e: Event) {
   } else if (dialog == connClosedDialog.value) {
     if (ret == 'reconnect') {
       onHashChange();
-    } else if (ret == 'menu') {
+    } else if (ret == 'menu' || ret == '') {
       location.hash = '';
     }
   }
@@ -254,12 +254,12 @@ onMounted(() => {
       </div>
       <template v-if="onlineAction == 'start'">
         <label for="passcode">Passcode: </label>
-        <input type="text" id="passcode" v-model="passcode" autocomplete="on" required size="12"
+        <input type="text" id="passcode" v-model="passcode" autocomplete="on" required
           placeholder="Yours, not shared" />
       </template>
       <template v-else>
         <label for="game-id">Game ID: </label>
-        <input type="text" id="game-id" v-model="gameId" pattern="[0-9A-Za-z]{10}" autocomplete="on" required size="12"
+        <input type="text" id="game-id" v-model="gameId" pattern="[0-9A-Za-z]{10}" autocomplete="on" required
           placeholder="10 number/letters" />
       </template>
       <div class="btn-group">
@@ -300,6 +300,7 @@ body {
   /* Remove the default 8px margin from body. */
   margin: 0;
   background-color: #ffcc66;
+  font-family: sans-serif;
 }
 
 /* Use `svh` to prevent overflow on mobile due to the hidable address bar. */
@@ -322,13 +323,20 @@ p {
   text-align: center;
 }
 
+input[type="text"] {
+  text-align: center;
+  /* This is more consistent than the `size` attribute. */
+  width: 8em;
+}
+
+button {
+  width: 100%;
+  user-select: none;
+}
+
 .menu-btn-group {
   display: flex;
   flex-direction: column;
-}
-
-.menu-btn-group button {
-  width: 100%;
 }
 
 .menu-btn-group button:not(:last-child) {
@@ -345,19 +353,12 @@ p {
   margin-right: 10px;
 }
 
-input[type="text"] {
-  text-align: center;
-}
-
 .btn-group {
   margin-top: 10px;
   display: flex;
+  /* Show the default button (first in tree order) on the right. */
   flex-direction: row-reverse;
   justify-content: space-evenly;
-}
-
-.btn-group button {
-  width: 100%;
 }
 
 .btn-group button:not(:last-child) {

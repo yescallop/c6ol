@@ -25,7 +25,7 @@ async fn main() -> io::Result<()> {
         socket.bind((Ipv6Addr::UNSPECIFIED, BIND_PORT).into())?;
         socket.listen(1024)?
     };
-    tracing::info!("listening on {}", listener.local_addr()?);
+    tracing::info!("serving at http://localhost:{BIND_PORT}/");
 
     c6ol_server::run(listener, STATIC_ROOT, shutdown_signal()).await
 }
