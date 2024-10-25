@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, useTemplateRef } from 'vue';
+import { onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
 import GameView from './components/GameView.vue';
 import { Move, MoveKind, Point, Record, Stone } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
@@ -17,10 +17,14 @@ const onlineAction = ref('start');
 const gameId = ref('');
 const passcode = ref('');
 
-const rec = new Record();
-const view = useTemplateRef('view');
+const record = reactive(new Record());
 const ourStone = ref<Stone>();
-const turn = ref(Stone.Black);
+
+watch(record, () => {
+  if (gameId.value == 'local') {
+    ourStone.value = record.turn();
+  }
+});
 
 let ws: WebSocket | undefined;
 
@@ -33,13 +37,8 @@ function send(msg: ClientMessage) {
 
 /** Saves the record to local storage. */
 function save() {
-  const buf = encodeBase64(rec.serialize(true));
+  const buf = encodeBase64(record.serialize(true));
   localStorage.setItem('record', buf);
-}
-
-function updateOfflineTurn() {
-  view.value!.stone = turn.value = rec.turn();
-  view.value!.update();
 }
 
 function onMenu() {
@@ -64,9 +63,8 @@ function onMove(pos: [] | [Point] | [Point, Point]) {
       move = { kind: MoveKind.Stone, pos };
     }
 
-    rec.makeMove(move);
+    record.makeMove(move);
     save();
-    updateOfflineTurn();
   }
 }
 
@@ -74,17 +72,15 @@ function onUndo() {
   if (ws) {
     send({ kind: MessageKind.RequestRetract });
   } else {
-    rec.undoMove();
+    record.undoMove();
     save();
-    updateOfflineTurn();
   }
 }
 
 function onRedo() {
   if (!ws) {
-    rec.redoMove();
+    record.redoMove();
     save();
-    updateOfflineTurn();
   }
 }
 
@@ -140,21 +136,21 @@ function setGameId(id: string) {
   }
 
   gameId.value = id;
-  view.value!.stone = ourStone.value = undefined;
+  ourStone.value = undefined;
 
   if (id == '') {
-    rec.clear();
-    return view.value!.update();
+    record.clear();
+    return;
   }
 
   if (id == 'local') {
-    const encodedRec = localStorage.getItem('record');
-    if (encodedRec) {
-      rec.assign(Record.deserialize(decodeBase64(encodedRec), 0, true));
+    const encodedRecord = localStorage.getItem('record');
+    if (encodedRecord) {
+      record.assign(Record.deserialize(decodeBase64(encodedRecord), 0, true));
     } else {
-      rec.clear();
+      record.clear();
     }
-    return updateOfflineTurn();
+    return;
   }
 
   connect({ kind: MessageKind.Join, gameId: id });
@@ -197,29 +193,23 @@ function onMessage(e: MessageEvent) {
     return;
   }
 
-  let shouldUpdate = false;
-
   switch (msg.kind) {
     case MessageKind.Started:
-      ourStone.value = view.value!.stone = msg.stone;
-      shouldUpdate = true;
+      ourStone.value = msg.stone;
       if (msg.gameId) {
         gameId.value = msg.gameId;
         history.pushState(null, '', '#' + msg.gameId);
       }
       break;
     case MessageKind.Record:
-      rec.assign(msg.rec);
-      shouldUpdate = true;
-      if (!view.value!.stone) show(joinDialog.value!);
+      record.assign(msg.record);
+      if (!ourStone.value) show(joinDialog.value!);
       break;
     case MessageKind.Move:
-      rec.makeMove(msg.move);
-      shouldUpdate = true;
+      record.makeMove(msg.move);
       break;
     case MessageKind.Retract:
-      rec.undoMove();
-      shouldUpdate = true;
+      record.undoMove();
       break;
     case MessageKind.RequestDraw:
       // TODO.
@@ -228,9 +218,6 @@ function onMessage(e: MessageEvent) {
       // TODO.
       break;
   }
-
-  turn.value = rec.turn();
-  if (shouldUpdate) view.value!.update();
 }
 
 function onHashChange() {
@@ -250,8 +237,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <GameView :rec="rec" :disabled="openDialogs.size != 0" ref="view" @menu="onMenu" @move="onMove" @undo="onUndo"
-    @redo="onRedo" />
+  <!-- We need an explicit cast to work around a type mismatch. -->
+  <GameView :record="<Record>record" :our-stone="ourStone" :disabled="openDialogs.size != 0" @menu="onMenu"
+    @move="onMove" @undo="onUndo" @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
@@ -320,7 +308,7 @@ onMounted(() => {
           <a :href="'#' + gameId">{{ gameId }}</a><br />
           {{ ourStone ? `Playing ${Stone[ourStone]}` : 'View Only' }}
         </template><br />
-        {{ `${Stone[turn]} to Play` }}
+        {{ `${Stone[record.turn()]} to Play` }}
       </p>
       <div class="menu-btn-group">
         <button value="main-menu">Main Menu</button>

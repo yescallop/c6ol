@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { MoveKind, Point, Record, Stone } from '@/game';
 import { encodeBase64Url } from '@std/encoding/base64url';
 
-const { rec, disabled } = defineProps<{
-  rec: Record;
+const { record, ourStone, disabled } = defineProps<{
+  record: Record;
+  ourStone?: Stone;
   disabled: boolean;
 }>();
-
-let ourStone: Stone | undefined;
 
 const emit = defineEmits<{
   menu: [];
@@ -17,17 +16,10 @@ const emit = defineEmits<{
   redo: [];
 }>();
 
-defineExpose({
-  update() {
-    phantom = tentative = undefined;
-    draw();
-  },
-  get stone(): Stone | undefined {
-    return ourStone;
-  },
-  set stone(stone: Stone | undefined) {
-    ourStone = stone;
-  },
+// FIXME: This is very hacky.
+watch([record, () => ourStone], () => {
+  phantom = tentative = undefined;
+  draw();
 });
 
 const BOARD_COLOR = '#ffcc66';
@@ -216,7 +208,7 @@ function viewToCanvasPos(p: Point): [number, number] {
 
 /** Tests if it is our turn to play. */
 function ourTurn(): boolean {
-  return !rec.isEnded() && ourStone == rec.turn();
+  return !record.isEnded() && ourStone == record.turn();
 }
 
 /**
@@ -228,14 +220,14 @@ function ourTurn(): boolean {
  */
 function hitCursor() {
   if (!cursor || boardToViewPos(cursor)[1] /* out */) return;
-  if (!ourTurn() || rec.stoneAt(cursor)) return;
+  if (!ourTurn() || record.stoneAt(cursor)) return;
 
   if (Point.equal(tentative, cursor)) {
     phantom = tentative;
     tentative = undefined;
     draw();
   } else if (Point.equal(phantom, cursor)) {
-    if (!rec.hasPast()) {
+    if (!record.hasPast()) {
       emit('move', [cursor.copy()]);
     } else if (tentative) {
       emit('move', [tentative.copy(), cursor.copy()]);
@@ -378,9 +370,9 @@ function onKeyDown(e: KeyboardEvent) {
     case 'Backspace':
       if (e.repeat) return;
       if (e.shiftKey) {
-        if (rec.hasFuture()) emit('redo');
+        if (record.hasFuture()) emit('redo');
       } else {
-        if (rec.hasPast()) emit('undo');
+        if (record.hasPast()) emit('undo');
       }
       return;
     case 'Space':
@@ -510,7 +502,7 @@ function onHover(e: PointerEvent) {
     }
 
     viewState = ViewState.Retracted;
-    if (rec.hasPast()) emit('undo');
+    if (record.hasPast()) emit('undo');
   }
 }
 
@@ -579,12 +571,12 @@ function draw() {
   // Draw the board origin.
   const origin = new Point(0, 0);
   let [p, out] = boardToViewPos(origin);
-  if (!out && !rec.stoneAt(origin)) {
+  if (!out && !record.stoneAt(origin)) {
     ctx.fillStyle = 'black';
     drawCircle(p, dotRadius);
   }
 
-  const moves = rec.moves(), moveIndex = rec.moveIndex();
+  const moves = record.moves(), moveIndex = record.moveIndex();
   const stoneRadius = gridSize / STONE_RADIUS_RATIO;
   // We project the out-of-view stones onto the view border,
   // and stores the indexes of resulting points in this set.
@@ -613,7 +605,7 @@ function draw() {
   outIndexes.forEach(i => drawCircle(Point.fromIndex(i), stoneRadius));
 
   // Draw the previous move.
-  const prevMove = rec.prevMove();
+  const prevMove = record.prevMove();
   if (prevMove) {
     const prevStone = Record.turnAt(moveIndex - 1);
     switch (prevMove.kind) {
@@ -708,7 +700,7 @@ function onContextMenu(e: MouseEvent) {
 function onCopy(e: ClipboardEvent) {
   if (disabled) return;
 
-  const uri = 'c6:' + encodeBase64Url(rec.serialize(true)) + ';';
+  const uri = 'c6:' + encodeBase64Url(record.serialize(true)) + ';';
   e.clipboardData!.setData('text/plain', uri);
   // `preventDefault` is required for the change to take effect.
   e.preventDefault();

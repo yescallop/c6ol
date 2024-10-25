@@ -83,7 +83,7 @@ export type ServerMessage = {
 } | {
   // The entire record is updated.
   kind: MessageKind.Record;
-  rec: Record;
+  record: Record;
 } | {
   // A move was made.
   kind: MessageKind.Move;
@@ -122,7 +122,7 @@ export namespace ServerMessage {
         msg = { kind, stone, gameId };
         break;
       case MessageKind.Record:
-        msg = { kind, rec: Record.deserialize(buf, i, false) };
+        msg = { kind, record: Record.deserialize(buf, i, false) };
         i = buf.length;
         break;
       case MessageKind.Move:
