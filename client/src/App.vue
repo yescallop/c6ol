@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, useTemplateRef } from 'vue';
 import GameView from './components/GameView.vue';
-import { Move, MoveKind, Point, Record } from './game';
+import { Move, MoveKind, Point, Record, Stone } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
 import { decodeBase64, encodeBase64 } from '@std/encoding/base64';
 
@@ -11,6 +11,7 @@ const mainMenuDialog = useTemplateRef('main-menu-dialog');
 const onlineMenuDialog = useTemplateRef('online-menu-dialog');
 const joinDialog = useTemplateRef('join-dialog');
 const connClosedDialog = useTemplateRef('conn-closed-dialog');
+const gameMenuDialog = useTemplateRef('game-menu-dialog');
 
 const onlineAction = ref('start');
 const gameId = ref('');
@@ -18,6 +19,8 @@ const passcode = ref('');
 
 const rec = new Record();
 const view = useTemplateRef('view');
+const ourStone = ref<Stone>();
+const turn = ref(Stone.Black);
 
 let ws: WebSocket | undefined;
 
@@ -32,6 +35,15 @@ function send(msg: ClientMessage) {
 function save() {
   const buf = encodeBase64(rec.serialize(true));
   localStorage.setItem('record', buf);
+}
+
+function updateOfflineTurn() {
+  view.value!.stone = turn.value = rec.turn();
+  view.value!.update();
+}
+
+function onMenu() {
+  show(gameMenuDialog.value!);
 }
 
 function onMove(pos: [] | [Point] | [Point, Point]) {
@@ -54,9 +66,7 @@ function onMove(pos: [] | [Point] | [Point, Point]) {
 
     rec.makeMove(move);
     save();
-
-    view.value!.stone = rec.turn();
-    view.value!.draw();
+    updateOfflineTurn();
   }
 }
 
@@ -66,9 +76,7 @@ function onUndo() {
   } else {
     rec.undoMove();
     save();
-
-    view.value!.stone = rec.turn();
-    view.value!.draw();
+    updateOfflineTurn();
   }
 }
 
@@ -76,9 +84,7 @@ function onRedo() {
   if (!ws) {
     rec.redoMove();
     save();
-
-    view.value!.stone = rec.turn();
-    view.value!.draw();
+    updateOfflineTurn();
   }
 }
 
@@ -114,9 +120,13 @@ function onDialogClose(e: Event) {
       send({ kind: MessageKind.Start, passcode: passcode.value });
     }
   } else if (dialog == connClosedDialog.value) {
-    if (ret == 'reconnect') {
+    if (ret == 'retry') {
       onHashChange();
     } else if (ret == 'menu' || ret == '') {
+      location.hash = '';
+    }
+  } else if (dialog == gameMenuDialog.value) {
+    if (ret == 'main-menu') {
       location.hash = '';
     }
   }
@@ -129,11 +139,12 @@ function setGameId(id: string) {
     ws = undefined;
   }
 
-  view.value!.stone = undefined;
+  gameId.value = id;
+  view.value!.stone = ourStone.value = undefined;
 
   if (id == '') {
     rec.clear();
-    return view.value!.draw();
+    return view.value!.update();
   }
 
   if (id == 'local') {
@@ -143,8 +154,7 @@ function setGameId(id: string) {
     } else {
       rec.clear();
     }
-    view.value!.stone = rec.turn();
-    return view.value!.draw();
+    return updateOfflineTurn();
   }
 
   connect({ kind: MessageKind.Join, gameId: id });
@@ -187,25 +197,29 @@ function onMessage(e: MessageEvent) {
     return;
   }
 
+  let shouldUpdate = false;
+
   switch (msg.kind) {
     case MessageKind.Started:
-      view.value!.stone = msg.stone;
-      view.value!.draw();
-      if (msg.gameId)
+      ourStone.value = view.value!.stone = msg.stone;
+      shouldUpdate = true;
+      if (msg.gameId) {
+        gameId.value = msg.gameId;
         history.pushState(null, '', '#' + msg.gameId);
+      }
       break;
     case MessageKind.Record:
       rec.assign(msg.rec);
-      view.value!.draw();
+      shouldUpdate = true;
       if (!view.value!.stone) show(joinDialog.value!);
       break;
     case MessageKind.Move:
       rec.makeMove(msg.move);
-      view.value!.draw();
+      shouldUpdate = true;
       break;
     case MessageKind.Retract:
       rec.undoMove();
-      view.value!.draw();
+      shouldUpdate = true;
       break;
     case MessageKind.RequestDraw:
       // TODO.
@@ -214,6 +228,9 @@ function onMessage(e: MessageEvent) {
       // TODO.
       break;
   }
+
+  turn.value = rec.turn();
+  if (shouldUpdate) view.value!.update();
 }
 
 function onHashChange() {
@@ -233,7 +250,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <GameView :rec="rec" :disabled="openDialogs.size != 0" ref="view" @move="onMove" @undo="onUndo" @redo="onRedo" />
+  <GameView :rec="rec" :disabled="openDialogs.size != 0" ref="view" @menu="onMenu" @move="onMove" @undo="onUndo"
+    @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
@@ -260,7 +278,7 @@ onMounted(() => {
       <template v-else>
         <label for="game-id">Game ID: </label>
         <input type="text" id="game-id" v-model="gameId" pattern="[0-9A-Za-z]{10}" autocomplete="on" required
-          placeholder="10 number/letters" />
+          placeholder="10 alphanumerics" />
       </template>
       <div class="btn-group">
         <button v-if="onlineAction == 'start'" value="start">Start</button>
@@ -274,8 +292,7 @@ onMounted(() => {
     <form method="dialog">
       <p><strong>Join Game</strong></p>
       <label for="passcode">Passcode: </label>
-      <input type="text" id="passcode" v-model="passcode" autocomplete="on" required size="12"
-        placeholder="Yours, not shared" />
+      <input type="text" id="passcode" v-model="passcode" autocomplete="on" required placeholder="Yours, not shared" />
       <div class="btn-group">
         <button value="join">Join</button>
         <button formnovalidate>View Only</button>
@@ -288,8 +305,26 @@ onMounted(() => {
       <p><strong>Connection Closed</strong></p>
       <p>{{ connClosedReason }}</p>
       <div class="btn-group">
-        <button value="reconnect">Reconnect</button>
+        <button value="retry">Retry</button>
         <button value="menu">Menu</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog ref="game-menu-dialog" @close="onDialogClose">
+    <form method="dialog">
+      <p><strong>Game Menu</strong></p>
+      <p style="font-family: monospace;">
+        <template v-if="gameId == 'local'">Offline</template>
+        <template v-else>
+          <a :href="'#' + gameId">{{ gameId }}</a><br />
+          {{ ourStone ? `Playing ${Stone[ourStone]}` : 'View Only' }}
+        </template><br />
+        {{ `${Stone[turn]} to Play` }}
+      </p>
+      <div class="menu-btn-group">
+        <button value="main-menu">Main Menu</button>
+        <button autofocus>Resume</button>
       </div>
     </form>
   </dialog>
@@ -323,9 +358,13 @@ p {
   text-align: center;
 }
 
+a {
+  color: blue;
+}
+
 input[type="text"] {
   text-align: center;
-  /* This is more consistent than the `size` attribute. */
+  /* More consistent than the `size` attribute. */
   width: 8em;
 }
 

@@ -18,7 +18,7 @@ const emit = defineEmits<{
 }>();
 
 defineExpose({
-  draw() {
+  update() {
     phantom = tentative = undefined;
     draw();
   },
@@ -138,6 +138,8 @@ enum ViewState {
    * A swipe retract may only be triggered when the state is not `Retracted`.
    */
   Retracted,
+  /** Entered when the game menu is opened. */
+  MenuOpened,
 }
 
 let viewState = ViewState.Calm;
@@ -346,6 +348,10 @@ function onKeyDown(e: KeyboardEvent) {
 
   let direction;
   switch (e.code) {
+    case 'Escape':
+      // Required for the menu not to close immediately.
+      e.preventDefault();
+      return emit('menu');
     case 'KeyW':
     case 'ArrowUp':
       direction = 0;
@@ -438,7 +444,7 @@ function onPointerDown(e: PointerEvent) {
  *
  * Attempts to hit the cursor when the pointer is the only active one,
  * the view isn't ever dragged, zoomed, or pinched since the pointer
- * became active, and the left button is pressed.
+ * became active, and the main button is pressed.
  */
 function onPointerUp(e: PointerEvent) {
   // Bail out if the pointer is already inactive due to a `pointerleave` event.
@@ -688,6 +694,12 @@ function draw() {
   }
 }
 
+function onContextMenu(e: MouseEvent) {
+  e.preventDefault();
+  viewState = ViewState.MenuOpened;
+  emit('menu');
+}
+
 /**
  * Handles `copy` events.
  *
@@ -721,7 +733,8 @@ onBeforeUnmount(() => {
 <template>
   <div id="view-container" ref="canvasContainer">
     <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointerup="onPointerUp"
-      @pointerenter="onHover" @pointermove="onHover" @pointerleave="onPointerLeave"></canvas>
+      @pointerenter="onHover" @pointermove="onHover" @pointerleave="onPointerLeave"
+      @contextmenu="onContextMenu"></canvas>
   </div>
 </template>
 
