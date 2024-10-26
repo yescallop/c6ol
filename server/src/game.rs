@@ -445,7 +445,7 @@ impl Record {
     pub fn deserialize(buf: &mut &[u8], all: bool) -> Option<Self> {
         let mut rec = Self::new();
         let index = if all {
-            buf.try_get_usize_varint().ok()
+            Some(buf.try_get_usize_varint().ok()?)
         } else {
             None
         };
