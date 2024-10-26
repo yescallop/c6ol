@@ -19,6 +19,7 @@ const emit = defineEmits<{
 // FIXME: This is very hacky.
 watch([record, () => ourStone], () => {
   phantom = tentative = undefined;
+  if (!ourStone) cursor = undefined;
   draw();
 });
 
@@ -130,8 +131,6 @@ enum ViewState {
    * A swipe retract may only be triggered when the state is not `Retracted`.
    */
   Retracted,
-  /** Entered when the game menu is opened. */
-  MenuOpened,
 }
 
 let viewState = ViewState.Calm;
@@ -436,7 +435,7 @@ function onPointerDown(e: PointerEvent) {
  *
  * Attempts to hit the cursor when the pointer is the only active one,
  * the view isn't ever dragged, zoomed, or pinched since the pointer
- * became active, and the main button is pressed.
+ * became active, the view isn't disabled, and the main button is pressed.
  */
 function onPointerUp(e: PointerEvent) {
   // Bail out if the pointer is already inactive due to a `pointerleave` event.
@@ -447,7 +446,7 @@ function onPointerUp(e: PointerEvent) {
     viewState = ViewState.Calm;
     return;
   }
-  if (e.button != 0) return;
+  if (disabled || e.button != 0) return;
 
   const [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
   if (!out) {
@@ -469,6 +468,13 @@ function onPointerUp(e: PointerEvent) {
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
 function onHover(e: PointerEvent) {
+  // When the view is disabled, there are two possible reasons for reaching here:
+  // - A dialog was closed with a pointer which then entered the view inactive.
+  //   Update the cursor in this case.
+  // - A game menu was opened by touch, but a glitch keeps the pointer active
+  //   until the touch ends. Bail out in this case.
+  if (disabled && downPointers.size > 0) return;
+
   const pointer = downPointers.get(e.pointerId);
   if (pointer) pointer.last = e;
 
@@ -509,16 +515,7 @@ function onHover(e: PointerEvent) {
 /** Handles `pointerleave` events. */
 function onPointerLeave(e: PointerEvent) {
   downPointers.delete(e.pointerId);
-  if (downPointers.size != 0) return;
-
-  // TODO: Test if this works on mobile.
-  if (viewState != ViewState.MenuOpened) {
-    // Draw if the cursor should disappear.
-    const shouldDraw = cursor != undefined;
-    cursor = undefined;
-    if (shouldDraw) draw();
-  }
-  viewState = ViewState.Calm;
+  if (downPointers.size == 0) viewState = ViewState.Calm;
 }
 
 /** Draws a circle at a view position with the given radius. */
@@ -692,7 +689,6 @@ function draw() {
 
 function onContextMenu(e: MouseEvent) {
   e.preventDefault();
-  viewState = ViewState.MenuOpened;
   emit('menu');
 }
 

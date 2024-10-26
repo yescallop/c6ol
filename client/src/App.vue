@@ -94,12 +94,14 @@ function onDialogClose(e: Event) {
   const dialog = e.target as HTMLDialogElement;
   const ret = dialog.returnValue;
 
-  openDialogs.delete(dialog);
-  if (ret == 'hashchange') return;
+  if (ret == 'hashchange') {
+    openDialogs.delete(dialog);
+    return;
+  }
 
   if (dialog == mainMenuDialog.value) {
     if (ret == 'offline' || ret == '') {
-      location.hash = '#local';
+      setGameId('local');
     } else if (ret == 'online') {
       show(onlineMenuDialog.value!);
     }
@@ -107,7 +109,7 @@ function onDialogClose(e: Event) {
     if (ret == 'start') {
       connect({ kind: MessageKind.Start, passcode: passcode.value });
     } else if (ret == 'join') {
-      location.hash = '#' + gameId.value;
+      setGameId(gameId.value);
     } else if (ret == '') {
       show(mainMenuDialog.value!);
     }
@@ -117,15 +119,16 @@ function onDialogClose(e: Event) {
     }
   } else if (dialog == connClosedDialog.value) {
     if (ret == 'retry') {
-      onHashChange();
-    } else if (ret == 'menu' || ret == '') {
-      location.hash = '';
+      setGameId(gameId.value);
+    } else if (ret == '') {
+      setGameId('');
     }
   } else if (dialog == gameMenuDialog.value) {
     if (ret == 'main-menu') {
-      location.hash = '';
+      setGameId('');
     }
   }
+  openDialogs.delete(dialog);
 }
 
 function setGameId(id: string) {
@@ -135,12 +138,15 @@ function setGameId(id: string) {
     ws = undefined;
   }
 
+  if (id != location.hash.slice(1))
+    history.pushState(null, '', '#' + id);
+
   gameId.value = id;
   ourStone.value = undefined;
 
   if (id == '') {
     record.clear();
-    return;
+    return show(mainMenuDialog.value!);
   }
 
   if (id == 'local') {
@@ -225,9 +231,6 @@ function onHashChange() {
     dialog.close('hashchange');
 
   setGameId(location.hash.slice(1));
-
-  if (location.hash == '')
-    return show(mainMenuDialog.value!);
 }
 
 onMounted(() => {
