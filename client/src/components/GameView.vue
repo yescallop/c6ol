@@ -509,12 +509,16 @@ function onHover(e: PointerEvent) {
 /** Handles `pointerleave` events. */
 function onPointerLeave(e: PointerEvent) {
   downPointers.delete(e.pointerId);
-  if (downPointers.size == 0) viewState = ViewState.Calm;
+  if (downPointers.size != 0) return;
 
-  // Draw if the cursor should disappear.
-  const shouldDraw = cursor != undefined;
-  cursor = undefined;
-  if (shouldDraw) draw();
+  // TODO: Test if this works on mobile.
+  if (viewState != ViewState.MenuOpened) {
+    // Draw if the cursor should disappear.
+    const shouldDraw = cursor != undefined;
+    cursor = undefined;
+    if (shouldDraw) draw();
+  }
+  viewState = ViewState.Calm;
 }
 
 /** Draws a circle at a view position with the given radius. */
