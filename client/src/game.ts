@@ -70,12 +70,9 @@ export class Point {
 
   /** Returns the adjacent point in the given direction. */
   adjacent(axis: Axis, forward: boolean): Point {
-    const [dx, dy] = Axis.unitVector(axis);
-    if (forward) {
-      return new Point(this.x + dx, this.y + dy);
-    } else {
-      return new Point(this.x - dx, this.y - dy);
-    }
+    let [dx, dy] = Axis.unitVector(axis);
+    if (!forward) [dx, dy] = [-dx, -dy];
+    return new Point(this.x + dx, this.y + dy);
   }
 
   /** Tests if two possibly undefined points equal. */

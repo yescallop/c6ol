@@ -124,7 +124,7 @@ async fn handle_websocket(
         tokio::select! {
             res = sub.msg_rx.recv() => {
                 let msg = res.map_err(|err| match err {
-                    RecvError::Closed => Error::Shutdown,
+                    RecvError::Closed => unreachable!("sender should be alive"),
                     RecvError::Lagged(_) => Error::Lagged,
                 })?;
                 socket.send(msg).await?;

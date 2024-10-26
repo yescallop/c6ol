@@ -93,11 +93,8 @@ impl Point {
     /// or `None` if overflow occurred.
     pub fn adjacent(self, axis: Axis, forward: bool) -> Option<Self> {
         let (dx, dy) = axis.unit_vector();
-        Some(if forward {
-            Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?)
-        } else {
-            Self::new(self.x.checked_sub(dx)?, self.y.checked_sub(dy)?)
-        })
+        let (dx, dy) = if forward { (dx, dy) } else { (-dx, -dy) };
+        Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
     /// Deserializes a point from a buffer.
