@@ -294,7 +294,7 @@ onMounted(() => {
       <p>{{ connClosedReason }}</p>
       <div class="btn-group">
         <button value="retry">Retry</button>
-        <button value="menu">Menu</button>
+        <button>Menu</button>
       </div>
     </form>
   </dialog>
