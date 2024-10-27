@@ -345,12 +345,12 @@ function dist(a: MouseEvent, b: MouseEvent): number {
  */
 function onKeyDown(e: KeyboardEvent) {
   if (disabled) return;
-  // Required for a new dialog not to close immediately.
-  e.preventDefault();
 
   let direction;
   switch (e.code) {
     case 'Escape':
+      // Required for the dialog not to close immediately.
+      e.preventDefault();
       return emit('menu');
     case 'KeyW':
     case 'ArrowUp':
@@ -383,8 +383,10 @@ function onKeyDown(e: KeyboardEvent) {
         if (record.hasPast()) emit('undo');
       }
       return;
-    case 'Space':
     case 'Enter':
+      // Required for the dialog not to close immediately.
+      e.preventDefault();
+    case 'Space':
       if (e.repeat) return;
       if (cursor) return hitCursor();
       // Put a cursor at the view center if there is no cursor.
