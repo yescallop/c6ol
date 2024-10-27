@@ -94,10 +94,8 @@ function onDialogClose(e: Event) {
   const dialog = e.target as HTMLDialogElement;
   const ret = dialog.returnValue;
 
-  if (ret == 'hashchange') {
-    openDialogs.delete(dialog);
-    return;
-  }
+  openDialogs.delete(dialog);
+  if (ret == 'hashchange') return;
 
   if (dialog == mainMenuDialog.value) {
     if (ret == 'offline' || ret == '') {
@@ -128,7 +126,6 @@ function onDialogClose(e: Event) {
       setGameId('');
     }
   }
-  openDialogs.delete(dialog);
 }
 
 function setGameId(id: string) {

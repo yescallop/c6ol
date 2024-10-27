@@ -23,6 +23,15 @@ watch([record, () => ourStone], () => {
   draw();
 });
 
+let lastHoverBeforeEnabled: PointerEvent | undefined;
+
+watch(() => disabled, () => {
+  if (!disabled && lastHoverBeforeEnabled) {
+    onHover(lastHoverBeforeEnabled);
+    lastHoverBeforeEnabled = undefined;
+  }
+});
+
 const BOARD_COLOR = '#ffcc66';
 const CURSOR_COLOR_ACTIVE = 'darkred';
 const CURSOR_COLOR_INACTIVE = 'grey';
@@ -468,12 +477,19 @@ function onPointerUp(e: PointerEvent) {
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
 function onHover(e: PointerEvent) {
-  // When the view is disabled, there are two possible reasons for reaching here:
-  // - A dialog was closed with a pointer which then entered the view inactive.
-  //   Update the cursor in this case.
-  // - A game menu was opened by touch, but a glitch keeps the pointer active
-  //   until the touch ends. Bail out in this case.
-  if (disabled && downPointers.size > 0) return;
+  if (disabled) {
+    // We can reach here for either of the following reasons:
+    // - A dialog was closed with a pointer which then entered the view.
+    // - A game menu was opened by touch, but a glitch keeps the browser
+    //   firing pointer events on the view until the touch ends.
+    //
+    // In either case, we record the event. We will either clear it when a
+    // corresponding `pointerleave` event is fired, or replay it after the
+    // view is enabled. The cursor will be updated only in the former case
+    // if no new dialog was opened as soon as the previous one was closed.
+    lastHoverBeforeEnabled = e;
+    return;
+  }
 
   const pointer = downPointers.get(e.pointerId);
   if (pointer) pointer.last = e;
@@ -516,6 +532,8 @@ function onHover(e: PointerEvent) {
 function onPointerLeave(e: PointerEvent) {
   downPointers.delete(e.pointerId);
   if (downPointers.size == 0) viewState = ViewState.Calm;
+  if (lastHoverBeforeEnabled?.pointerId == e.pointerId)
+    lastHoverBeforeEnabled = undefined;
 }
 
 /** Draws a circle at a view position with the given radius. */
