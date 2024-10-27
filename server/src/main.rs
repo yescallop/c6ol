@@ -1,4 +1,4 @@
-use std::{io, net::Ipv6Addr};
+use std::{future::Future, io, net::Ipv6Addr};
 use tokio::{net::TcpSocket, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -27,29 +27,27 @@ async fn main() -> io::Result<()> {
     };
     tracing::info!("listening on {}", listener.local_addr()?);
 
-    c6ol_server::run(listener, STATIC_ROOT, shutdown_signal()).await
+    c6ol_server::run(listener, STATIC_ROOT, shutdown_signal()?).await
 }
 
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
+#[cfg(unix)]
+fn shutdown_signal() -> io::Result<impl Future<Output = ()>> {
+    let mut interrupt = signal::unix::signal(signal::unix::SignalKind::interrupt())?;
+    let mut terminate = signal::unix::signal(signal::unix::SignalKind::terminate())?;
 
-    #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
+    Ok(async move {
+        tokio::select! {
+            _ = interrupt.recv() => {}
+            _ = terminate.recv() => {}
+        }
+    })
+}
 
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+#[cfg(windows)]
+fn shutdown_signal() -> io::Result<impl Future<Output = ()>> {
+    let mut ctrl_c = signal::windows::ctrl_c()?;
 
-    tokio::select! {
-        () = ctrl_c => {},
-        () = terminate => {},
-    }
+    Ok(async move {
+        ctrl_c.recv().await;
+    })
 }
