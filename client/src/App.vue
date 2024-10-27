@@ -12,10 +12,32 @@ const onlineMenuDialog = useTemplateRef('online-menu-dialog');
 const joinDialog = useTemplateRef('join-dialog');
 const connClosedDialog = useTemplateRef('conn-closed-dialog');
 const gameMenuDialog = useTemplateRef('game-menu-dialog');
+const confirmDialog = useTemplateRef('confirm-dialog');
+
+enum Action {
+  Submit,
+}
+
+interface ConfirmRequest {
+  message: string;
+  confirmed(): void;
+}
 
 const onlineAction = ref('start');
 const gameId = ref('');
 const passcode = ref('');
+const confirmRequest = ref<ConfirmRequest>();
+
+function confirm(action: Action, confirmed: () => void) {
+  let message;
+  switch (action) {
+    case Action.Submit:
+      message = 'Submit the move?';
+      break;
+  }
+  confirmRequest.value = { message, confirmed };
+  show(confirmDialog.value!);
+}
 
 const record = reactive(new Record());
 const ourStone = ref<Stone>();
@@ -54,7 +76,7 @@ function onMove(pos: [] | [Point] | [Point, Point]) {
       msg = { kind: MessageKind.Place, pos };
     }
 
-    send(msg);
+    confirm(Action.Submit, () => send(msg));
   } else {
     let move: Move;
     if (pos.length == 0) {
@@ -125,6 +147,11 @@ function onDialogClose(e: Event) {
     if (ret == 'main-menu') {
       setGameId('');
     }
+  } else if (dialog == confirmDialog.value) {
+    if (ret == 'confirm') {
+      confirmRequest.value!.confirmed();
+    }
+    confirmRequest.value = undefined;
   }
 }
 
@@ -268,7 +295,7 @@ onMounted(() => {
         <input type="text" id="game-id" v-model="gameId" pattern="[0-9A-Za-z]{10}" autocomplete="on" required
           placeholder="10 alphanumerics" />
       </template>
-      <div class="btn-group">
+      <div class="btn-group reversed">
         <button v-if="onlineAction == 'start'" value="start">Start</button>
         <button v-else value="join">Join</button>
         <button formnovalidate>Cancel</button>
@@ -281,7 +308,7 @@ onMounted(() => {
       <p><strong>Join Game</strong></p>
       <label for="passcode">Passcode: </label>
       <input type="text" id="passcode" v-model="passcode" autocomplete="on" required placeholder="Yours, not shared" />
-      <div class="btn-group">
+      <div class="btn-group reversed">
         <button value="join">Join</button>
         <button formnovalidate>View Only</button>
       </div>
@@ -293,8 +320,8 @@ onMounted(() => {
       <p><strong>Connection Closed</strong></p>
       <p>{{ connClosedReason }}</p>
       <div class="btn-group">
-        <button value="retry">Retry</button>
         <button>Menu</button>
+        <button value="retry">Retry</button>
       </div>
     </form>
   </dialog>
@@ -313,6 +340,16 @@ onMounted(() => {
       <div class="menu-btn-group">
         <button value="main-menu">Main Menu</button>
         <button autofocus>Resume</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="transparent" ref="confirm-dialog" @close="onDialogClose">
+    <form method="dialog">
+      <p>{{ confirmRequest?.message }}</p>
+      <div class="btn-group">
+        <button>Cancel</button>
+        <button value="confirm">Confirm</button>
       </div>
     </form>
   </dialog>
@@ -383,12 +420,23 @@ button {
 .btn-group {
   margin-top: 10px;
   display: flex;
-  /* Show the default button (first in tree order) on the right. */
-  flex-direction: row-reverse;
   justify-content: space-evenly;
 }
 
-.btn-group button:not(:last-child) {
+.btn-group:not(.reversed) button:not(:last-child) {
+  margin-right: 10px;
+}
+
+.btn-group.reversed {
+  /* Show the default button (first in tree order) on the right. */
+  flex-direction: row-reverse;
+}
+
+.btn-group.reversed button:not(:last-child) {
   margin-left: 10px;
+}
+
+.transparent {
+  opacity: 75%;
 }
 </style>

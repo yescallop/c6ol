@@ -345,12 +345,12 @@ function dist(a: MouseEvent, b: MouseEvent): number {
  */
 function onKeyDown(e: KeyboardEvent) {
   if (disabled) return;
+  // Required for a new dialog not to close immediately.
+  e.preventDefault();
 
   let direction;
   switch (e.code) {
     case 'Escape':
-      // Required for the menu not to close immediately.
-      e.preventDefault();
       return emit('menu');
     case 'KeyW':
     case 'ArrowUp':
