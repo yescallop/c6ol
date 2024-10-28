@@ -11,10 +11,16 @@ const { record, ourStone, disabled } = defineProps<{
 
 const emit = defineEmits<{
   menu: [];
-  move: [pos: [] | [Point] | [Point, Point]];
+  submit: [pos: [Point] | [Point, Point]];
   undo: [];
   redo: [];
 }>();
+
+defineExpose({
+  get tentative(): Point | undefined {
+    return tentative?.copy();
+  },
+});
 
 // FIXME: This is very hacky.
 watch([record, () => ourStone], () => {
@@ -50,9 +56,9 @@ const CURSOR_SIDE_RATIO = 4;
 
 const PHANTOM_MOVE_OPACITY = 0.5;
 
-const PASS_FONT_SIZE_RATIO = 4;
-const PASS_BORDER_RATIO = 100;
-const PASS_OPACITY = 0.5;
+const MOVE_TEXT_FONT_SIZE_RATIO = 4;
+const MOVE_TEXT_BORDER_RATIO = 100;
+const MOVE_TEXT_OPACITY = 0.5;
 
 const DIST_FOR_PINCH_ZOOM = 2 * 96 / 2.54; // 2cm
 const DIST_FOR_SWIPE_RETRACT = 4 * 96 / 2.54; // 4cm
@@ -236,9 +242,9 @@ function hitCursor() {
     draw();
   } else if (Point.equal(phantom, cursor)) {
     if (!record.hasPast()) {
-      emit('move', [cursor.copy()]);
+      emit('submit', [cursor.copy()]);
     } else if (tentative) {
-      emit('move', [tentative.copy(), cursor.copy()]);
+      emit('submit', [tentative.copy(), cursor.copy()]);
     } else {
       tentative = phantom;
       phantom = undefined;
@@ -372,9 +378,6 @@ function onKeyDown(e: KeyboardEvent) {
       return zoom(Zoom.Out);
     case 'Equal':
       return zoom(Zoom.In);
-    case 'KeyP':
-      if (e.repeat || !ourTurn()) return;
-      return emit('move', tentative ? [tentative.copy()] : []);
     case 'Backspace':
       if (e.repeat) return;
       if (e.shiftKey) {
@@ -637,31 +640,36 @@ function draw() {
           if (!out) drawCircle(p, dotRadius);
         }
         break;
+      case MoveKind.Win:
+        // TODO.
+        break;
       case MoveKind.Pass:
-        ctx.globalAlpha = PASS_OPACITY;
+      case MoveKind.Draw:
+      case MoveKind.Resign:
+        ctx.globalAlpha = MOVE_TEXT_OPACITY;
 
-        const fontSize = size / PASS_FONT_SIZE_RATIO;
+        const fontSize = size / MOVE_TEXT_FONT_SIZE_RATIO;
         ctx.font = `${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        ctx.fillStyle = prevStone == Stone.Black ? 'black' : 'white';
-        ctx.fillText('PASS', size / 2, size / 2);
+        const text = MoveKind[prevMove.kind].toUpperCase();
 
-        ctx.lineWidth = fontSize / PASS_BORDER_RATIO;
-        ctx.strokeStyle = prevStone == Stone.Black ? 'white' : 'black';
-        ctx.strokeText('PASS', size / 2, size / 2);
+        if (prevMove.kind == MoveKind.Draw) {
+          ctx.fillStyle = 'grey';
+        } else {
+          const stone = prevMove.kind == MoveKind.Resign ? prevMove.stone : prevStone;
+          ctx.fillStyle = stone == Stone.Black ? 'black' : 'white';
+        }
+        ctx.fillText(text, size / 2, size / 2);
+
+        if (prevMove.kind != MoveKind.Draw) {
+          ctx.lineWidth = fontSize / MOVE_TEXT_BORDER_RATIO;
+          ctx.strokeStyle = 'grey';
+          ctx.strokeText(text, size / 2, size / 2);
+        }
 
         ctx.globalAlpha = 1;
-        break;
-      case MoveKind.Win:
-        // TODO.
-        break;
-      case MoveKind.Draw:
-        // TODO.
-        break;
-      case MoveKind.Resign:
-        // TODO.
         break;
     }
   }

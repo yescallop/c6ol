@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
+import { computed, onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
 import GameView from './components/GameView.vue';
 import { Move, MoveKind, Point, Record, Stone } from './game';
 import { ClientMessage, MessageKind, ServerMessage } from './protocol';
@@ -15,37 +15,98 @@ const gameMenuDialog = useTemplateRef('game-menu-dialog');
 const confirmDialog = useTemplateRef('confirm-dialog');
 
 enum Action {
+  MainMenu,
   Submit,
+  Pass,
+  OneStoneMove,
+  OfferDraw,
+  AcceptDraw,
+  RequestRetract,
+  AcceptRetract,
+  Resign,
 }
 
 interface ConfirmRequest {
   message: string;
+  confirm: string;
+  cancel: string;
   confirmed(): void;
 }
 
 const onlineAction = ref('start');
 const gameId = ref('');
 const passcode = ref('');
+
+const view = useTemplateRef('view');
+
 const confirmRequest = ref<ConfirmRequest>();
+const pendingConfirmRequests: ConfirmRequest[] = [];
+
+const retractRequest = ref<Stone>();
+const drawRequest = ref<Stone>();
 
 function confirm(action: Action, confirmed: () => void) {
-  let message;
+  let message, confirm = 'Confirm', cancel = 'Cancel';
   switch (action) {
+    case Action.MainMenu:
+      message = 'Back to main menu?';
+      break;
     case Action.Submit:
       message = 'Submit the move?';
       break;
+    case Action.Pass:
+      message = 'Pass without placing stones?';
+      break;
+    case Action.OneStoneMove:
+      message = 'Make a one-stone move?';
+      break;
+    case Action.OfferDraw:
+      message = 'Offer a draw?';
+      break;
+    case Action.AcceptDraw:
+      message = 'The opponent offers a draw.';
+      confirm = 'Accept';
+      cancel = 'Ignore';
+      break;
+    case Action.RequestRetract:
+      message = 'Request to retract the previous move?';
+      break;
+    case Action.AcceptRetract:
+      message = 'The opponent requests to retract the previous move.';
+      confirm = 'Accept';
+      cancel = 'Ignore';
+      break;
+    case Action.Resign:
+      message = 'Resign the game?';
+      break;
   }
-  confirmRequest.value = { message, confirmed };
-  show(confirmDialog.value!);
+
+  const req = { message, confirm, cancel, confirmed };
+  if (confirmRequest.value) {
+    pendingConfirmRequests.push(req);
+  } else {
+    confirmRequest.value = req;
+    show(confirmDialog.value!);
+  }
+}
+
+function confirmDraw() {
+  const action = drawRequest.value ? Action.AcceptDraw : Action.OfferDraw;
+  confirm(action, () => send({ kind: MessageKind.RequestDraw }));
+}
+
+function confirmRetract() {
+  const action = retractRequest.value ? Action.AcceptRetract : Action.RequestRetract;
+  confirm(action, () => send({ kind: MessageKind.RequestRetract }));
 }
 
 const record = reactive(new Record());
 const ourStone = ref<Stone>();
 
 watch(record, () => {
-  if (gameId.value == 'local') {
+  if (gameId.value == 'local') save();
+  if (gameId.value != '' && !ws)
     ourStone.value = record.turn();
-  }
 });
 
 let ws: WebSocket | undefined;
@@ -67,42 +128,50 @@ function onMenu() {
   show(gameMenuDialog.value!);
 }
 
-function onMove(pos: [] | [Point] | [Point, Point]) {
+function onSubmit(pos: [Point] | [Point, Point]) {
   if (ws) {
+    confirm(Action.Submit, () => send({ kind: MessageKind.Place, pos }));
+  } else {
+    record.makeMove({ kind: MoveKind.Stone, pos });
+  }
+}
+
+function onPass() {
+  const tentative = view.value!.tentative;
+  if (ws) {
+    const action = tentative ? Action.OneStoneMove : Action.Pass;
+
     let msg: ClientMessage;
-    if (pos.length == 0) {
-      msg = { kind: MessageKind.Pass };
+    if (tentative) {
+      msg = { kind: MessageKind.Place, pos: [tentative] };
     } else {
-      msg = { kind: MessageKind.Place, pos };
+      msg = { kind: MessageKind.Pass };
     }
 
-    confirm(Action.Submit, () => send(msg));
+    confirm(action, () => send(msg));
   } else {
     let move: Move;
-    if (pos.length == 0) {
-      move = { kind: MoveKind.Pass };
+    if (tentative) {
+      move = { kind: MoveKind.Stone, pos: [tentative] };
     } else {
-      move = { kind: MoveKind.Stone, pos };
+      move = { kind: MoveKind.Pass };
     }
 
     record.makeMove(move);
-    save();
   }
 }
 
 function onUndo() {
   if (ws) {
-    send({ kind: MessageKind.RequestRetract });
+    confirmRetract();
   } else {
     record.undoMove();
-    save();
   }
 }
 
 function onRedo() {
   if (!ws) {
     record.redoMove();
-    save();
   }
 }
 
@@ -117,7 +186,7 @@ function onDialogClose(e: Event) {
   const ret = dialog.returnValue;
 
   openDialogs.delete(dialog);
-  if (ret == 'hashchange') return;
+  if (ret == 'game-id-changed') return;
 
   if (dialog == mainMenuDialog.value) {
     if (ret == 'offline' || ret == '') {
@@ -145,13 +214,41 @@ function onDialogClose(e: Event) {
     }
   } else if (dialog == gameMenuDialog.value) {
     if (ret == 'main-menu') {
-      setGameId('');
+      if (ws) {
+        confirm(Action.MainMenu, () => setGameId(''));
+      } else {
+        setGameId('');
+      }
+    } else if (ret == 'join') {
+      show(joinDialog.value!);
+    } else if (ret == 'pass') {
+      onPass();
+    } else if (ret == 'win') {
+      // TODO.
+    } else if (ret == 'draw') {
+      if (ws) {
+        confirmDraw();
+      } else {
+        record.makeMove({ kind: MoveKind.Draw });
+      }
+    } else if (ret == 'resign') {
+      if (ws) {
+        confirm(Action.Resign, () => send({ kind: MessageKind.Resign }));
+      } else {
+        record.makeMove({ kind: MoveKind.Resign, stone: record.turn() });
+      }
+    } else if (ret == 'undo') {
+      onUndo();
+    } else if (ret == 'redo') {
+      onRedo();
     }
   } else if (dialog == confirmDialog.value) {
     if (ret == 'confirm') {
       confirmRequest.value!.confirmed();
     }
-    confirmRequest.value = undefined;
+    if (confirmRequest.value = pendingConfirmRequests.shift()) {
+      show(confirmDialog.value!);
+    }
   }
 }
 
@@ -162,11 +259,18 @@ function setGameId(id: string) {
     ws = undefined;
   }
 
+  for (const dialog of openDialogs)
+    dialog.close('game-id-changed');
+
   if (id != location.hash.slice(1))
     history.pushState(null, '', '#' + id);
 
   gameId.value = id;
   ourStone.value = undefined;
+
+  // Clear the requests.
+  retractRequest.value = undefined;
+  drawRequest.value = undefined;
 
   if (id == '') {
     record.clear();
@@ -219,7 +323,7 @@ function onMessage(e: MessageEvent) {
     msg = ServerMessage.deserialize(new Uint8Array(e.data));
   } catch (e) {
     console.error(e);
-    ws?.close(CLOSE_CODE_POLICY, 'Malformed message.');
+    ws!.close(CLOSE_CODE_POLICY, 'Malformed message.');
     return;
   }
 
@@ -230,11 +334,15 @@ function onMessage(e: MessageEvent) {
         gameId.value = msg.gameId;
         history.pushState(null, '', '#' + msg.gameId);
       }
-      break;
+      if (drawRequest.value == Stone.opposite(msg.stone))
+        confirmDraw();
+      if (retractRequest.value == Stone.opposite(msg.stone))
+        confirmRetract();
+      return;
     case MessageKind.Record:
       record.assign(msg.record);
       if (!ourStone.value) show(joinDialog.value!);
-      break;
+      return;
     case MessageKind.Move:
       record.makeMove(msg.move);
       break;
@@ -242,18 +350,40 @@ function onMessage(e: MessageEvent) {
       record.undoMove();
       break;
     case MessageKind.RequestDraw:
-      // TODO.
-      break;
+      drawRequest.value = msg.stone;
+      if (ourStone.value == Stone.opposite(msg.stone))
+        confirmDraw();
+      return;
     case MessageKind.RequestRetract:
-      // TODO.
-      break;
+      retractRequest.value = msg.stone;
+      if (ourStone.value == Stone.opposite(msg.stone))
+        confirmRetract();
+      return;
   }
+
+  // Clear the requests.
+  drawRequest.value = undefined;
+  retractRequest.value = undefined;
 }
 
-function onHashChange() {
-  for (const dialog of openDialogs)
-    dialog.close('hashchange');
+const gameStatus = computed(() => {
+  if (!record.isEnded()) {
+    return Stone[record.turn()] + ' to Play';
+  }
 
+  const prevMove = record.prevMove()!;
+  if (prevMove.kind == MoveKind.Draw) {
+    return 'Game Drawn';
+  } else if (prevMove.kind == MoveKind.Resign) {
+    return Stone[prevMove.stone] + ' Resigned';
+  } else if (prevMove.kind == MoveKind.Win) {
+    const stone = record.stoneAt(prevMove.pos)!;
+    return Stone[stone] + ' Won';
+  }
+  return 'Bug';
+});
+
+function onHashChange() {
   setGameId(location.hash.slice(1));
 }
 
@@ -265,8 +395,8 @@ onMounted(() => {
 
 <template>
   <!-- We need an explicit cast to work around a type mismatch. -->
-  <GameView :record="<Record>record" :our-stone="ourStone" :disabled="openDialogs.size != 0" @menu="onMenu"
-    @move="onMove" @undo="onUndo" @redo="onRedo" />
+  <GameView ref="view" :record="<Record>record" :our-stone="ourStone" :disabled="openDialogs.size != 0" @menu="onMenu"
+    @submit="onSubmit" @undo="onUndo" @redo="onRedo" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
@@ -335,10 +465,23 @@ onMounted(() => {
           <a :href="'#' + gameId">{{ gameId }}</a><br />
           {{ ourStone ? `Playing ${Stone[ourStone]}` : 'View Only' }}
         </template><br />
-        {{ `${Stone[record.turn()]} to Play` }}
+        {{ gameStatus }}
       </p>
       <div class="menu-btn-group">
         <button value="main-menu">Main Menu</button>
+        <button v-if="!ourStone" value="join">Join</button>
+        <div v-if="ourStone" class="btn-group">
+          <button value="pass" :disabled="record.isEnded() || ourStone != record.turn()">Pass</button>
+          <button value="win" :disabled="record.isEnded()">Win</button>
+          <button value="draw" :disabled="record.isEnded() || drawRequest == ourStone">Draw</button>
+        </div>
+        <div v-if="ourStone" class="btn-group">
+          <button v-if="!ws" value="redo" :disabled="!record.hasFuture()">Redo</button>
+          <button value="resign" :disabled="record.isEnded()">Resign</button>
+          <button value="undo" :disabled="!record.hasPast() || retractRequest == ourStone">
+            {{ ws ? 'Retract' : 'Undo' }}
+          </button>
+        </div>
         <button autofocus>Resume</button>
       </div>
     </form>
@@ -348,8 +491,8 @@ onMounted(() => {
     <form method="dialog">
       <p>{{ confirmRequest?.message }}</p>
       <div class="btn-group">
-        <button>Cancel</button>
-        <button value="confirm">Confirm</button>
+        <button>{{ confirmRequest?.cancel }}</button>
+        <button value="confirm">{{ confirmRequest?.confirm }}</button>
       </div>
     </form>
   </dialog>
@@ -375,6 +518,10 @@ body {
   #app {
     height: 100vh;
   }
+}
+
+dialog {
+  max-width: 15em;
 }
 
 p {
@@ -403,7 +550,11 @@ button {
   flex-direction: column;
 }
 
-.menu-btn-group button:not(:last-child) {
+.menu-btn-group>.btn-group {
+  margin-top: 0;
+}
+
+.menu-btn-group>*:not(:last-child) {
   margin-bottom: 5px;
 }
 
@@ -413,7 +564,7 @@ button {
   justify-content: center;
 }
 
-.radio-group label:not(:last-child) {
+.radio-group>*:not(:last-child) {
   margin-right: 10px;
 }
 
@@ -423,7 +574,7 @@ button {
   justify-content: space-evenly;
 }
 
-.btn-group:not(.reversed) button:not(:last-child) {
+.btn-group:not(.reversed)>*:not(:last-child) {
   margin-right: 10px;
 }
 
@@ -432,7 +583,7 @@ button {
   flex-direction: row-reverse;
 }
 
-.btn-group.reversed button:not(:last-child) {
+.btn-group.reversed>*:not(:last-child) {
   margin-left: 10px;
 }
 
