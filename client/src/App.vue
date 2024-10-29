@@ -602,7 +602,7 @@ a {
 input[type="text"] {
   text-align: center;
   /* More consistent than the `size` attribute. */
-  width: 8em;
+  width: 9em;
 }
 
 button {
