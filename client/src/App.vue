@@ -430,9 +430,15 @@ function onHashChange() {
   setGameId(location.hash.slice(1));
 }
 
+function onStorage(e: StorageEvent) {
+  if (gameId.value == 'local' && e.key == 'record' && e.newValue)
+    record.assign(Record.decode(decodeBase64(e.newValue), 0, true));
+}
+
 onMounted(() => {
   onHashChange();
   window.addEventListener('hashchange', onHashChange);
+  window.addEventListener('storage', onStorage);
 });
 </script>
 
