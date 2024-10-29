@@ -659,10 +659,8 @@ function draw() {
     switch (prevMove.kind) {
       case MoveKind.Stone:
         ctx.fillStyle = prevStone == Stone.Black ? 'white' : 'black';
-        for (let p of prevMove.pos) {
-          [p, out] = boardToViewPos(p);
-          if (!out) drawCircle(p, dotRadius);
-        }
+        for (const p of prevMove.pos)
+          drawCircle(boardToViewPos(p)[0], dotRadius);
         break;
       case MoveKind.Win:
         // TODO.
