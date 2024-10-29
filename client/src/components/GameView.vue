@@ -56,7 +56,7 @@ const CURSOR_SIDE_RATIO = 4;
 
 const PHANTOM_MOVE_OPACITY = 0.5;
 
-const MOVE_TEXT_FONT_SIZE_RATIO = 4;
+const MOVE_TEXT_WIDTH_RATIO = 2;
 const MOVE_TEXT_BORDER_RATIO = 100;
 const MOVE_TEXT_OPACITY = 0.5;
 
@@ -668,12 +668,15 @@ function draw() {
       case MoveKind.Resign:
         ctx.globalAlpha = MOVE_TEXT_OPACITY;
 
-        const fontSize = size / MOVE_TEXT_FONT_SIZE_RATIO;
+        ctx.font = '10px sans-serif';
+        const text = MoveKind[prevMove.kind].toUpperCase();
+        const actualWidth = ctx.measureText(text).width;
+        const expectedWidth = size / MOVE_TEXT_WIDTH_RATIO;
+        const fontSize = expectedWidth / actualWidth * 10;
+
         ctx.font = `${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        const text = MoveKind[prevMove.kind].toUpperCase();
 
         if (prevMove.kind == MoveKind.Draw) {
           ctx.fillStyle = 'grey';
