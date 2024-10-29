@@ -52,7 +52,7 @@ export type ClientMessage = {
 };
 
 export namespace ClientMessage {
-  export function serialize(msg: ClientMessage) {
+  export function encode(msg: ClientMessage) {
     const buf = [Uint8Array.of(msg.kind)];
     switch (msg.kind) {
       case MessageKind.Start:
@@ -62,10 +62,10 @@ export namespace ClientMessage {
         buf.push(new TextEncoder().encode(msg.gameId));
         break;
       case MessageKind.Place:
-        for (const p of msg.pos) p.serialize(buf);
+        for (const p of msg.pos) p.encode(buf);
         break;
       case MessageKind.ClaimWin:
-        msg.pos.serialize(buf);
+        msg.pos.encode(buf);
         break;
     }
     return concat(buf);
@@ -102,7 +102,7 @@ export type ServerMessage = {
 };
 
 export namespace ServerMessage {
-  export function deserialize(buf: Uint8Array): ServerMessage {
+  export function decode(buf: Uint8Array): ServerMessage {
     let i = 0;
     if (i >= buf.length) throw new RangeError('empty message');
 
@@ -122,12 +122,12 @@ export namespace ServerMessage {
         msg = { kind, stone, gameId };
         break;
       case MessageKind.Record:
-        msg = { kind, record: Record.deserialize(buf, i, false) };
+        msg = { kind, record: Record.decode(buf, i, false) };
         i = buf.length;
         break;
       case MessageKind.Move:
         let move;
-        [move, i] = Move.deserialize(buf, i, false);
+        [move, i] = Move.decode(buf, i, false);
         msg = { kind, move };
         break;
       case MessageKind.Retract:

@@ -13,6 +13,9 @@ const joinDialog = useTemplateRef('join-dialog');
 const connClosedDialog = useTemplateRef('conn-closed-dialog');
 const gameMenuDialog = useTemplateRef('game-menu-dialog');
 const confirmDialog = useTemplateRef('confirm-dialog');
+const errorDialog = useTemplateRef('error-dialog');
+
+const altPressed = ref(false);
 
 enum Action {
   MainMenu,
@@ -44,6 +47,8 @@ const pendingConfirmRequests: ConfirmRequest[] = [];
 
 const retractRequest = ref<Stone>();
 const drawRequest = ref<Stone>();
+
+const errorMessage = ref('');
 
 function confirm(action: Action, confirmed: () => void) {
   let message, confirm = 'Confirm', cancel = 'Cancel';
@@ -113,14 +118,16 @@ let ws: WebSocket | undefined;
 
 /** Sends the message on the WebSocket connection. */
 function send(msg: ClientMessage) {
-  if (!ws || ws.readyState != WebSocket.OPEN)
-    return onClose();
-  ws.send(ClientMessage.serialize(msg));
+  if (ws && ws.readyState == WebSocket.OPEN)
+    return ws.send(ClientMessage.encode(msg));
+
+  errorMessage.value = 'WebSocket connection is not open.';
+  show(errorDialog.value!);
 }
 
 /** Saves the record to local storage. */
 function save() {
-  const buf = encodeBase64(record.serialize(true));
+  const buf = encodeBase64(record.encode(true));
   localStorage.setItem('record', buf);
 }
 
@@ -162,17 +169,28 @@ function onPass() {
 }
 
 function onUndo() {
+  if (!record.hasPast()) return;
   if (ws) {
-    confirmRetract();
+    if (retractRequest.value != ourStone.value)
+      confirmRetract();
   } else {
     record.undoMove();
   }
 }
 
 function onRedo() {
-  if (!ws) {
-    record.redoMove();
-  }
+  if (!record.hasFuture()) return;
+  if (!ws) record.redoMove();
+}
+
+function onHome() {
+  if (!record.hasPast()) return;
+  if (!ws) record.jump(0);
+}
+
+function onEnd() {
+  if (!record.hasFuture()) return;
+  if (!ws) record.jump(record.moves().length);
 }
 
 function show(dialog: HTMLDialogElement) {
@@ -213,6 +231,7 @@ function onDialogClose(e: Event) {
       setGameId('');
     }
   } else if (dialog == gameMenuDialog.value) {
+    altPressed.value = false;
     if (ret == 'main-menu') {
       if (ws) {
         confirm(Action.MainMenu, () => setGameId(''));
@@ -223,7 +242,7 @@ function onDialogClose(e: Event) {
       show(joinDialog.value!);
     } else if (ret == 'pass') {
       onPass();
-    } else if (ret == 'win') {
+    } else if (ret == 'claim-win') {
       // TODO.
     } else if (ret == 'draw') {
       if (ws) {
@@ -241,6 +260,10 @@ function onDialogClose(e: Event) {
       onUndo();
     } else if (ret == 'redo') {
       onRedo();
+    } else if (ret == 'home') {
+      onHome();
+    } else if (ret == 'end') {
+      onEnd();
     }
   } else if (dialog == confirmDialog.value) {
     if (ret == 'confirm') {
@@ -249,8 +272,12 @@ function onDialogClose(e: Event) {
     if (confirmRequest.value = pendingConfirmRequests.shift()) {
       show(confirmDialog.value!);
     }
+  } else if (dialog == errorDialog.value) {
+    setGameId('');
   }
 }
+
+const ANALYZE_PREFIX = 'analyze,';
 
 function setGameId(id: string) {
   if (ws) {
@@ -280,11 +307,28 @@ function setGameId(id: string) {
   if (id == 'local') {
     const encodedRecord = localStorage.getItem('record');
     if (encodedRecord) {
-      record.assign(Record.deserialize(decodeBase64(encodedRecord), 0, true));
+      record.assign(Record.decode(decodeBase64(encodedRecord), 0, true));
     } else {
       record.clear();
     }
     return;
+  }
+
+  if (id.startsWith(ANALYZE_PREFIX)) {
+    const encodedRecord = id.slice(ANALYZE_PREFIX.length);
+    try {
+      record.assign(Record.decode(decodeBase64(encodedRecord), 0, false));
+    } catch (e) {
+      console.error(e);
+      errorMessage.value = 'Failed to decode record.';
+      show(errorDialog.value!);
+    }
+    return;
+  }
+
+  if (!/^[0-9A-Za-z]{10}$/.test(id)) {
+    errorMessage.value = 'Invalid game ID.';
+    return show(errorDialog.value!);
   }
 
   connect({ kind: MessageKind.Join, gameId: id });
@@ -294,7 +338,7 @@ function connect(initMsg: ClientMessage) {
   ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => send(initMsg);
-  ws.onclose = e => onClose(e.code, e.reason);
+  ws.onclose = e => onConnClose(e.code, e.reason);
   ws.onmessage = onMessage;
 }
 
@@ -303,27 +347,25 @@ const CLOSE_CODE_POLICY = 1008;
 
 const connClosedReason = ref('');
 
-function onClose(code?: number, reason?: string) {
-  if (code != undefined && reason != undefined) {
-    if (reason == '') {
-      if (code == CLOSE_CODE_ABNORMAL) {
-        reason = 'Closed abnormally.';
-      } else {
-        reason = `Closed with code ${code}.`;
-      }
+function onConnClose(code: number, reason: string) {
+  if (reason == '') {
+    if (code == CLOSE_CODE_ABNORMAL) {
+      reason = 'Closed abnormally.';
+    } else {
+      reason = `Closed with code ${code}.`;
     }
-    connClosedReason.value = reason;
   }
+  connClosedReason.value = reason;
   show(connClosedDialog.value!);
 }
 
 function onMessage(e: MessageEvent) {
   let msg;
   try {
-    msg = ServerMessage.deserialize(new Uint8Array(e.data));
+    msg = ServerMessage.decode(new Uint8Array(e.data));
   } catch (e) {
     console.error(e);
-    ws!.close(CLOSE_CODE_POLICY, 'Malformed message.');
+    ws!.close(CLOSE_CODE_POLICY, 'Malformed server message.');
     return;
   }
 
@@ -333,6 +375,7 @@ function onMessage(e: MessageEvent) {
       if (msg.gameId) {
         gameId.value = msg.gameId;
         history.pushState(null, '', '#' + msg.gameId);
+        show(gameMenuDialog.value!);
       }
       if (drawRequest.value == Stone.opposite(msg.stone))
         confirmDraw();
@@ -396,7 +439,7 @@ onMounted(() => {
 <template>
   <!-- We need an explicit cast to work around a type mismatch. -->
   <GameView ref="view" :record="<Record>record" :our-stone="ourStone" :disabled="openDialogs.size != 0" @menu="onMenu"
-    @submit="onSubmit" @undo="onUndo" @redo="onRedo" />
+    @submit="onSubmit" @undo="onUndo" @redo="onRedo" @home="onHome" @end="onEnd" />
 
   <dialog ref="main-menu-dialog" @close="onDialogClose">
     <form method="dialog">
@@ -456,31 +499,43 @@ onMounted(() => {
     </form>
   </dialog>
 
-  <dialog ref="game-menu-dialog" @close="onDialogClose">
+  <dialog ref="game-menu-dialog" style="min-width: 11em;" @close="onDialogClose">
     <form method="dialog">
       <p><strong>Game Menu</strong></p>
       <p style="font-family: monospace;">
         <template v-if="gameId == 'local'">Offline</template>
+        <template v-else-if="gameId.startsWith(ANALYZE_PREFIX)">Analyzing</template>
         <template v-else>
           <a :href="'#' + gameId">{{ gameId }}</a><br />
           {{ ourStone ? `Playing ${Stone[ourStone]}` : 'View Only' }}
         </template><br />
-        {{ gameStatus }}
+        {{ gameStatus }}<br />
+        <a target="_blank" :href="'#' + ANALYZE_PREFIX + encodeBase64(record.encode(false))">Analyze</a>
       </p>
       <div class="menu-btn-group">
         <button value="main-menu">Main Menu</button>
         <button v-if="!ourStone" value="join">Join</button>
         <div v-if="ourStone" class="btn-group">
-          <button value="pass" :disabled="record.isEnded() || ourStone != record.turn()">Pass</button>
-          <button value="win" :disabled="record.isEnded()">Win</button>
-          <button value="draw" :disabled="record.isEnded() || drawRequest == ourStone">Draw</button>
+          <button @click.prevent="altPressed = !altPressed" :class="{ pressed: altPressed }">Alt</button>
+          <button v-if="ws" value="undo" :disabled="!record.hasPast() || retractRequest == ourStone">Retract</button>
+          <template v-else-if="!altPressed">
+            <button value="undo" :disabled="!record.hasPast()">Undo</button>
+            <button value="redo" :disabled="!record.hasFuture()">Redo</button>
+          </template>
+          <template v-else>
+            <button value="home" :disabled="!record.hasPast()">Home</button>
+            <button value="end" :disabled="!record.hasFuture()">End</button>
+          </template>
         </div>
         <div v-if="ourStone" class="btn-group">
-          <button v-if="!ws" value="redo" :disabled="!record.hasFuture()">Redo</button>
-          <button value="resign" :disabled="record.isEnded()">Resign</button>
-          <button value="undo" :disabled="!record.hasPast() || retractRequest == ourStone">
-            {{ ws ? 'Retract' : 'Undo' }}
-          </button>
+          <template v-if="!altPressed">
+            <button value="claim-win" :disabled="record.isEnded()">Claim Win</button>
+            <button value="resign" :disabled="record.isEnded()">Resign</button>
+          </template>
+          <template v-else>
+            <button value="pass" :disabled="record.isEnded() || ourStone != record.turn()">Pass</button>
+            <button value="draw" :disabled="record.isEnded() || drawRequest == ourStone">Draw</button>
+          </template>
         </div>
         <button autofocus>Resume</button>
       </div>
@@ -493,6 +548,16 @@ onMounted(() => {
       <div class="btn-group">
         <button>{{ confirmRequest?.cancel }}</button>
         <button value="confirm">{{ confirmRequest?.confirm }}</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog ref="error-dialog" @close="onDialogClose">
+    <form method="dialog">
+      <p><strong>Error</strong></p>
+      <p>{{ errorMessage }}</p>
+      <div class="btn-group">
+        <button>Main Menu</button>
       </div>
     </form>
   </dialog>
@@ -543,6 +608,11 @@ input[type="text"] {
 button {
   width: 100%;
   user-select: none;
+  white-space: nowrap;
+}
+
+.pressed {
+  border-style: inset;
 }
 
 .menu-btn-group {

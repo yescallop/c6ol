@@ -83,7 +83,7 @@ async fn handle_websocket(
     let mut socket = socket
         .filter_map(|res| {
             future::ready(match res {
-                Ok(Message::Binary(data)) => match ClientMessage::deserialize(&data) {
+                Ok(Message::Binary(data)) => match ClientMessage::decode(&data) {
                     Some(msg) => Some(Ok(msg)),
                     None => Some(Err(Error::MalformedMessage)),
                 },
@@ -92,7 +92,7 @@ async fn handle_websocket(
                 Err(err) => Some(Err(err.into())),
             })
         })
-        .with(|msg: ServerMessage| future::ok::<_, axum::Error>(Message::Binary(msg.serialize())));
+        .with(|msg: ServerMessage| future::ok::<_, axum::Error>(Message::Binary(msg.encode())));
 
     let mut game;
 

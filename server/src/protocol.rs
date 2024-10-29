@@ -38,24 +38,24 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
-    /// Deserializes a client message from a buffer.
-    pub fn deserialize(mut buf: &[u8]) -> Option<Self> {
+    /// Decodes a client message from a buffer.
+    pub fn decode(mut buf: &[u8]) -> Option<Self> {
         use ClientMessageKind as Kind;
 
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
             Kind::Start => Self::Start(Box::from(mem::take(&mut buf))),
             Kind::Join => Self::Join(mem::take(&mut buf).try_into().ok()?),
             Kind::Place => {
-                let fst = Point::deserialize(&mut buf)?;
+                let fst = Point::decode(&mut buf)?;
                 let snd = if buf.has_remaining() {
-                    Some(Point::deserialize(&mut buf)?)
+                    Some(Point::decode(&mut buf)?)
                 } else {
                     None
                 };
                 Self::Place(fst, snd)
             }
             Kind::Pass => Self::Pass,
-            Kind::ClaimWin => Self::ClaimWin(Point::deserialize(&mut buf)?),
+            Kind::ClaimWin => Self::ClaimWin(Point::decode(&mut buf)?),
             Kind::Resign => Self::Resign,
             Kind::RequestDraw => Self::RequestDraw,
             Kind::RequestRetract => Self::RequestRetract,
@@ -90,8 +90,8 @@ pub enum ServerMessage {
 }
 
 impl ServerMessage {
-    /// Serializes the server message to a new buffer.
-    pub fn serialize(self) -> Vec<u8> {
+    /// Encodes the server message to a new buffer.
+    pub fn encode(self) -> Vec<u8> {
         let mut buf = vec![ServerMessageKind::from(&self) as u8];
         match self {
             Self::Started { stone, game_id } => {
@@ -100,8 +100,8 @@ impl ServerMessage {
                     buf.put_slice(&id);
                 }
             }
-            Self::Record(rec) => rec.serialize(&mut buf, false),
-            Self::Move(mov) => mov.serialize(&mut buf, true),
+            Self::Record(rec) => rec.encode(&mut buf, false),
+            Self::Move(mov) => mov.encode(&mut buf, true),
             Self::Retract => {}
             Self::RequestDraw(stone) | Self::RequestRetract(stone) => buf.put_u8(stone as u8),
         }

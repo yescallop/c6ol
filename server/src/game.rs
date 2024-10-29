@@ -97,8 +97,8 @@ impl Point {
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
-    /// Deserializes a point from a buffer.
-    pub fn deserialize(buf: &mut &[u8]) -> Option<Self> {
+    /// Decodes a point from a buffer.
+    pub fn decode(buf: &mut &[u8]) -> Option<Self> {
         buf.try_get_u32_varint().ok().map(Self::from_index)
     }
 }
@@ -169,10 +169,10 @@ impl Move {
         matches!(self, Self::Win(_) | Self::Draw | Self::Resign(_))
     }
 
-    /// Serializes the move to a buffer.
+    /// Encodes the move to a buffer.
     ///
     /// If `compact`, omits the pass after a 1-stone move.
-    pub fn serialize(self, buf: &mut Vec<u8>, compact: bool) {
+    pub fn encode(self, buf: &mut Vec<u8>, compact: bool) {
         match self {
             Self::Stone(fst, snd) => {
                 for pos in iter::once(fst).chain(snd) {
@@ -196,10 +196,10 @@ impl Move {
         }
     }
 
-    /// Deserializes a move from a buffer.
+    /// Decodes a move from a buffer.
     ///
     /// If `first`, eagerly returns a 1-stone move.
-    pub fn deserialize(buf: &mut &[u8], first: bool) -> Option<Self> {
+    pub fn decode(buf: &mut &[u8], first: bool) -> Option<Self> {
         let x = buf.try_get_u32_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
             let fst = Point::from_index(x - MOVE_STONE_OFFSET);
@@ -219,7 +219,7 @@ impl Move {
 
         match x {
             MOVE_WIN => {
-                let pos = Point::deserialize(buf)?;
+                let pos = Point::decode(buf)?;
                 Some(Self::Win(pos))
             }
             MOVE_RESIGN => {
@@ -425,21 +425,21 @@ impl Record {
         None
     }
 
-    /// Serializes the record to a buffer.
+    /// Encodes the record to a buffer.
     ///
     /// If `all`, includes all moves prefixed with the current move index.
-    pub fn serialize(&self, buf: &mut Vec<u8>, all: bool) {
+    pub fn encode(&self, buf: &mut Vec<u8>, all: bool) {
         if all {
             buf.put_u64_varint(self.index as u64);
         }
         let end = if all { self.moves.len() } else { self.index };
         for i in 0..end {
-            self.moves[i].serialize(buf, i == 0);
+            self.moves[i].encode(buf, i == 0);
         }
     }
 
-    /// Deserializes a record from a buffer.
-    pub fn deserialize(buf: &mut &[u8], all: bool) -> Option<Self> {
+    /// Decodes a record from a buffer.
+    pub fn decode(buf: &mut &[u8], all: bool) -> Option<Self> {
         let mut rec = Self::new();
         let index = if all {
             Some(buf.try_get_usize_varint().ok()?)
@@ -448,7 +448,7 @@ impl Record {
         };
 
         while buf.has_remaining() {
-            let mov = Move::deserialize(buf, !rec.has_past())?;
+            let mov = Move::decode(buf, !rec.has_past())?;
             if !rec.make_move(mov) {
                 return None;
             }

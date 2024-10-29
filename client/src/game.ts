@@ -86,13 +86,13 @@ export class Point {
     return new Point(this.x, this.y);
   }
 
-  /** Serializes the point to a buffer. */
-  serialize(buf: Uint8Array[]) {
+  /** Encodes the point to a buffer. */
+  encode(buf: Uint8Array[]) {
     buf.push(encodeVarint(this.index())[0]);
   }
 
-  /** Deserializes a point from a buffer. */
-  static deserialize(buf: Uint8Array, offset: number): [Point, number] {
+  /** Decodes a point from a buffer. */
+  static decode(buf: Uint8Array, offset: number): [Point, number] {
     const [x, i] = decodeVarint32(buf, offset);
     return [Point.fromIndex(x), i];
   }
@@ -164,11 +164,11 @@ export namespace Move {
   }
 
   /**
-   * Serializes a move to a buffer.
+   * Encodes a move to a buffer.
    *
    * If `compact`, omits the pass after a 1-stone move.
    */
-  export function serialize(move: Move, buf: Uint8Array[], compact: boolean) {
+  export function encode(move: Move, buf: Uint8Array[], compact: boolean) {
     switch (move.kind) {
       case MoveKind.Stone:
         for (const pos of move.pos) {
@@ -193,11 +193,11 @@ export namespace Move {
   }
 
   /**
-   * Deserializes a move from a buffer.
+   * Decodes a move from a buffer.
    *
    * If `first`, eagerly returns a 1-stone move.
    */
-  export function deserialize(buf: Uint8Array, offset: number, first: boolean): [Move, number] {
+  export function decode(buf: Uint8Array, offset: number, first: boolean): [Move, number] {
     let [x, i] = decodeVarint32(buf, offset);
     if (x >= MOVE_STONE_OFFSET) {
       let pos: [Point] | [Point, Point];
@@ -218,7 +218,7 @@ export namespace Move {
     switch (x) {
       case MoveKind.Win:
         let pos;
-        [pos, i] = Point.deserialize(buf, i);
+        [pos, i] = Point.decode(buf, i);
         return [{ kind: MoveKind.Win, pos }, i];
       case MoveKind.Resign:
         if (i >= buf.length)
@@ -406,27 +406,27 @@ export class Record {
   }
 
   /**
-   * Serializes the record to a buffer.
+   * Encodes the record to a buffer.
    *
    * If `all`, includes all moves prefixed with the current move index.
    */
-  serialize(all: boolean): Uint8Array {
+  encode(all: boolean): Uint8Array {
     const buf = all ? [encodeVarint(this.idx)[0]] : [];
     const end = all ? this.mov.length : this.idx;
     for (let i = 0; i < end; i++)
-      Move.serialize(this.mov[i], buf, i == 0);
+      Move.encode(this.mov[i], buf, i == 0);
     return concat(buf);
   }
 
-  /** Deserializes a record from a buffer. */
-  static deserialize(buf: Uint8Array, offset: number, all: boolean): Record {
+  /** Decodes a record from a buffer. */
+  static decode(buf: Uint8Array, offset: number, all: boolean): Record {
     const rec = new Record();
     let index, i = offset;
     if (all) [index, i] = decodeVarint32(buf, i);
 
     while (i < buf.length) {
       let move;
-      [move, i] = Move.deserialize(buf, i, !rec.hasPast());
+      [move, i] = Move.decode(buf, i, !rec.hasPast());
       if (!rec.makeMove(move))
         throw new RangeError('move failed');
     }

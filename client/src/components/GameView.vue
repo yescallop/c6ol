@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue';
 import { MoveKind, Point, Record, Stone } from '@/game';
-import { encodeBase64Url } from '@std/encoding/base64url';
 
 const { record, ourStone, disabled } = defineProps<{
   record: Record;
@@ -14,6 +13,8 @@ const emit = defineEmits<{
   submit: [pos: [Point] | [Point, Point]];
   undo: [];
   redo: [];
+  home: [];
+  end: [];
 }>();
 
 defineExpose({
@@ -389,13 +390,16 @@ function onKeyDown(e: KeyboardEvent) {
     case 'Equal':
       return zoom(Zoom.In);
     case 'Backspace':
-      if (e.repeat) return;
       if (e.shiftKey) {
-        if (record.hasFuture()) emit('redo');
+        emit('redo');
       } else {
-        if (record.hasPast()) emit('undo');
+        emit('undo');
       }
       return;
+    case 'Home':
+      return emit('home');
+    case 'End':
+      return emit('end');
     case 'Enter':
       // Required for the dialog not to close immediately.
       e.preventDefault();
@@ -743,20 +747,6 @@ function onContextMenu(e: MouseEvent) {
   emit('menu');
 }
 
-/**
- * Handles `copy` events.
- *
- * Copies the record URI into the clipboard.
- */
-function onCopy(e: ClipboardEvent) {
-  if (disabled) return;
-
-  const uri = 'c6:' + encodeBase64Url(record.serialize(true)) + ';';
-  e.clipboardData!.setData('text/plain', uri);
-  // `preventDefault` is required for the change to take effect.
-  e.preventDefault();
-}
-
 onMounted(() => {
   ctx = canvas.value!.getContext('2d')!;
 
@@ -764,12 +754,10 @@ onMounted(() => {
   new ResizeObserver(resizeCanvas).observe(canvasContainer.value!);
 
   window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('copy', onCopy);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
-  window.removeEventListener('copy', onCopy);
 });
 </script>
 
