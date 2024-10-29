@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue';
 import { MoveKind, Point, Record, Stone } from '@/game';
 import { encodeBase64Url } from '@std/encoding/base64url';
 
@@ -63,8 +63,8 @@ const MOVE_TEXT_OPACITY = 0.5;
 const DIST_FOR_PINCH_ZOOM = 2 * 96 / 2.54; // 2cm
 const DIST_FOR_SWIPE_RETRACT = 4 * 96 / 2.54; // 4cm
 
-const canvasContainer = ref<Element>();
-const canvas = ref<HTMLCanvasElement>();
+const canvasContainer = useTemplateRef('canvas-container');
+const canvas = useTemplateRef('canvas');
 let ctx: CanvasRenderingContext2D;
 
 /** Pixel size of the canvas. */
@@ -484,7 +484,7 @@ function onPointerUp(e: PointerEvent) {
 }
 
 /**
- * Handles `pointerenter` and `pointermove` events.
+ * Handles `pointerover` and `pointermove` events.
  *
  * Performs different actions according to the number of active pointers:
  *
@@ -552,9 +552,11 @@ function onHover(e: PointerOffsets) {
 }
 
 /** Handles `pointerleave` events. */
-function onPointerLeave(e: PointerEvent) {
-  downPointers.delete(e.pointerId);
+function onPointerLeave(e: PointerOffsets) {
+  // We can also get a `mouseleave` event on Firefox (see above).
+  if (e.pointerId != undefined) downPointers.delete(e.pointerId);
   if (downPointers.size == 0) viewState = ViewState.Calm;
+
   if (lastHoverBeforeEnabled?.pointerId == e.pointerId)
     lastHoverBeforeEnabled = undefined;
 }
@@ -769,10 +771,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div id="view-container" ref="canvasContainer">
+  <div id="view-container" ref="canvas-container">
     <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointerup="onPointerUp"
-      @pointerover="onHover" @pointermove="onHover" @pointerleave="onPointerLeave" @mouseover="onHover"
-      @contextmenu="onContextMenu"></canvas>
+      @pointerover="onHover" @pointermove="onHover" @pointerleave="onPointerLeave" @contextmenu="onContextMenu"
+      @mouseover="onHover" @mouseleave="onPointerLeave" />
   </div>
 </template>
 
