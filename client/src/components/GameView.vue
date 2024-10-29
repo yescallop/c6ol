@@ -29,7 +29,7 @@ watch([record, () => ourStone], () => {
   draw();
 });
 
-let lastHoverBeforeEnabled: PointerEvent | undefined;
+let lastHoverBeforeEnabled: PointerOffsets | undefined;
 
 watch(() => disabled, () => {
   if (!disabled && lastHoverBeforeEnabled) {
@@ -97,14 +97,25 @@ let cursor: Point | undefined;
 let phantom: Point | undefined;
 let tentative: Point | undefined;
 
+interface PointerOffsets {
+  pointerId?: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+// We need to persist pointer events because they can change on Firefox.
+function persist(e: PointerOffsets): PointerOffsets {
+  return { offsetX: e.offsetX, offsetY: e.offsetY };
+}
+
 interface Pointer {
   /** The `pointerdown` event fired when the pointer became active. */
-  down: PointerEvent;
+  down: PointerOffsets;
   /**
    * Last event fired about the pointer.
-   * Can be `pointerenter`, `pointermove`, or `pointerdown`.
+   * Can be `pointerover`, `pointermove`, or `pointerdown`.
    */
-  last: PointerEvent;
+  last: PointerOffsets;
   /** Board position the pointer was at when it became active. */
   boardPosOnDown: Point;
 }
@@ -272,7 +283,6 @@ function clampCursor() {
 function followBoardPosOnDown(): boolean {
   const [pointer] = downPointers.values();
   const p0 = pointer.boardPosOnDown;
-  // FIXME: This does not work correctly when zooming with Firefox.
   const [p] = canvasToBoardPos(pointer.last.offsetX, pointer.last.offsetY);
 
   const dx = p.x - p0.x, dy = p.y - p0.y;
@@ -285,7 +295,7 @@ function followBoardPosOnDown(): boolean {
 }
 
 /** Moves the cursor to the pointer position, or removes it when out of view. */
-function updateCursor(e: MouseEvent, noDraw = false) {
+function updateCursor(e: PointerOffsets, noDraw = false) {
   const [p, out] = canvasToBoardPos(e.offsetX, e.offsetY);
   const newCursor = out ? undefined : p;
 
@@ -334,7 +344,7 @@ function zoom(zoom: Zoom, wheelEvent?: WheelEvent) {
 }
 
 /** Returns the Euclidean distance between the positions of two pointers. */
-function dist(a: MouseEvent, b: MouseEvent): number {
+function dist(a: PointerOffsets, b: PointerOffsets): number {
   return Math.hypot(a.offsetX - b.offsetX, a.offsetY - b.offsetY);
 }
 
@@ -436,7 +446,11 @@ function onWheel(e: WheelEvent) {
 /** Handles `pointerdown` events. */
 function onPointerDown(e: PointerEvent) {
   const [p] = canvasToBoardPos(e.offsetX, e.offsetY);
-  downPointers.set(e.pointerId, { down: e, last: e, boardPosOnDown: p });
+  downPointers.set(e.pointerId, {
+    down: persist(e),
+    last: persist(e),
+    boardPosOnDown: p,
+  });
 
   if (downPointers.size == 2) {
     prevViewSize = viewSize;
@@ -481,7 +495,7 @@ function onPointerUp(e: PointerEvent) {
  * - 3: Retracts the previous move if all pointers have moved for at least
  *      a distance of `DIST_FOR_SWIPE_RETRACT`.
  */
-function onHover(e: PointerEvent) {
+function onHover(e: PointerOffsets) {
   if (disabled) {
     // We can reach here for either of the following reasons:
     // - A dialog was closed with a pointer which then entered the view.
@@ -492,12 +506,16 @@ function onHover(e: PointerEvent) {
     // corresponding `pointerleave` event is fired, or replay it after the
     // view is enabled. The cursor will be updated only in the former case
     // if no new dialog was opened as soon as the previous one was closed.
-    lastHoverBeforeEnabled = e;
+    lastHoverBeforeEnabled = persist(e);
     return;
   }
 
-  const pointer = downPointers.get(e.pointerId);
-  if (pointer) pointer.last = e;
+  // We can also get a `mouseover` event, because Firefox does not fire a
+  // `pointerover` event after a dialog is closed.
+  if (e.pointerId != undefined) {
+    const pointer = downPointers.get(e.pointerId);
+    if (pointer) pointer.last = persist(e);
+  }
 
   if (downPointers.size == 0) {
     updateCursor(e);
@@ -753,7 +771,7 @@ onBeforeUnmount(() => {
 <template>
   <div id="view-container" ref="canvasContainer">
     <canvas id="view" ref="canvas" @wheel="onWheel" @pointerdown="onPointerDown" @pointerup="onPointerUp"
-      @pointerenter="onHover" @pointermove="onHover" @pointerleave="onPointerLeave"
+      @pointerover="onHover" @pointermove="onHover" @pointerleave="onPointerLeave" @mouseover="onHover"
       @contextmenu="onContextMenu"></canvas>
   </div>
 </template>
