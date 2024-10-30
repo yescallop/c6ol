@@ -106,7 +106,7 @@ interface PointerOffsets {
 
 // We need to persist pointer events because they can change on Firefox.
 function persist(e: PointerOffsets): PointerOffsets {
-  return { offsetX: e.offsetX, offsetY: e.offsetY };
+  return { pointerId: e.pointerId, offsetX: e.offsetX, offsetY: e.offsetY };
 }
 
 interface Pointer {
