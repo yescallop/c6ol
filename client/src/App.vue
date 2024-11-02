@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
 import GameView from './components/GameView.vue';
 import { Move, MoveKind, Point, Record, Stone } from './game';
-import { ClientMessage, MessageKind, ServerMessage } from './protocol';
+import { ClientMessage, MessageKind, Request, ServerMessage } from './protocol';
 import { decodeBase64, encodeBase64 } from '@std/encoding/base64';
 
 const openDialogs = reactive(new Set<HTMLDialogElement>());
@@ -22,14 +22,16 @@ enum Action {
   Submit,
   Pass,
   OneStoneMove,
-  OfferDraw,
+  RequestDraw,
   AcceptDraw,
   RequestRetract,
   AcceptRetract,
+  RequestReset,
+  AcceptReset,
   Resign,
 }
 
-interface ConfirmRequest {
+interface Confirmation {
   message: string;
   confirm: string;
   cancel: string;
@@ -42,11 +44,10 @@ const passcode = ref('');
 
 const view = useTemplateRef('view');
 
-const confirmRequest = ref<ConfirmRequest>();
-const pendingConfirmRequests: ConfirmRequest[] = [];
+const currentConfirmation = ref<Confirmation>();
+const pendingConfirmations: Confirmation[] = [];
 
-const retractRequest = ref<Stone>();
-const drawRequest = ref<Stone>();
+const requests = reactive<(Stone | undefined)[]>([]);
 
 const errorMessage = ref('');
 
@@ -65,7 +66,7 @@ function confirm(action: Action, confirmed: () => void) {
     case Action.OneStoneMove:
       message = 'Make a one-stone move?';
       break;
-    case Action.OfferDraw:
+    case Action.RequestDraw:
       message = 'Offer a draw?';
       break;
     case Action.AcceptDraw:
@@ -81,28 +82,43 @@ function confirm(action: Action, confirmed: () => void) {
       confirm = 'Accept';
       cancel = 'Ignore';
       break;
+    case Action.RequestReset:
+      message = 'Request to reset the game?';
+      break;
+    case Action.AcceptReset:
+      message = 'The opponent requests to reset the game.';
+      confirm = 'Accept';
+      cancel = 'Ignore';
+      break;
     case Action.Resign:
       message = 'Resign the game?';
       break;
   }
 
-  const req = { message, confirm, cancel, confirmed };
-  if (confirmRequest.value) {
-    pendingConfirmRequests.push(req);
+  const confirmation = { message, confirm, cancel, confirmed };
+  if (currentConfirmation.value) {
+    pendingConfirmations.push(confirmation);
   } else {
-    confirmRequest.value = req;
+    currentConfirmation.value = confirmation;
     show(confirmDialog.value!);
   }
 }
 
-function confirmDraw() {
-  const action = drawRequest.value ? Action.AcceptDraw : Action.OfferDraw;
-  confirm(action, () => send({ kind: MessageKind.RequestDraw }));
-}
-
-function confirmRetract() {
-  const action = retractRequest.value ? Action.AcceptRetract : Action.RequestRetract;
-  confirm(action, () => send({ kind: MessageKind.RequestRetract }));
+function confirmRequest(kind: Request) {
+  const requested = requests[kind];
+  let action;
+  switch (kind) {
+    case Request.Draw:
+      action = requested ? Action.AcceptDraw : Action.RequestDraw;
+      break;
+    case Request.Retract:
+      action = requested ? Action.AcceptRetract : Action.RequestRetract;
+      break;
+    case Request.Reset:
+      action = requested ? Action.AcceptReset : Action.RequestReset;
+      break;
+  }
+  confirm(action, () => send({ kind: MessageKind.Request, request: kind }));
 }
 
 const record = reactive(new Record());
@@ -171,8 +187,8 @@ function onPass() {
 function onUndo() {
   if (!record.hasPast()) return;
   if (ws) {
-    if (retractRequest.value != ourStone.value)
-      confirmRetract();
+    if (requests[Request.Retract] != ourStone.value)
+      confirmRequest(Request.Retract);
   } else {
     record.undoMove();
   }
@@ -185,7 +201,12 @@ function onRedo() {
 
 function onHome() {
   if (!record.hasPast()) return;
-  if (!ws) record.jump(0);
+  if (ws) {
+    if (requests[Request.Reset] != ourStone.value)
+      confirmRequest(Request.Reset);
+  } else {
+    record.jump(0);
+  }
 }
 
 function onEnd() {
@@ -246,7 +267,7 @@ function onDialogClose(e: Event) {
       // TODO.
     } else if (ret == 'draw') {
       if (ws) {
-        confirmDraw();
+        confirmRequest(Request.Draw);
       } else {
         record.makeMove({ kind: MoveKind.Draw });
       }
@@ -267,9 +288,9 @@ function onDialogClose(e: Event) {
     }
   } else if (dialog == confirmDialog.value) {
     if (ret == 'confirm') {
-      confirmRequest.value!.confirmed();
+      currentConfirmation.value!.confirmed();
     }
-    if (confirmRequest.value = pendingConfirmRequests.shift()) {
+    if (currentConfirmation.value = pendingConfirmations.shift()) {
       show(confirmDialog.value!);
     }
   } else if (dialog == errorDialog.value) {
@@ -294,10 +315,6 @@ function setGameId(id: string) {
 
   gameId.value = id;
   ourStone.value = undefined;
-
-  // Clear the requests.
-  retractRequest.value = undefined;
-  drawRequest.value = undefined;
 
   if (id == '') {
     record.clear();
@@ -334,12 +351,19 @@ function setGameId(id: string) {
   connect({ kind: MessageKind.Join, gameId: id });
 }
 
+let firstMessage = true;
+
 function connect(initMsg: ClientMessage) {
   ws = new WebSocket('ws://' + document.location.host + '/ws');
   ws.binaryType = 'arraybuffer';
   ws.onopen = () => send(initMsg);
   ws.onclose = e => onConnClose(e.code, e.reason);
-  ws.onmessage = onMessage;
+
+  firstMessage = true;
+  ws.onmessage = (e) => {
+    onMessage(e);
+    firstMessage = false;
+  };
 }
 
 const CLOSE_CODE_ABNORMAL = 1006;
@@ -377,36 +401,30 @@ function onMessage(e: MessageEvent) {
         history.pushState(null, '', '#' + msg.gameId);
         show(gameMenuDialog.value!);
       }
-      if (drawRequest.value == Stone.opposite(msg.stone))
-        confirmDraw();
-      if (retractRequest.value == Stone.opposite(msg.stone))
-        confirmRetract();
+      for (const req of Request.VALUES) {
+        if (requests[req] == Stone.opposite(msg.stone))
+          confirmRequest(req);
+      }
       return;
     case MessageKind.Record:
       record.assign(msg.record);
-      if (!ourStone.value) show(joinDialog.value!);
-      return;
+      if (firstMessage) show(joinDialog.value!);
+      break;
     case MessageKind.Move:
       record.makeMove(msg.move);
       break;
     case MessageKind.Retract:
       record.undoMove();
       break;
-    case MessageKind.RequestDraw:
-      drawRequest.value = msg.stone;
+    case MessageKind.Request:
+      requests[msg.request] = msg.stone;
       if (ourStone.value == Stone.opposite(msg.stone))
-        confirmDraw();
-      return;
-    case MessageKind.RequestRetract:
-      retractRequest.value = msg.stone;
-      if (ourStone.value == Stone.opposite(msg.stone))
-        confirmRetract();
+        confirmRequest(msg.request);
       return;
   }
 
   // Clear the requests.
-  drawRequest.value = undefined;
-  retractRequest.value = undefined;
+  requests.length = 0;
 }
 
 const gameStatus = computed(() => {
@@ -523,7 +541,12 @@ onMounted(() => {
         <button v-if="!ourStone" value="join">Join</button>
         <div v-if="ourStone" class="btn-group">
           <button @click.prevent="altPressed = !altPressed" :class="{ pressed: altPressed }">Alt</button>
-          <button v-if="ws" value="undo" :disabled="!record.hasPast() || retractRequest == ourStone">Retract</button>
+          <template v-if="ws">
+            <button v-if="!altPressed" value="undo"
+              :disabled="!record.hasPast() || requests[Request.Retract] == ourStone">Retract</button>
+            <button v-else value="home"
+              :disabled="!record.hasPast() || requests[Request.Reset] == ourStone">Reset</button>
+          </template>
           <template v-else-if="!altPressed">
             <button value="undo" :disabled="!record.hasPast()">Undo</button>
             <button value="redo" :disabled="!record.hasFuture()">Redo</button>
@@ -540,7 +563,7 @@ onMounted(() => {
           </template>
           <template v-else>
             <button value="pass" :disabled="record.isEnded() || ourStone != record.turn()">Pass</button>
-            <button value="draw" :disabled="record.isEnded() || drawRequest == ourStone">Draw</button>
+            <button value="draw" :disabled="record.isEnded() || requests[Request.Draw] == ourStone">Draw</button>
           </template>
         </div>
         <button autofocus>Resume</button>
@@ -550,10 +573,10 @@ onMounted(() => {
 
   <dialog class="transparent" ref="confirm-dialog" @close="onDialogClose">
     <form method="dialog">
-      <p>{{ confirmRequest?.message }}</p>
+      <p>{{ currentConfirmation?.message }}</p>
       <div class="btn-group">
-        <button>{{ confirmRequest?.cancel }}</button>
-        <button value="confirm">{{ confirmRequest?.confirm }}</button>
+        <button>{{ currentConfirmation?.cancel }}</button>
+        <button value="confirm">{{ currentConfirmation?.confirm }}</button>
       </div>
     </form>
   </dialog>

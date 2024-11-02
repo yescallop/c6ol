@@ -13,6 +13,32 @@ pub type Passcode = Box<[u8]>;
 /// A game ID.
 pub type GameId = [u8; GAME_ID_SIZE];
 
+/// A player's request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Request {
+    /// Ends the game in a draw.
+    Draw = 0,
+    /// Retracts the previous move.
+    Retract = 1,
+    /// Resets the game.
+    Reset = 2,
+}
+
+impl Request {
+    /// All requests available.
+    pub const VALUES: [Self; 3] = [Self::Draw, Self::Retract, Self::Reset];
+
+    /// Creates a request from a `u8`.
+    pub fn from_u8(n: u8) -> Option<Self> {
+        match n {
+            0 => Some(Self::Draw),
+            1 => Some(Self::Retract),
+            2 => Some(Self::Reset),
+            _ => None,
+        }
+    }
+}
+
 /// A client message.
 #[derive(Debug, Clone, EnumDiscriminants)]
 #[repr(u8)]
@@ -31,10 +57,8 @@ pub enum ClientMessage {
     ClaimWin(Point) = 4,
     /// Resigns the game.
     Resign = 5,
-    /// Requests a draw.
-    RequestDraw = 10,
-    /// Requests to retract the previous move.
-    RequestRetract = 11,
+    /// Makes a request.
+    Request(Request) = 10,
 }
 
 impl ClientMessage {
@@ -57,8 +81,7 @@ impl ClientMessage {
             Kind::Pass => Self::Pass,
             Kind::ClaimWin => Self::ClaimWin(Point::decode(&mut buf)?),
             Kind::Resign => Self::Resign,
-            Kind::RequestDraw => Self::RequestDraw,
-            Kind::RequestRetract => Self::RequestRetract,
+            Kind::Request => Self::Request(Request::from_u8(buf.try_get_u8().ok()?)?),
         };
         (!buf.has_remaining()).then_some(msg)
     }
@@ -83,10 +106,8 @@ pub enum ServerMessage {
     Move(Move) = 8,
     /// The previous move was retracted.
     Retract = 9,
-    /// A player requested a draw.
-    RequestDraw(Stone) = 10,
-    /// A player requested to retract the previous move.
-    RequestRetract(Stone) = 11,
+    /// A player made a request.
+    Request(Request, Stone) = 10,
 }
 
 impl ServerMessage {
@@ -103,7 +124,10 @@ impl ServerMessage {
             Self::Record(rec) => rec.encode(&mut buf, false),
             Self::Move(mov) => mov.encode(&mut buf, true),
             Self::Retract => {}
-            Self::RequestDraw(stone) | Self::RequestRetract(stone) => buf.put_u8(stone as u8),
+            Self::Request(request, stone) => {
+                buf.put_u8(request as u8);
+                buf.put_u8(stone as u8);
+            }
         }
         buf
     }

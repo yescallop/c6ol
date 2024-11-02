@@ -16,8 +16,29 @@ export enum MessageKind {
   Move = 8,
   Retract = 9,
   // Common messages.
-  RequestDraw = 10,
-  RequestRetract = 11,
+  Request = 10,
+}
+
+/** A player's request. */
+export enum Request {
+  /** Ends the game in a draw. */
+  Draw = 0,
+  /** Retracts the previous move. */
+  Retract = 1,
+  /** Resets the game. */
+  Reset = 2,
+}
+
+export namespace Request {
+  /** All requests available. */
+  export const VALUES = [Request.Draw, Request.Retract, Request.Reset];
+
+  /** Creates a request from a number. */
+  export function fromNumber(n: number): Request {
+    if (n != 0 && n != 1 && n != 2)
+      throw new RangeError('unknown request kind');
+    return n;
+  }
 }
 
 export type ClientMessage = {
@@ -44,11 +65,9 @@ export type ClientMessage = {
   // Resigns the game.
   kind: MessageKind.Resign;
 } | {
-  // Requests a draw.
-  kind: MessageKind.RequestDraw;
-} | {
-  // Requests to retract the previous move.
-  kind: MessageKind.RequestRetract;
+  // Makes a request.
+  kind: MessageKind.Request;
+  request: Request;
 };
 
 export namespace ClientMessage {
@@ -66,6 +85,9 @@ export namespace ClientMessage {
         break;
       case MessageKind.ClaimWin:
         msg.pos.encode(buf);
+        break;
+      case MessageKind.Request:
+        buf.push(Uint8Array.of(msg.request));
         break;
     }
     return concat(buf);
@@ -92,12 +114,9 @@ export type ServerMessage = {
   // The previous move was retracted.
   kind: MessageKind.Retract;
 } | {
-  // A player requested a draw.
-  kind: MessageKind.RequestDraw;
-  stone: Stone;
-} | {
-  // A player requested to retract the previous move.
-  kind: MessageKind.RequestRetract;
+  // A player made a request.
+  kind: MessageKind.Request;
+  request: Request;
   stone: Stone;
 };
 
@@ -133,10 +152,15 @@ export namespace ServerMessage {
       case MessageKind.Retract:
         msg = { kind };
         break;
-      case MessageKind.RequestDraw:
-      case MessageKind.RequestRetract:
-        if (i >= buf.length) throw new RangeError('empty payload');
-        msg = { kind, stone: Stone.fromNumber(buf[i++]) };
+      case MessageKind.Request:
+        if (i + 2 > buf.length)
+          throw new RangeError('expected request kind and stone');
+        msg = {
+          kind,
+          request: Request.fromNumber(buf[i]),
+          stone: Stone.fromNumber(buf[i + 1]),
+        };
+        i += 2;
         break;
       default:
         throw new RangeError('unknown message kind');

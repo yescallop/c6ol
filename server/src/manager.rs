@@ -2,7 +2,7 @@
 
 use crate::{
     game::{Move, Record, Stone},
-    protocol::{ClientMessage, GameId, Passcode, ServerMessage},
+    protocol::{ClientMessage, GameId, Passcode, Request, ServerMessage},
 };
 use rand::{distributions::Alphanumeric, Rng};
 use std::{array, collections::HashMap, future::Future, iter};
@@ -183,51 +183,50 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
 
 struct GameState {
     msg_tx: broadcast::Sender<ServerMessage>,
-    rec: Record,
-    pass_black: Option<Passcode>,
-    pass_white: Option<Passcode>,
-    req_draw: Option<Stone>,
-    req_retract: Option<Stone>,
+    record: Record,
+    passcode_black: Option<Passcode>,
+    passcode_white: Option<Passcode>,
+    requests: [Option<Stone>; Request::VALUES.len()],
 }
 
 impl GameState {
     fn new() -> Self {
         Self {
             msg_tx: broadcast::channel(100).0,
-            rec: Record::new(),
-            pass_black: None,
-            pass_white: None,
-            req_draw: None,
-            req_retract: None,
+            record: Record::new(),
+            passcode_black: None,
+            passcode_white: None,
+            requests: [None; Request::VALUES.len()],
         }
     }
 
     fn subscribe(&self) -> GameSubscription {
         GameSubscription {
-            init_msgs: iter::once(ServerMessage::Record(Box::new(self.rec.clone())))
-                .chain(self.req_draw.map(ServerMessage::RequestDraw))
-                .chain(self.req_retract.map(ServerMessage::RequestRetract))
+            init_msgs: iter::once(ServerMessage::Record(Box::new(self.record.clone())))
+                .chain(Request::VALUES.into_iter().filter_map(|req| {
+                    self.requests[req as usize].map(|stone| ServerMessage::Request(req, stone))
+                }))
                 .collect(),
             msg_rx: self.msg_tx.subscribe(),
         }
     }
 
-    fn authenticate(&mut self, pass: Passcode) -> Option<Stone> {
-        if let Some(pass_black) = &self.pass_black {
-            if pass == *pass_black {
+    fn authenticate(&mut self, passcode: Passcode) -> Option<Stone> {
+        if let Some(passcode_black) = &self.passcode_black {
+            if passcode == *passcode_black {
                 Some(Stone::Black)
-            } else if let Some(pass_white) = &self.pass_white {
-                if pass == *pass_white {
+            } else if let Some(passcode_white) = &self.passcode_white {
+                if passcode == *passcode_white {
                     Some(Stone::White)
                 } else {
                     None
                 }
             } else {
-                self.pass_white = Some(pass);
+                self.passcode_white = Some(passcode);
                 Some(Stone::White)
             }
         } else {
-            self.pass_black = Some(pass);
+            self.passcode_black = Some(passcode);
             Some(Stone::Black)
         }
     }
@@ -238,19 +237,20 @@ impl GameState {
         enum Action {
             Move(Move),
             Retract,
+            Reset,
         }
 
         let action = match msg {
             Msg::Start(_) | Msg::Join(_) => return,
             Msg::Place(fst, snd) => {
-                if self.rec.turn() != stone {
+                if self.record.turn() != stone {
                     // Not their turn.
                     return;
                 }
                 Action::Move(Move::Stone(fst, snd))
             }
             Msg::Pass => {
-                if self.rec.turn() != stone {
+                if self.record.turn() != stone {
                     // Not their turn.
                     return;
                 }
@@ -258,37 +258,36 @@ impl GameState {
             }
             Msg::ClaimWin(pos) => Action::Move(Move::Win(pos)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
-            Msg::RequestDraw => {
-                if self.req_draw == Some(stone) {
+            Msg::Request(req) => {
+                let req_stone = &mut self.requests[req as usize];
+                if *req_stone == Some(stone) {
                     // Duplicate request.
                     return;
                 }
-                if self.req_draw.is_none() {
+
+                if matches!(req, Request::Retract | Request::Reset) && !self.record.has_past() {
+                    // No moves in the past.
+                    return;
+                }
+
+                if req_stone.is_none() {
                     // No request present, make one.
-                    self.req_draw = Some(stone);
-                    let _ = self.msg_tx.send(ServerMessage::RequestDraw(stone));
+                    *req_stone = Some(stone);
+                    let _ = self.msg_tx.send(ServerMessage::Request(req, stone));
                     return;
                 }
-                Action::Move(Move::Draw)
-            }
-            Msg::RequestRetract => {
-                if self.req_retract == Some(stone) || !self.rec.has_past() {
-                    // Duplicate request or no moves in the past.
-                    return;
+
+                match req {
+                    Request::Draw => Action::Move(Move::Draw),
+                    Request::Retract => Action::Retract,
+                    Request::Reset => Action::Reset,
                 }
-                if self.req_retract.is_none() {
-                    // No request present, make one.
-                    self.req_retract = Some(stone);
-                    let _ = self.msg_tx.send(ServerMessage::RequestRetract(stone));
-                    return;
-                }
-                Action::Retract
             }
         };
 
         let msg = match action {
             Action::Move(mov) => {
-                if !self.rec.make_move(mov) {
+                if !self.record.make_move(mov) {
                     // The move failed.
                     return;
                 }
@@ -296,14 +295,18 @@ impl GameState {
             }
             Action::Retract => {
                 // We have checked that there is a previous move.
-                self.rec.undo_move();
+                self.record.undo_move();
                 ServerMessage::Retract
+            }
+            Action::Reset => {
+                // We have checked that there is a previous move.
+                self.record.jump(0);
+                ServerMessage::Record(Box::new(Record::new()))
             }
         };
 
         // Clear the requests.
-        self.req_draw = None;
-        self.req_retract = None;
+        self.requests.fill(None);
         let _ = self.msg_tx.send(msg);
     }
 }
