@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{future::Future, io, net::Ipv6Addr};
 use tokio::{net::TcpSocket, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

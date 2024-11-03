@@ -1,0 +1,14 @@
+[package]
+name = "c6ol-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+
+[dependencies]
+bytes = "1"
+bytes-varint = "1"
+strum = { version = "0.26", features = ["derive"] }
+
+[lints]
+workspace = true

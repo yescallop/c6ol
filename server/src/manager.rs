@@ -1,6 +1,6 @@
 //! Game manager.
 
-use crate::{
+use c6ol_core::{
     game::{Move, Record, Stone},
     protocol::{ClientMessage, GameId, Passcode, Request, ServerMessage},
 };

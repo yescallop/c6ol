@@ -1,10 +1,6 @@
 //! WebSocket handling.
 
-use crate::{
-    manager::GameManager,
-    protocol::{ClientMessage, ServerMessage},
-    server::AppState,
-};
+use crate::{manager::GameManager, server::AppState};
 use axum::{
     extract::{
         ws::{close_code, CloseFrame, Message, WebSocket},
@@ -12,6 +8,7 @@ use axum::{
     },
     response::Response,
 };
+use c6ol_core::protocol::{ClientMessage, ServerMessage};
 use futures_util::{future, SinkExt, StreamExt};
 use std::convert::Infallible;
 use tokio::sync::broadcast::error::RecvError;

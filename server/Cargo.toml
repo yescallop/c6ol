@@ -5,17 +5,20 @@ edition = "2021"
 rust-version = "1.80"
 publish = false
 
+[dependencies.c6ol-core]
+path = "../core"
+
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
-bytes = "1"
-bytes-varint = "1"
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
 rand = "0.8"
 remain = "0.2"
 socket2 = "0.5"
-strum = { version = "0.26", features = ["derive"] }
 thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true
