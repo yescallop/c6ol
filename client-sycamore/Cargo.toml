@@ -1,0 +1,9 @@
+[package]
+name = "c6ol-client-sycamore"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+publish = false
+
+[dependencies]
+sycamore = "0.9.0"

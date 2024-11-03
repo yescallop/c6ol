@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "server"]
+members = ["client-sycamore", "core", "server"]
 resolver = "2"
 
 [workspace.lints.rust]
