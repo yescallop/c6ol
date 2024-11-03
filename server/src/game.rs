@@ -389,36 +389,44 @@ impl Record {
     }
 
     /// Scans the row through a position in both directions of an axis.
-    pub fn scan_row(&self, pos: Point, axis: Axis) -> (Row, u16) {
-        let (start, end);
+    fn scan_row(&self, pos: Point, axis: Axis, max_len: u32) -> (Row, u32) {
+        let (mut start, mut end) = (pos, pos);
         let Some(stone) = self.stone_at(pos) else {
-            (start, end) = (pos, pos);
             return (Row { start, end }, 0);
         };
 
-        let mut len = 1;
-        let mut scan = |mut cur: Point, forward| {
-            while let Some(next) = cur.adjacent(axis, forward) {
-                if self.stone_at(next) == Some(stone) {
-                    len += 1;
-                    cur = next;
-                } else {
-                    break;
+        let mut scan_one = |forward| {
+            let cur = if forward { &mut end } else { &mut start };
+            match cur.adjacent(axis, forward) {
+                Some(next) if self.stone_at(next) == Some(stone) => {
+                    *cur = next;
+                    true
                 }
+                _ => false,
             }
-            cur
         };
 
-        (start, end) = (scan(pos, false), scan(pos, true));
-        (Row { start, end }, len)
+        let mut len = 1;
+        loop {
+            for forward in [false, true] {
+                if len < max_len && scan_one(forward) {
+                    len += 1;
+                    continue;
+                }
+                while len < max_len && scan_one(!forward) {
+                    len += 1;
+                }
+                return (Row { start, end }, len);
+            }
+        }
     }
 
     /// Searches for a win row through a position.
     pub fn find_win_row(&self, pos: Point) -> Option<Row> {
         let _ = self.stone_at(pos)?;
         for axis in Axis::VALUES {
-            let (row, len) = self.scan_row(pos, axis);
-            if len >= 6 {
+            let (row, len) = self.scan_row(pos, axis, 6);
+            if len == 6 {
                 return Some(row);
             }
         }
