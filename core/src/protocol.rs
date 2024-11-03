@@ -29,6 +29,7 @@ impl Request {
     pub const VALUES: [Self; 3] = [Self::Draw, Self::Retract, Self::Reset];
 
     /// Creates a request from a `u8`.
+    #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
         match n {
             0 => Some(Self::Draw),
@@ -63,6 +64,7 @@ pub enum ClientMessage {
 
 impl ClientMessage {
     /// Decodes a client message from a buffer.
+    #[must_use]
     pub fn decode(mut buf: &[u8]) -> Option<Self> {
         use ClientMessageKind as Kind;
 
@@ -112,6 +114,7 @@ pub enum ServerMessage {
 
 impl ServerMessage {
     /// Encodes the server message to a new buffer.
+    #[must_use]
     pub fn encode(self) -> Vec<u8> {
         let mut buf = vec![ServerMessageKind::from(&self) as u8];
         match self {

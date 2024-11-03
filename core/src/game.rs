@@ -27,6 +27,7 @@ impl Axis {
     ];
 
     /// Returns the unit vector in the forward direction of the axis.
+    #[must_use]
     pub fn unit_vector(self) -> (i16, i16) {
         [(1, 0), (1, 1), (0, 1), (1, -1)][self as usize]
     }
@@ -74,16 +75,19 @@ pub struct Point {
 
 impl Point {
     /// Creates a point with the given coordinates.
+    #[must_use]
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
 
     /// Maps the point to a natural number.
+    #[must_use]
     pub fn index(self) -> u32 {
         elegant_pair(zigzag_encode(self.x), zigzag_encode(self.y))
     }
 
     /// Maps a natural number to a point (undoes `index`).
+    #[must_use]
     pub fn from_index(i: u32) -> Self {
         let (x, y) = elegant_unpair(i);
         Self::new(zigzag_decode(x), zigzag_decode(y))
@@ -91,6 +95,7 @@ impl Point {
 
     /// Returns the adjacent point in the given direction,
     /// or `None` if overflow occurred.
+    #[must_use]
     pub fn adjacent(self, axis: Axis, forward: bool) -> Option<Self> {
         let (dx, dy) = axis.unit_vector();
         let (dx, dy) = if forward { (dx, dy) } else { (-dx, -dy) };
@@ -98,6 +103,7 @@ impl Point {
     }
 
     /// Decodes a point from a buffer.
+    #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
         buf.try_get_u32_varint().ok().map(Self::from_index)
     }
@@ -123,6 +129,7 @@ pub enum Stone {
 
 impl Stone {
     /// Creates a stone from a `u8`.
+    #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
         match n {
             1 => Some(Self::Black),
@@ -132,6 +139,7 @@ impl Stone {
     }
 
     /// Returns the opposite stone.
+    #[must_use]
     pub fn opposite(self) -> Self {
         match self {
             Self::Black => Self::White,
@@ -165,6 +173,7 @@ pub enum Move {
 
 impl Move {
     /// Tests if the move is an ending move.
+    #[must_use]
     pub fn is_ending(self) -> bool {
         matches!(self, Self::Win(_) | Self::Draw | Self::Resign(_))
     }
@@ -199,6 +208,7 @@ impl Move {
     /// Decodes a move from a buffer.
     ///
     /// If `first`, eagerly returns a 1-stone move.
+    #[must_use]
     pub fn decode(buf: &mut &[u8], first: bool) -> Option<Self> {
         let x = buf.try_get_u32_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
@@ -243,6 +253,7 @@ pub struct Record {
 
 impl Record {
     /// Creates a new empty record.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -259,41 +270,49 @@ impl Record {
     }
 
     /// Returns a slice of all moves, in the past or in the future.
+    #[must_use]
     pub fn moves(&self) -> &[Move] {
         &self.moves
     }
 
     /// Returns the current move index.
+    #[must_use]
     pub fn move_index(&self) -> usize {
         self.index
     }
 
     /// Returns the previous move (if any).
+    #[must_use]
     pub fn prev_move(&self) -> Option<Move> {
         self.index.checked_sub(1).map(|i| self.moves[i])
     }
 
     /// Returns the next move (if any).
+    #[must_use]
     pub fn next_move(&self) -> Option<Move> {
         self.moves.get(self.index).copied()
     }
 
     /// Tests if there is any move in the past.
+    #[must_use]
     pub fn has_past(&self) -> bool {
         self.index > 0
     }
 
     /// Tests if there is any move in the future.
+    #[must_use]
     pub fn has_future(&self) -> bool {
         self.index < self.moves.len()
     }
 
     /// Tests if the game is ended.
+    #[must_use]
     pub fn is_ended(&self) -> bool {
         self.prev_move().is_some_and(Move::is_ending)
     }
 
     /// Returns the stone to play at the given move index.
+    #[must_use]
     pub fn turn_at(index: usize) -> Stone {
         if index % 2 == 0 {
             Stone::Black
@@ -303,11 +322,13 @@ impl Record {
     }
 
     /// Returns the current stone to play.
+    #[must_use]
     pub fn turn(&self) -> Stone {
         Self::turn_at(self.index)
     }
 
     /// Returns the stone at the given position (if any).
+    #[must_use]
     pub fn stone_at(&self, pos: Point) -> Option<Stone> {
         self.map.get(&pos).copied()
     }
@@ -422,6 +443,7 @@ impl Record {
     }
 
     /// Searches for a win row through a position.
+    #[must_use]
     pub fn find_win_row(&self, pos: Point) -> Option<Row> {
         let _ = self.stone_at(pos)?;
         for axis in Axis::VALUES {
@@ -447,6 +469,7 @@ impl Record {
     }
 
     /// Decodes a record from a buffer.
+    #[must_use]
     pub fn decode(buf: &mut &[u8], all: bool) -> Option<Self> {
         let mut rec = Self::new();
         let index = if all {
