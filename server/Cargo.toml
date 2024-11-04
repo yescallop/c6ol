@@ -2,14 +2,11 @@
 name = "c6ol-server"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
 publish = false
-
-[dependencies.c6ol-core]
-path = "../core"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
+c6ol-core = { path = "../core" }
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }

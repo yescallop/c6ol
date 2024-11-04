@@ -1,5 +1,5 @@
 [workspace]
-members = ["client-sycamore", "core", "server"]
+members = ["client-leptos", "core", "server"]
 resolver = "2"
 
 [workspace.lints.rust]
@@ -15,7 +15,7 @@ if_not_else = "warn"
 ignored_unit_patterns = "warn"
 map_unwrap_or = "warn"
 missing_errors_doc = "warn"
-must_use_candidate = "warn"
+# must_use_candidate = "warn"
 # redundant_closure_for_method_calls = "warn"
 redundant_else = "warn"
 semicolon_if_nothing_returned = "warn"
