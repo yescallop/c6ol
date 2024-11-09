@@ -30,6 +30,7 @@ macro_rules! console_log {
 }
 pub(crate) use console_log;
 
+#[derive(Clone, Copy)]
 enum Action {
     MainMenu,
     Submit,
@@ -42,6 +43,15 @@ enum Action {
     RequestReset,
     AcceptReset,
     Resign,
+}
+
+impl Action {
+    fn is_accept(self) -> bool {
+        matches!(
+            self,
+            Self::AcceptDraw | Self::AcceptRetract | Self::AcceptReset
+        )
+    }
 }
 
 enum Event {
@@ -57,9 +67,10 @@ enum Event {
 const STORAGE_KEY_RECORD: &str = "record";
 const ANALYZE_PREFIX: &str = "analyze,";
 
+#[derive(Clone)]
 struct DialogEntry {
     id: u32,
-    dialog: Option<Dialog>,
+    dialog: Dialog,
 }
 
 #[expect(dead_code)]
@@ -101,48 +112,16 @@ pub fn App() -> impl IntoView {
         static NEXT_ID: AtomicU32 = AtomicU32::new(0);
 
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        dialogs.write().push(DialogEntry {
-            id,
-            dialog: Some(dialog),
-        });
+        dialogs.write().push(DialogEntry { id, dialog });
         id
     };
 
     let confirm_callbacks =
         StoredValue::new(HashMap::<u32, Box<dyn FnOnce() + Send + Sync>>::new());
 
-    let confirm = move |action: Action, confirm_callback: Box<dyn FnOnce() + Send + Sync>| {
-        let mut confirm = "Confirm";
-        let mut cancel = "Cancel";
-        let message = match action {
-            Action::MainMenu => "Back to main menu?",
-            Action::Submit => "Submit the move?",
-            Action::Pass => "Pass without placing stones?",
-            Action::PlaceSingleStone => "Place a single stone?",
-            Action::RequestDraw => "Offer a draw?",
-            Action::AcceptDraw => {
-                (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent offers a draw."
-            }
-            Action::RequestRetract => "Request to retract the previous move?",
-            Action::AcceptRetract => {
-                (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent requests to retract the previous move."
-            }
-            Action::RequestReset => "Request to reset the game?",
-            Action::AcceptReset => {
-                (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent requests to reset the game."
-            }
-            Action::Resign => "Resign the game?",
-        };
-
-        let id = show_dialog(Dialog::from(ConfirmDialog {
-            message,
-            confirm,
-            cancel,
-        }));
-        confirm_callbacks.write_value().insert(id, confirm_callback);
+    let confirm = move |action: Action, callback: Box<dyn FnOnce() + Send + Sync>| {
+        let id = show_dialog(Dialog::from(ConfirmDialog { action }));
+        confirm_callbacks.write_value().insert(id, callback);
     };
 
     let ws_state = StoredValue::new_local(None::<WebSocketState>);
@@ -150,8 +129,9 @@ pub fn App() -> impl IntoView {
     let online = move || ws_state.read_value().is_some();
 
     Effect::new(move || {
-        let game_id = &*game_id.read_untracked();
+        // Watch for changes to the record.
         let record = record.read();
+        let game_id = &*game_id.read_untracked();
 
         if game_id == "local" {
             // Save the record to local storage.
@@ -163,11 +143,8 @@ pub fn App() -> impl IntoView {
 
         // FIXME: Maybe we shouldn't write to signals in an effect.
         // But it's just easier to reason about.
-        if online() {
-            // Clear the requests if the record changed when online.
-            requests.write().fill(None);
-        } else if !game_id.is_empty() {
-            // Set the stone to the current stone to play when offline.
+        if !online() && !game_id.is_empty() {
+            // Update the stone accordingly when offline.
             stone.set(record.turn());
         }
     });
@@ -243,6 +220,7 @@ pub fn App() -> impl IntoView {
             return;
         };
 
+        let mut record_changed = false;
         match msg {
             ServerMessage::Started(our_stone, new_game_id) => {
                 stone.set(Some(our_stone));
@@ -265,18 +243,44 @@ pub fn App() -> impl IntoView {
                 if !first_msg_seen.get_value() {
                     show_dialog(Dialog::from(JoinDialog));
                 }
+                record_changed = true;
             }
             ServerMessage::Move(mov) => {
                 record.write().make_move(mov);
+                record_changed = true;
             }
             ServerMessage::Retract => {
                 record.write().undo_move();
+                record_changed = true;
             }
             ServerMessage::Request(req, req_stone) => {
                 requests.write()[req as usize] = Some(req_stone);
                 if stone.get_untracked() == Some(req_stone.opposite()) {
                     confirm_request(req);
                 }
+            }
+        }
+
+        if record_changed {
+            // Clear the requests if the record changed.
+            requests.write().fill(None);
+
+            // Also remove accept dialogs and callbacks.
+            let mut dialogs = dialogs.write();
+            let mut callbacks = confirm_callbacks.write_value();
+            let mut removed = false;
+
+            dialogs.retain(|entry| match entry.dialog {
+                Dialog::Confirm(ConfirmDialog { action }) if action.is_accept() => {
+                    callbacks.remove(&entry.id);
+                    removed = true;
+                    false
+                }
+                _ => true,
+            });
+
+            if !removed {
+                dialogs.untrack();
             }
         }
 
@@ -571,14 +575,8 @@ pub fn App() -> impl IntoView {
             disabled=move || !dialogs.read().is_empty()
             on_event=on_event
         />
-        <For
-            each=move || 0..dialogs.read().len()
-            key=move |&i| dialogs.read_untracked()[i].id
-            children=move |i| {
-                let entry = &mut dialogs.write_untracked()[i];
-                let dialog = entry.dialog.take().unwrap();
-                dialog.show(entry.id, on_dialog_return)
-            }
-        />
+        <For each=move || dialogs.get() key=|entry| entry.id let(DialogEntry { id, dialog })>
+            {dialog.show(id, on_dialog_return)}
+        </For>
     }
 }

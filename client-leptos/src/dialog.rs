@@ -1,4 +1,4 @@
-use crate::ANALYZE_PREFIX;
+use crate::{Action, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
     game::{Move, Record, Stone},
@@ -28,6 +28,7 @@ macro_rules! ret {
 macro_rules! dialogs {
     ($($name:ident => $either_variant:path,)+) => {
         paste::paste! {
+            #[derive(Clone)]
             pub enum Dialog {
                 $(
                     $name([<$name Dialog>]),
@@ -94,6 +95,7 @@ dialogs! {
     Error => EitherOf7::G,
 }
 
+#[derive(Clone)]
 pub struct MainMenuDialog;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -117,6 +119,7 @@ impl DialogImpl for MainMenuDialog {
     }
 }
 
+#[derive(Clone)]
 pub struct OnlineMenuDialog;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -200,6 +203,7 @@ impl DialogImpl for OnlineMenuDialog {
     }
 }
 
+#[derive(Clone)]
 pub struct JoinDialog;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -234,6 +238,7 @@ impl DialogImpl for JoinDialog {
     }
 }
 
+#[derive(Clone)]
 pub struct ConnClosedDialog {
     pub reason: String,
 }
@@ -260,6 +265,7 @@ impl DialogImpl for ConnClosedDialog {
     }
 }
 
+#[derive(Clone)]
 pub struct GameMenuDialog {
     pub game_id: String,
     pub stone: Option<Stone>,
@@ -369,7 +375,7 @@ impl DialogImpl for GameMenuDialog {
             let no_future = move || !record.read().has_future();
             let ended = move || record.read().is_ended();
 
-            #[derive(PartialEq, Eq)]
+            #[derive(Eq, PartialEq)]
             enum Side {
                 Neither,
                 User,
@@ -481,10 +487,9 @@ impl DialogImpl for GameMenuDialog {
     }
 }
 
+#[derive(Clone)]
 pub struct ConfirmDialog {
-    pub message: &'static str,
-    pub confirm: &'static str,
-    pub cancel: &'static str,
+    pub action: Action,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -500,16 +505,42 @@ impl DialogImpl for ConfirmDialog {
     const CLASS: Option<&str> = Some("confirm");
 
     fn inner_view(self) -> impl IntoView {
+        let mut confirm = "Confirm";
+        let mut cancel = "Cancel";
+        let message = match self.action {
+            Action::MainMenu => "Back to main menu?",
+            Action::Submit => "Submit the move?",
+            Action::Pass => "Pass without placing stones?",
+            Action::PlaceSingleStone => "Place a single stone?",
+            Action::RequestDraw => "Offer a draw?",
+            Action::AcceptDraw => {
+                (confirm, cancel) = ("Accept", "Ignore");
+                "The opponent offers a draw."
+            }
+            Action::RequestRetract => "Request to retract the previous move?",
+            Action::AcceptRetract => {
+                (confirm, cancel) = ("Accept", "Ignore");
+                "The opponent requests to retract the previous move."
+            }
+            Action::RequestReset => "Request to reset the game?",
+            Action::AcceptReset => {
+                (confirm, cancel) = ("Accept", "Ignore");
+                "The opponent requests to reset the game."
+            }
+            Action::Resign => "Resign the game?",
+        };
+
         view! {
-            <p>{self.message}</p>
+            <p>{message}</p>
             <div class="btn-group">
-                <button>{self.cancel}</button>
-                <button value=ret!(Confirm)>{self.confirm}</button>
+                <button>{cancel}</button>
+                <button value=ret!(Confirm)>{confirm}</button>
             </div>
         }
     }
 }
 
+#[derive(Clone)]
 pub struct ErrorDialog {
     pub message: String,
 }
