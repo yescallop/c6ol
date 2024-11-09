@@ -3,5 +3,6 @@
 use leptos::prelude::*;
 
 fn main() {
-    mount_to_body(c6ol_client_leptos::App);
+    console_error_panic_hook::set_once();
+    mount_to_body(c6ol_client::App);
 }

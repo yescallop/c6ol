@@ -11,7 +11,7 @@ unsafe_code = { level = "forbid", priority = 1 }
 
 [workspace.lints.clippy]
 checked_conversions = "warn"
-if_not_else = "warn"
+# if_not_else = "warn"
 ignored_unit_patterns = "warn"
 map_unwrap_or = "warn"
 missing_errors_doc = "warn"
@@ -21,3 +21,13 @@ redundant_else = "warn"
 semicolon_if_nothing_returned = "warn"
 single_match_else = "warn"
 use_self = "warn"
+
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[profile.release-wasm]
+inherits = "release"
+opt-level = "z"

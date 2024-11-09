@@ -1,12 +1,25 @@
 [package]
-name = "c6ol-client-leptos"
+name = "c6ol-client"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
+base64 = "0.22"
 c6ol-core = { path = "../core" }
+console_error_panic_hook = "0.1.7"
 leptos = { version = "=0.7.0-rc1", features = ["csr"] }
+paste = "1"
+ron = "0.8"
+serde = "1"
+web-sys = { version = "0.3.72", features = [
+    "CanvasRenderingContext2d",
+    "DomRect",
+    "Element",
+    "ResizeObserver",
+    "Storage",
+    "TextMetrics",
+] }
 
 [lints]
 workspace = true

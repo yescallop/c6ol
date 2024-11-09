@@ -65,7 +65,7 @@ fn elegant_unpair(z: u32) -> (u16, u16) {
 }
 
 /// A 2D point with integer coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Point {
     /// The horizontal coordinate.
     pub x: i16,
@@ -102,6 +102,11 @@ impl Point {
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
+    /// Encodes the point to a buffer.
+    pub fn encode(self, buf: &mut Vec<u8>) {
+        buf.put_u32_varint(self.index());
+    }
+
     /// Decodes a point from a buffer.
     #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
@@ -119,7 +124,7 @@ pub struct Row {
 }
 
 /// A stone on the board, either black or white.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Stone {
     /// The black stone.
     Black = 1,
@@ -157,7 +162,7 @@ const MOVE_DRAW: u32 = 2;
 const MOVE_RESIGN: u32 = 3;
 
 /// A move made by one player or both players.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Move {
     /// One or two stones placed on the board by the current player.
     Stone(Point, Option<Point>),
@@ -244,7 +249,7 @@ impl Move {
 }
 
 /// A Connect6 game record on an infinite board.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Record {
     map: HashMap<Point, Stone>,
     moves: Vec<Move>,
@@ -323,8 +328,8 @@ impl Record {
 
     /// Returns the current stone to play.
     #[must_use]
-    pub fn turn(&self) -> Stone {
-        Self::turn_at(self.index)
+    pub fn turn(&self) -> Option<Stone> {
+        (!self.is_ended()).then(|| Self::turn_at(self.index))
     }
 
     /// Returns the stone at the given position (if any).
@@ -349,7 +354,7 @@ impl Record {
                 return false;
             }
 
-            let stone = self.turn();
+            let stone = self.turn().unwrap();
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
             }
@@ -368,27 +373,25 @@ impl Record {
     /// Undoes the previous move (if any).
     pub fn undo_move(&mut self) -> Option<Move> {
         let prev = self.prev_move()?;
-        self.index -= 1;
-
         if let Move::Stone(fst, snd) = prev {
             for pos in iter::once(fst).chain(snd) {
                 self.map.remove(&pos);
             }
         }
+        self.index -= 1;
         Some(prev)
     }
 
     /// Redoes the next move (if any).
     pub fn redo_move(&mut self) -> Option<Move> {
         let next = self.next_move()?;
-        self.index += 1;
-
-        let stone = self.turn();
         if let Move::Stone(fst, snd) = next {
+            let stone = self.turn().unwrap();
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
             }
         }
+        self.index += 1;
         Some(next)
     }
 

@@ -21,7 +21,7 @@ enum Action {
   MainMenu,
   Submit,
   Pass,
-  OneStoneMove,
+  PlaceSingleStone,
   RequestDraw,
   AcceptDraw,
   RequestRetract,
@@ -63,8 +63,8 @@ function confirm(action: Action, confirmed: () => void) {
     case Action.Pass:
       message = 'Pass without placing stones?';
       break;
-    case Action.OneStoneMove:
-      message = 'Make a one-stone move?';
+    case Action.PlaceSingleStone:
+      message = 'Place a single stone?';
       break;
     case Action.RequestDraw:
       message = 'Offer a draw?';
@@ -104,10 +104,10 @@ function confirm(action: Action, confirmed: () => void) {
   }
 }
 
-function confirmRequest(kind: Request) {
-  const requested = requests[kind];
+function confirmRequest(request: Request) {
+  const requested = requests[request];
   let action;
-  switch (kind) {
+  switch (request) {
     case Request.Draw:
       action = requested ? Action.AcceptDraw : Action.RequestDraw;
       break;
@@ -118,7 +118,7 @@ function confirmRequest(kind: Request) {
       action = requested ? Action.AcceptReset : Action.RequestReset;
       break;
   }
-  confirm(action, () => send({ kind: MessageKind.Request, request: kind }));
+  confirm(action, () => send({ kind: MessageKind.Request, request }));
 }
 
 const record = reactive(new Record());
@@ -162,7 +162,7 @@ function onSubmit(pos: [Point] | [Point, Point]) {
 function onPass() {
   const tentative = view.value!.tentative;
   if (ws) {
-    const action = tentative ? Action.OneStoneMove : Action.Pass;
+    const action = tentative ? Action.PlaceSingleStone : Action.Pass;
 
     let msg: ClientMessage;
     if (tentative) {
@@ -315,6 +315,7 @@ function setGameId(id: string) {
 
   gameId.value = id;
   ourStone.value = undefined;
+  requests.length = 0;
 
   if (id == '') {
     record.clear();
@@ -631,7 +632,7 @@ a {
 input[type="text"] {
   text-align: center;
   /* More consistent than the `size` attribute. */
-  width: 9em;
+  width: 8.5em;
 }
 
 button {

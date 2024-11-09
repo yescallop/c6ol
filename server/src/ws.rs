@@ -100,10 +100,10 @@ async fn handle_websocket(
                 .await
                 .ok_or(Error::WrongPasscode)?;
 
-            let msg = ServerMessage::Started {
-                stone: game.stone().expect("should be authenticated"),
-                game_id: Some(game.id()),
-            };
+            let msg = ServerMessage::Started(
+                game.stone().expect("should be authenticated"),
+                Some(game.id()),
+            );
             socket.send(msg).await?;
         }
         ClientMessage::Join(id) => {
@@ -132,10 +132,10 @@ async fn handle_websocket(
                     ClientMessage::Start(passcode) if game.stone().is_none() => {
                         game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
 
-                        let msg = ServerMessage::Started {
-                            stone: game.stone().expect("should be authenticated"),
-                            game_id: None,
-                        };
+                        let msg = ServerMessage::Started(
+                            game.stone().expect("should be authenticated"),
+                            None,
+                        );
                         socket.send(msg).await?;
                         continue;
                     }

@@ -1,0 +1,9 @@
+trunk-version = "^0.21.0"
+
+[build]
+minify = "on_release"
+no_sri = true
+
+[[proxy]]
+backend = "ws://localhost:8086/ws"
+ws = true

@@ -359,6 +359,8 @@ function dist(a: PointerOffsets, b: PointerOffsets): number {
  * - Hits the cursor on Space/Enter key.
  * - Undoes the previous move (if any) on Backspace key.
  * - Redoes the next move (if any) on Shift+Backspace keys.
+ * - Jumps to the state before the first move on Home key.
+ * - Jumps to the state after the last move on End key.
  */
 function onKeyDown(e: KeyboardEvent) {
   if (disabled) return;
@@ -748,7 +750,6 @@ function onContextMenu(e: MouseEvent) {
 onMounted(() => {
   ctx = canvas.value!.getContext('2d')!;
 
-  resizeCanvas();
   new ResizeObserver(resizeCanvas).observe(canvasContainer.value!);
 
   window.addEventListener('keydown', onKeyDown);

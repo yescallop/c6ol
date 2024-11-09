@@ -243,14 +243,14 @@ impl GameState {
         let action = match msg {
             Msg::Start(_) | Msg::Join(_) => return,
             Msg::Place(fst, snd) => {
-                if self.record.turn() != stone {
+                if self.record.turn() != Some(stone) {
                     // Not their turn.
                     return;
                 }
                 Action::Move(Move::Stone(fst, snd))
             }
             Msg::Pass => {
-                if self.record.turn() != stone {
+                if self.record.turn() != Some(stone) {
                     // Not their turn.
                     return;
                 }

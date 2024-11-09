@@ -1,0 +1,130 @@
+body {
+  /* Remove the default 8px margin from body. */
+  margin: 0;
+  background-color: #ffcc66;
+  font-family: sans-serif;
+}
+
+/* Use `svh` to prevent overflow on mobile due to the hidable address bar. */
+@supports (height: 100svh) {
+  body {
+    height: 100svh;
+  }
+}
+
+/* Old browsers might not support `svh`. */
+@supports not (height: 100svh) {
+  body {
+    height: 100vh;
+  }
+}
+
+dialog {
+  max-width: 15em;
+}
+
+.game-menu {
+  min-width: 11em;
+}
+
+.confirm {
+  opacity: 75%;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.title {
+  font-weight: bold;
+}
+
+a {
+  color: blue;
+}
+
+input[type="text"] {
+  text-align: center;
+  /* More consistent than the `size` attribute. */
+  width: 8.5em;
+}
+
+button {
+  width: 100%;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.pushed {
+  border-style: inset;
+}
+
+.prominent {
+  border-style: dotted;
+}
+
+.menu-btn-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-btn-group>.btn-group {
+  margin-top: 0;
+}
+
+.menu-btn-group>*:not(:last-child) {
+  margin-bottom: 5px;
+}
+
+.radio-group {
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: center;
+}
+
+.radio-group>*:not(:last-child) {
+  margin-right: 10px;
+}
+
+.btn-group {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-evenly;
+}
+
+.btn-group:not(.reversed)>*:not(:last-child) {
+  margin-right: 10px;
+}
+
+.btn-group.reversed {
+  /* Show the default button (first in tree order) on the right. */
+  flex-direction: row-reverse;
+}
+
+.btn-group.reversed>*:not(:last-child) {
+  margin-left: 10px;
+}
+
+#view-container {
+  height: 100%;
+}
+
+#view {
+  /*
+    `top` and `left` positions the top-left corner of the canvas in the center,
+    and `transform` translates the canvas left and up half its size.
+  */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+
+  /*
+    Touch input by default triggers browser behavior such as refresh and zooming.
+    Disable it to make the pointer events fire.
+  */
+  /* FIXME: This does not work correctly with Safari. */
+  touch-action: none;
+}

@@ -354,9 +354,9 @@ export class Record {
   redoMove(): Move | undefined {
     const next = this.nextMove();
     if (!next) return;
+    const stone = this.turn();
     this.idx++;
 
-    const stone = this.turn();
     if (next.kind == MoveKind.Stone)
       for (const pos of next.pos)
         this.map.set(pos.index(), stone);

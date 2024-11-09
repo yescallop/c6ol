@@ -3,7 +3,7 @@
 use crate::game::{Move, Point, Record, Stone};
 use bytes::{Buf, BufMut};
 use bytes_varint::try_get_fixed::TryGetFixedSupport;
-use std::mem;
+use std::{iter, mem};
 use strum::{EnumDiscriminants, FromRepr};
 
 const GAME_ID_SIZE: usize = 10;
@@ -14,7 +14,7 @@ pub type Passcode = Box<[u8]>;
 pub type GameId = [u8; GAME_ID_SIZE];
 
 /// A player's request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Request {
     /// Ends the game in a draw.
     Draw = 0,
@@ -41,7 +41,7 @@ impl Request {
 }
 
 /// A client message.
-#[derive(Debug, Clone, EnumDiscriminants)]
+#[derive(Clone, Debug, EnumDiscriminants)]
 #[repr(u8)]
 #[strum_discriminants(derive(FromRepr), name(ClientMessageKind), vis(pub(self)))]
 pub enum ClientMessage {
@@ -63,6 +63,26 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
+    /// Encodes the client message to a new buffer.
+    #[must_use]
+    pub fn encode(self) -> Vec<u8> {
+        let mut buf = vec![ClientMessageKind::from(&self) as u8];
+        match self {
+            Self::Start(passcode) => buf.put_slice(&passcode),
+            Self::Join(game_id) => buf.put_slice(&game_id),
+            Self::Place(fst, snd) => {
+                for pos in iter::once(fst).chain(snd) {
+                    pos.encode(&mut buf);
+                }
+            }
+            Self::Pass => {}
+            Self::ClaimWin(pos) => pos.encode(&mut buf),
+            Self::Resign => {}
+            Self::Request(req) => buf.put_u8(req as u8),
+        }
+        buf
+    }
+
     /// Decodes a client message from a buffer.
     #[must_use]
     pub fn decode(mut buf: &[u8]) -> Option<Self> {
@@ -91,17 +111,12 @@ impl ClientMessage {
 
 /// A server message.
 #[derive(Clone, EnumDiscriminants)]
-#[strum_discriminants(name(ServerMessageKind), vis(pub(self)))]
+#[strum_discriminants(derive(FromRepr), name(ServerMessageKind), vis(pub(self)))]
 #[repr(u8)]
 pub enum ServerMessage {
     /// The user is authenticated.
-    /// Sent before `Record` if a new game is started.
-    Started {
-        /// The user's stone.
-        stone: Stone,
-        /// The game ID if a new game is started.
-        game_id: Option<GameId>,
-    } = 6,
+    /// Sent before `Record` with the game ID if a new game is started.
+    Started(Stone, Option<GameId>) = 6,
     /// The entire record is updated.
     Record(Box<Record>) = 7,
     /// A move was made.
@@ -118,7 +133,7 @@ impl ServerMessage {
     pub fn encode(self) -> Vec<u8> {
         let mut buf = vec![ServerMessageKind::from(&self) as u8];
         match self {
-            Self::Started { stone, game_id } => {
+            Self::Started(stone, game_id) => {
                 buf.put_u8(stone as u8);
                 if let Some(id) = game_id {
                     buf.put_slice(&id);
@@ -133,5 +148,31 @@ impl ServerMessage {
             }
         }
         buf
+    }
+
+    /// Decodes a server message from a buffer.
+    #[must_use]
+    pub fn decode(mut buf: &[u8]) -> Option<Self> {
+        use ServerMessageKind as Kind;
+
+        let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
+            Kind::Started => {
+                let stone = Stone::from_u8(buf.try_get_u8().ok()?)?;
+                let game_id = if buf.has_remaining() {
+                    Some(mem::take(&mut buf).try_into().ok()?)
+                } else {
+                    None
+                };
+                Self::Started(stone, game_id)
+            }
+            Kind::Record => Self::Record(Box::new(Record::decode(&mut buf, false)?)),
+            Kind::Move => Self::Move(Move::decode(&mut buf, false)?),
+            Kind::Retract => Self::Retract,
+            Kind::Request => Self::Request(
+                Request::from_u8(buf.try_get_u8().ok()?)?,
+                Stone::from_u8(buf.try_get_u8().ok()?)?,
+            ),
+        };
+        (!buf.has_remaining()).then_some(msg)
     }
 }
