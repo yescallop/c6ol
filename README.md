@@ -28,13 +28,12 @@ A web app for playing [Connect6] games online.
 
 ## Setup
 
-Install Node.js 20+ and Rust 1.80+.
+Install Rust 1.82+ and [Trunk](https://trunkrs.dev/). Then run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol
 cd c6ol/client
-npm install
-npm run build
+trunk build
 cd ../server
 cargo run
 ```

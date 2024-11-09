@@ -5,7 +5,7 @@ use tokio::{net::TcpSocket, signal};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const BIND_PORT: u16 = 8086;
-const STATIC_ROOT: &str = "../client-vue/dist";
+const STATIC_ROOT: &str = "../client/dist";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {

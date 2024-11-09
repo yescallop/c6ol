@@ -1,5 +1,5 @@
 [workspace]
-members = ["client-leptos", "core", "server"]
+members = ["client", "core", "server"]
 resolver = "2"
 
 [workspace.lints.rust]
