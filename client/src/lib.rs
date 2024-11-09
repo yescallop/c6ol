@@ -151,9 +151,9 @@ pub fn App() -> impl IntoView {
 
     // Sends the message on the WebSocket connection.
     let send = move |msg: ClientMessage| {
-        if let Some(state) = &*ws_state.read_value() {
-            if state.ws.ready_state() == WebSocket::OPEN {
-                state.ws.send_with_u8_array(&msg.encode()).unwrap();
+        if let Some(ws_state) = &*ws_state.read_value() {
+            if ws_state.ws.ready_state() == WebSocket::OPEN {
+                ws_state.ws.send_with_u8_array(&msg.encode()).unwrap();
                 return;
             }
         }
@@ -198,7 +198,7 @@ pub fn App() -> impl IntoView {
         show_dialog(Dialog::from(GameMenuDialog {
             game_id: game_id.get_untracked(),
             stone: stone.get_untracked(),
-            online: ws_state.read_value().is_some(),
+            online: online(),
             record: record.read_only(),
             requests: requests.read_only(),
         }));
@@ -332,6 +332,7 @@ pub fn App() -> impl IntoView {
         // when we click "Play Offline" at the main menu.
         *stone.write_untracked() = None;
         requests.write().fill(None);
+        confirm_callbacks.write_value().clear();
 
         if id.is_empty() {
             record.write().clear();
@@ -533,9 +534,11 @@ pub fn App() -> impl IntoView {
             },
             RetVal::GameMenu(ret_val) => on_game_menu_return(ret_val),
             RetVal::Confirm(ret_val) => {
-                let callback = confirm_callbacks.write_value().remove(&id).unwrap();
+                let callback = confirm_callbacks.write_value().remove(&id);
                 if let ConfirmRetVal::Confirm = ret_val {
-                    callback();
+                    if let Some(callback) = callback {
+                        callback();
+                    }
                 }
             }
             RetVal::Error(ret_val) => match ret_val {
@@ -552,7 +555,7 @@ pub fn App() -> impl IntoView {
     let handle_hashchange = window_event_listener(ev::hashchange, move |_| on_hash_change());
 
     let handle_storage = window_event_listener(ev::storage, move |ev| {
-        if *game_id.read_untracked() == "local" && ev.key().as_deref() == Some("record") {
+        if *game_id.read_untracked() == "local" && ev.key().as_deref() == Some(STORAGE_KEY_RECORD) {
             if let Some(buf) = ev
                 .new_value()
                 .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
