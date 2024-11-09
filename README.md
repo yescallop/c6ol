@@ -18,11 +18,11 @@ A web app for playing [Connect6] games online.
 <table>
   <tr>
     <td><img alt="Online Dialog" src="assets/online-dialog.png" /></td>
-    <td><img alt="Game Menu" src="assets/game-menu.png" /></td>
+    <td><img alt="Game Play" src="assets/game-play.png" /></td>
   </tr>
   <tr>
-    <td><img alt="Game Play" src="assets/game-play.png" /></td>
-    <td><img alt="Confirm Move" src="assets/confirm-move.png" /></td>
+    <td><img alt="Game Menu" src="assets/game-menu.png" /></td>
+    <td><img alt="Game Menu Alt" src="assets/game-menu-alt.png" /></td>
   </tr>
 </table>
 
