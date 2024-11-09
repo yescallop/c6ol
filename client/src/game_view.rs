@@ -239,7 +239,10 @@ pub fn GameView(
     });
 
     // Tests if it is our turn to play.
-    let our_turn = move || stone.get_untracked() == record.read_untracked().turn();
+    let our_turn = move || {
+        let stone = stone.get_untracked();
+        stone.is_some() && stone == record.read_untracked().turn()
+    };
 
     // Draws the view.
     let draw = move || {
@@ -927,15 +930,13 @@ pub fn GameView(
     on_cleanup(move || handle.remove());
 
     Effect::new(move || {
-        record.track();
-
         // Clear phantom and tentative stones if the record changed.
         let mut state = state.write_value();
         state.phantom = None;
         state.tentative = None;
 
-        if stone.get().is_none() {
-            // Clear the cursor if the stone is reset to none.
+        if record.read().move_index() == 0 && stone.get().is_none() {
+            // Clear the cursor if the record and the stone are both reset.
             state.cursor = None;
         }
         drop(state);
