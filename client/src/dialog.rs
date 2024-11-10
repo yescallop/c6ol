@@ -117,7 +117,10 @@ impl DialogImpl for MainMenuDialog {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
                 <button>"Play Offline"</button>
-                <button value=ret!(Online)>"Play Online"</button>
+                {
+                    #[cfg(feature = "online")]
+                    view! { <button value=ret!(Online)>"Play Online"</button> }
+                }
             </div>
         }
     }

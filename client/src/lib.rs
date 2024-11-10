@@ -6,7 +6,7 @@ mod game_view;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use c6ol_core::{
     game::{Move, Point, Record, Stone},
-    protocol::{ClientMessage, GameId, Request, ServerMessage},
+    protocol::{ClientMessage, Request, ServerMessage},
 };
 use dialog::*;
 use leptos::{ev, prelude::*};
@@ -348,16 +348,17 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        if let Some(id) = GameId::try_from(id.as_bytes())
-            .ok()
-            .filter(|id| id.iter().all(u8::is_ascii_alphanumeric))
-        {
-            connect(ClientMessage::Join(id));
-        } else {
-            show_dialog(Dialog::from(ErrorDialog {
-                message: "Invalid game ID.".into(),
-            }));
+        #[cfg(feature = "online")]
+        if let Ok(id) = c6ol_core::protocol::GameId::try_from(id.as_bytes()) {
+            if id.iter().all(u8::is_ascii_alphanumeric) {
+                connect(ClientMessage::Join(id));
+                return;
+            }
         }
+
+        show_dialog(Dialog::from(ErrorDialog {
+            message: "Invalid game ID.".into(),
+        }));
     };
 
     let on_event = move |ev: Event| match ev {
