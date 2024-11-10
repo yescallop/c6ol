@@ -35,22 +35,9 @@ enum Action {
     Submit,
     Pass,
     PlaceSingleStone,
-    RequestDraw,
-    AcceptDraw,
-    RequestRetract,
-    AcceptRetract,
-    RequestReset,
-    AcceptReset,
+    Request(Request),
+    Accept(Request),
     Resign,
-}
-
-impl Action {
-    fn is_accept(self) -> bool {
-        matches!(
-            self,
-            Self::AcceptDraw | Self::AcceptRetract | Self::AcceptReset
-        )
-    }
 }
 
 enum Event {
@@ -177,17 +164,9 @@ pub fn App() -> impl IntoView {
     let confirm_request = move |req: Request| {
         let requested = request(req).is_some();
         let action = if requested {
-            match req {
-                Request::Draw => Action::AcceptDraw,
-                Request::Retract => Action::AcceptRetract,
-                Request::Reset => Action::AcceptReset,
-            }
+            Action::Accept(req)
         } else {
-            match req {
-                Request::Draw => Action::RequestDraw,
-                Request::Retract => Action::RequestRetract,
-                Request::Reset => Action::RequestReset,
-            }
+            Action::Request(req)
         };
         confirm(action, Box::new(move || send(ClientMessage::Request(req))));
     };
@@ -269,7 +248,9 @@ pub fn App() -> impl IntoView {
             let mut removed = false;
 
             dialogs.retain(|entry| match entry.dialog {
-                Dialog::Confirm(ConfirmDialog { action }) if action.is_accept() => {
+                Dialog::Confirm(ConfirmDialog {
+                    action: Action::Accept(_),
+                }) => {
                     callbacks.remove(&entry.id);
                     removed = true;
                     false

@@ -26,7 +26,10 @@ macro_rules! ret {
 }
 
 macro_rules! dialogs {
-    ($($name:ident => $either_variant:path,)+) => {
+    (
+        EitherType = $either_type:ty,
+        $($name:ident => $either_variant:ident,)+
+    ) => {
         paste::paste! {
             #[derive(Clone)]
             pub enum Dialog {
@@ -64,7 +67,7 @@ macro_rules! dialogs {
                                 (|s| RetVal::$name(ron::from_str(s).unwrap_or_default()))
                                     as fn(&str) -> RetVal,
                                 [<$name Dialog>]::CLASS,
-                                $either_variant(dialog.inner_view()),
+                                $either_type::$either_variant(dialog.inner_view()),
                             ),
                         )+
                     };
@@ -86,13 +89,14 @@ macro_rules! dialogs {
 }
 
 dialogs! {
-    MainMenu => EitherOf7::A,
-    OnlineMenu => EitherOf7::B,
-    Join => EitherOf7::C,
-    ConnClosed => EitherOf7::D,
-    GameMenu => EitherOf7::E,
-    Confirm => EitherOf7::F,
-    Error => EitherOf7::G,
+    EitherType = EitherOf7,
+    MainMenu => A,
+    OnlineMenu => B,
+    Join => C,
+    ConnClosed => D,
+    GameMenu => E,
+    Confirm => F,
+    Error => G,
 }
 
 #[derive(Clone)]
@@ -512,20 +516,18 @@ impl DialogImpl for ConfirmDialog {
             Action::Submit => "Submit the move?",
             Action::Pass => "Pass without placing stones?",
             Action::PlaceSingleStone => "Place a single stone?",
-            Action::RequestDraw => "Offer a draw?",
-            Action::AcceptDraw => {
+            Action::Request(req) => match req {
+                Request::Draw => "Offer a draw?",
+                Request::Retract => "Request to retract the previous move?",
+                Request::Reset => "Request to reset the game?",
+            },
+            Action::Accept(req) => {
                 (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent offers a draw."
-            }
-            Action::RequestRetract => "Request to retract the previous move?",
-            Action::AcceptRetract => {
-                (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent requests to retract the previous move."
-            }
-            Action::RequestReset => "Request to reset the game?",
-            Action::AcceptReset => {
-                (confirm, cancel) = ("Accept", "Ignore");
-                "The opponent requests to reset the game."
+                match req {
+                    Request::Draw => "The opponent offers a draw.",
+                    Request::Retract => "The opponent requests to retract the previous move.",
+                    Request::Reset => "The opponent requests to reset the game.",
+                }
             }
             Action::Resign => "Resign the game?",
         };
