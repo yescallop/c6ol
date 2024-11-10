@@ -10,10 +10,7 @@ use c6ol_core::{
 };
 use dialog::*;
 use leptos::{ev, prelude::*};
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicU32, Ordering};
 use web_sys::{
     js_sys::{ArrayBuffer, Uint8Array},
     wasm_bindgen::prelude::*,
@@ -29,15 +26,17 @@ macro_rules! console_log {
 }
 pub(crate) use console_log;
 
-#[derive(Clone, Copy)]
-enum Action {
+#[derive(Clone)]
+enum Confirm {
     MainMenu,
-    Submit,
+    Submit(Point, Option<Point>),
     Pass,
-    PlaceSingleStone,
+    PlaceSingleStone(Point),
     Request(Request),
     Accept(Request),
     Resign,
+    ConnClosed(String),
+    Error(String),
 }
 
 enum Event {
@@ -91,23 +90,16 @@ pub fn App() -> impl IntoView {
 
     let request = move |req: Request| requests.read_untracked()[req as usize];
 
-    let dialogs = RwSignal::new(Vec::<DialogEntry>::new());
+    let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
 
     let show_dialog = move |dialog: Dialog| {
         static NEXT_ID: AtomicU32 = AtomicU32::new(0);
 
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        dialogs.write().push(DialogEntry { id, dialog });
-        id
+        dialog_entries.write().push(DialogEntry { id, dialog });
     };
 
-    let confirm_callbacks =
-        StoredValue::new(HashMap::<u32, Box<dyn FnOnce() + Send + Sync>>::new());
-
-    let confirm = move |action: Action, callback: Box<dyn FnOnce() + Send + Sync>| {
-        let id = show_dialog(Dialog::from(ConfirmDialog { action }));
-        confirm_callbacks.write_value().insert(id, callback);
-    };
+    let confirm = move |confirm: Confirm| show_dialog(Dialog::from(ConfirmDialog(confirm)));
 
     let ws_state = StoredValue::new_local(None::<WebSocketState>);
 
@@ -142,9 +134,7 @@ pub fn App() -> impl IntoView {
                 return;
             }
         }
-        show_dialog(Dialog::from(ErrorDialog {
-            message: "Connection is not open.".into(),
-        }));
+        confirm(Confirm::Error("Connection is not open.".into()));
     };
 
     let on_close = move |ev: CloseEvent| {
@@ -158,17 +148,15 @@ pub fn App() -> impl IntoView {
                 reason = format!("Closed with code {code}.");
             }
         }
-        show_dialog(Dialog::from(ConnClosedDialog { reason }));
+        confirm(Confirm::ConnClosed(reason));
     };
 
     let confirm_request = move |req: Request| {
-        let requested = request(req).is_some();
-        let action = if requested {
-            Action::Accept(req)
+        confirm(if request(req).is_some() {
+            Confirm::Accept(req)
         } else {
-            Action::Request(req)
-        };
-        confirm(action, Box::new(move || send(ClientMessage::Request(req))));
+            Confirm::Request(req)
+        });
     };
 
     let show_game_menu_dialog = move || {
@@ -242,16 +230,12 @@ pub fn App() -> impl IntoView {
             // Clear the requests if the record changed.
             requests.write().fill(None);
 
-            // Also remove accept dialogs and callbacks.
-            let mut dialogs = dialogs.write();
-            let mut callbacks = confirm_callbacks.write_value();
+            // Also remove accept dialogs.
+            let mut dialogs = dialog_entries.write();
             let mut removed = false;
 
             dialogs.retain(|entry| match entry.dialog {
-                Dialog::Confirm(ConfirmDialog {
-                    action: Action::Accept(_),
-                }) => {
-                    callbacks.remove(&entry.id);
+                Dialog::Confirm(ConfirmDialog(Confirm::Accept(_))) => {
                     removed = true;
                     false
                 }
@@ -299,7 +283,7 @@ pub fn App() -> impl IntoView {
             ws.close().unwrap();
         }
 
-        dialogs.write().clear();
+        dialog_entries.write().clear();
 
         if Some(id) != location_hash().as_deref() {
             history_push_state(&format!("#{id}"));
@@ -311,7 +295,6 @@ pub fn App() -> impl IntoView {
         // when we click "Play Offline" at the main menu.
         *stone.write_untracked() = None;
         requests.write().fill(None);
-        confirm_callbacks.write_value().clear();
 
         if id.is_empty() {
             record.write().clear();
@@ -341,9 +324,7 @@ pub fn App() -> impl IntoView {
             {
                 record.set(decoded_record);
             } else {
-                show_dialog(Dialog::from(ErrorDialog {
-                    message: "Failed to decode record.".into(),
-                }));
+                confirm(Confirm::Error("Failed to decode record.".into()));
             }
             return;
         }
@@ -356,19 +337,14 @@ pub fn App() -> impl IntoView {
             }
         }
 
-        show_dialog(Dialog::from(ErrorDialog {
-            message: "Invalid game ID.".into(),
-        }));
+        confirm(Confirm::Error("Invalid game ID.".into()));
     };
 
     let on_event = move |ev: Event| match ev {
         Event::Menu => show_game_menu_dialog(),
         Event::Submit(fst, snd) => {
             if online() {
-                confirm(
-                    Action::Submit,
-                    Box::new(move || send(ClientMessage::Place(fst, snd))),
-                );
+                confirm(Confirm::Submit(fst, snd));
             } else {
                 record.write().make_move(Move::Stone(fst, snd));
             }
@@ -423,7 +399,7 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resume => {}
         GameMenuRetVal::MainMenu => {
             if online() {
-                confirm(Action::MainMenu, Box::new(move || set_game_id("")));
+                confirm(Confirm::MainMenu);
             } else {
                 set_game_id("");
             }
@@ -440,10 +416,7 @@ pub fn App() -> impl IntoView {
         }
         GameMenuRetVal::Resign => {
             if online() {
-                confirm(
-                    Action::Resign,
-                    Box::new(move || send(ClientMessage::Resign)),
-                );
+                confirm(Confirm::Resign);
             } else {
                 let mut record = record.write();
                 let stone = record.turn().unwrap();
@@ -453,12 +426,11 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Pass => {
             let tentative = view_state.read_value().tentative();
             if online() {
-                let (action, msg) = if let Some(pos) = tentative {
-                    (Action::PlaceSingleStone, ClientMessage::Place(pos, None))
+                confirm(if let Some(pos) = tentative {
+                    Confirm::PlaceSingleStone(pos)
                 } else {
-                    (Action::Pass, ClientMessage::Pass)
-                };
-                confirm(action, Box::new(move || send(msg)));
+                    Confirm::Pass
+                });
             } else {
                 let mov = if let Some(pos) = tentative {
                     Move::Stone(pos, None)
@@ -483,7 +455,10 @@ pub fn App() -> impl IntoView {
         // This is similar to how a `pointerover` event gets fired before a
         // `close` event when a dialog is closed with a pointer (see comments at
         // `on_hover` in `game_menu.rs`).
-        dialogs.write().retain(|entry| entry.id != id);
+        let mut entries = dialog_entries.write();
+        let i = (0..entries.len()).rfind(|&i| entries[i].id == id).unwrap();
+        let dialog = entries.remove(i).dialog;
+        drop(entries);
 
         match ret_val {
             RetVal::MainMenu(ret_val) => match ret_val {
@@ -507,22 +482,34 @@ pub fn App() -> impl IntoView {
                     send(ClientMessage::Start(passcode.into_bytes().into()));
                 }
             },
-            RetVal::ConnClosed(ret_val) => match ret_val {
-                ConnClosedRetVal::Menu => set_game_id(""),
-                ConnClosedRetVal::Retry => set_game_id(&game_id.get()),
-            },
             RetVal::GameMenu(ret_val) => on_game_menu_return(ret_val),
             RetVal::Confirm(ret_val) => {
-                let callback = confirm_callbacks.write_value().remove(&id);
-                if let ConfirmRetVal::Confirm = ret_val {
-                    if let Some(callback) = callback {
-                        callback();
+                let Dialog::Confirm(ConfirmDialog(confirm)) = dialog else {
+                    unreachable!();
+                };
+
+                if !matches!(confirm, Confirm::ConnClosed(_) | Confirm::Error(_))
+                    && ret_val == ConfirmRetVal::Cancel
+                {
+                    return;
+                }
+
+                match confirm {
+                    Confirm::MainMenu => set_game_id(""),
+                    Confirm::Submit(fst, snd) => send(ClientMessage::Place(fst, snd)),
+                    Confirm::Pass => send(ClientMessage::Pass),
+                    Confirm::PlaceSingleStone(pos) => send(ClientMessage::Place(pos, None)),
+                    Confirm::Request(req) | Confirm::Accept(req) => {
+                        send(ClientMessage::Request(req));
                     }
+                    Confirm::Resign => send(ClientMessage::Resign),
+                    Confirm::ConnClosed(_) => match ret_val {
+                        ConfirmRetVal::Cancel => set_game_id(""),
+                        ConfirmRetVal::Confirm => set_game_id(&game_id.get()),
+                    },
+                    Confirm::Error(_) => set_game_id(""),
                 }
             }
-            RetVal::Error(ret_val) => match ret_val {
-                ErrorRetVal::MainMenu => set_game_id(""),
-            },
         }
     };
 
@@ -555,10 +542,10 @@ pub fn App() -> impl IntoView {
             record=record.read_only()
             stone=stone.read_only()
             state=view_state
-            disabled=move || !dialogs.read().is_empty()
+            disabled=move || !dialog_entries.read().is_empty()
             on_event=on_event
         />
-        <For each=move || dialogs.get() key=|entry| entry.id let(DialogEntry { id, dialog })>
+        <For each=move || dialog_entries.get() key=|entry| entry.id let(DialogEntry { id, dialog })>
             {dialog.show(id, on_dialog_return)}
         </For>
     }

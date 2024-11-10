@@ -19,7 +19,7 @@ const DEFAULT_LISTEN: [SocketAddr; 2] = [
 ];
 
 /// The server program for Connect6 Online
-#[derive(Parser, Debug)]
+#[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Socket address to listen on

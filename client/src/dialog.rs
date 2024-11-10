@@ -1,11 +1,11 @@
-use crate::{Action, ANALYZE_PREFIX};
+use crate::{Confirm, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
     game::{Move, Record, Stone},
     protocol::Request,
 };
 use leptos::{
-    either::{Either, EitherOf7},
+    either::{Either, EitherOf5},
     html,
     prelude::*,
 };
@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 trait DialogImpl {
     type RetVal;
 
-    const CLASS: Option<&str> = None;
+    fn class(&self) -> Option<&'static str> {
+        None
+    }
 
     fn inner_view(self) -> impl IntoView;
 }
@@ -66,7 +68,7 @@ macro_rules! dialogs {
                             Dialog::$name(dialog) => (
                                 (|s| RetVal::$name(ron::from_str(s).unwrap_or_default()))
                                     as fn(&str) -> RetVal,
-                                [<$name Dialog>]::CLASS,
+                                dialog.class(),
                                 $either_type::$either_variant(dialog.inner_view()),
                             ),
                         )+
@@ -89,14 +91,12 @@ macro_rules! dialogs {
 }
 
 dialogs! {
-    EitherType = EitherOf7,
+    EitherType = EitherOf5,
     MainMenu => A,
     OnlineMenu => B,
     Join => C,
-    ConnClosed => D,
-    GameMenu => E,
-    Confirm => F,
-    Error => G,
+    GameMenu => D,
+    Confirm => E,
 }
 
 #[derive(Clone)]
@@ -246,33 +246,6 @@ impl DialogImpl for JoinDialog {
 }
 
 #[derive(Clone)]
-pub struct ConnClosedDialog {
-    pub reason: String,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub enum ConnClosedRetVal {
-    #[default]
-    Menu,
-    Retry,
-}
-
-impl DialogImpl for ConnClosedDialog {
-    type RetVal = ConnClosedRetVal;
-
-    fn inner_view(self) -> impl IntoView {
-        view! {
-            <p class="title">"Connection Closed"</p>
-            <p>{self.reason}</p>
-            <div class="btn-group">
-                <button>"Menu"</button>
-                <button value=ret!(Retry)>"Retry"</button>
-            </div>
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct GameMenuDialog {
     pub game_id: String,
     pub stone: Option<Stone>,
@@ -300,7 +273,9 @@ pub enum GameMenuRetVal {
 impl DialogImpl for GameMenuDialog {
     type RetVal = GameMenuRetVal;
 
-    const CLASS: Option<&str> = Some("game-menu");
+    fn class(&self) -> Option<&'static str> {
+        Some("game-menu")
+    }
 
     fn inner_view(self) -> impl IntoView {
         let Self {
@@ -409,17 +384,14 @@ impl DialogImpl for GameMenuDialog {
                         >
                             {if online { "Retract" } else { "Undo" }}
                         </button>
-                        {if !online {
-                            Either::Left(
+                        {(!online)
+                            .then(|| {
                                 view! {
                                     <button value=ret!(Redo) disabled=no_future>
                                         "Redo"
                                     </button>
-                                },
-                            )
-                        } else {
-                            Either::Right(())
-                        }}
+                                }
+                            })}
                     </div>
                     <div class="btn-group">
                         <button value=ret!(ClaimWin) disabled=ended>
@@ -443,17 +415,14 @@ impl DialogImpl for GameMenuDialog {
                         >
                             {if online { "Reset" } else { "Home" }}
                         </button>
-                        {if !online {
-                            Either::Left(
+                        {(!online)
+                            .then(|| {
                                 view! {
                                     <button value=ret!(End) disabled=no_future>
                                         "End"
                                     </button>
-                                },
-                            )
-                        } else {
-                            Either::Right(())
-                        }}
+                                }
+                            })}
                     </div>
                     <div class="btn-group">
                         <button
@@ -495,11 +464,9 @@ impl DialogImpl for GameMenuDialog {
 }
 
 #[derive(Clone)]
-pub struct ConfirmDialog {
-    pub action: Action,
-}
+pub struct ConfirmDialog(pub Confirm);
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ConfirmRetVal {
     #[default]
     Cancel,
@@ -509,62 +476,55 @@ pub enum ConfirmRetVal {
 impl DialogImpl for ConfirmDialog {
     type RetVal = ConfirmRetVal;
 
-    const CLASS: Option<&str> = Some("confirm");
+    fn class(&self) -> Option<&'static str> {
+        match self.0 {
+            Confirm::ConnClosed(_) | Confirm::Error(_) => None,
+            _ => Some("transparent"),
+        }
+    }
 
     fn inner_view(self) -> impl IntoView {
-        let mut confirm = "Confirm";
+        let mut title = None;
+        let mut confirm = Some("Confirm");
         let mut cancel = "Cancel";
-        let message = match self.action {
-            Action::MainMenu => "Back to main menu?",
-            Action::Submit => "Submit the move?",
-            Action::Pass => "Pass without placing stones?",
-            Action::PlaceSingleStone => "Place a single stone?",
-            Action::Request(req) => match req {
+
+        let message = match &self.0 {
+            Confirm::MainMenu => "Back to main menu?",
+            Confirm::Submit(_, _) => "Submit the move?",
+            Confirm::Pass => "Pass without placing stones?",
+            Confirm::PlaceSingleStone(_) => "Place a single stone?",
+            Confirm::Request(req) => match req {
                 Request::Draw => "Offer a draw?",
                 Request::Retract => "Request to retract the previous move?",
                 Request::Reset => "Request to reset the game?",
             },
-            Action::Accept(req) => {
-                (confirm, cancel) = ("Accept", "Ignore");
+            Confirm::Accept(req) => {
+                (confirm, cancel) = (Some("Accept"), "Ignore");
                 match req {
                     Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
                     Request::Reset => "The opponent requests to reset the game.",
                 }
             }
-            Action::Resign => "Resign the game?",
+            Confirm::Resign => "Resign the game?",
+            Confirm::ConnClosed(reason) => {
+                title = Some("Connection Closed");
+                (confirm, cancel) = (Some("Retry"), "Menu");
+                reason
+            }
+            Confirm::Error(message) => {
+                title = Some("Error");
+                (confirm, cancel) = (None, "Main Menu");
+                message
+            }
         };
 
         view! {
-            <p>{message}</p>
+            {title.map(|s| view! { <p class="title">{s}</p> })}
+            <p>{message.to_owned()}</p>
             <div class="btn-group">
                 <button>{cancel}</button>
-                <button value=ret!(Confirm)>{confirm}</button>
-            </div>
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ErrorDialog {
-    pub message: String,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub enum ErrorRetVal {
-    #[default]
-    MainMenu,
-}
-
-impl DialogImpl for ErrorDialog {
-    type RetVal = ErrorRetVal;
-
-    fn inner_view(self) -> impl IntoView {
-        view! {
-            <p class="title">"Error"</p>
-            <p>{self.message}</p>
-            <div class="btn-group">
-                <button>"Main Menu"</button>
+                {confirm.map(|s| view! { <button value=ret!(Confirm)>{s}</button> })}
             </div>
         }
     }
