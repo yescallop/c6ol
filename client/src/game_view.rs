@@ -110,7 +110,7 @@ enum PointerState {
 }
 
 #[derive(Default)]
-struct State {
+pub struct State {
     /// Pixel size of the canvas.
     size: f64,
 
@@ -148,6 +148,12 @@ struct State {
     last_hover_before_enabled: Option<PointerOffsets>,
     // See comments at `PointerState`.
     pointer_state: PointerState,
+}
+
+impl State {
+    pub fn tentative(&self) -> Option<Point> {
+        self.tentative
+    }
 }
 
 enum ClampTo {
@@ -225,6 +231,7 @@ fn context_2d(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
 pub fn GameView(
     record: ReadSignal<Record>,
     stone: ReadSignal<Option<Stone>>,
+    state: StoredValue<State>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
 ) -> impl IntoView {
@@ -233,10 +240,7 @@ pub fn GameView(
     let container_ref = NodeRef::<html::Div>::new();
     let canvas_ref = NodeRef::<html::Canvas>::new();
 
-    let state = StoredValue::new(State {
-        view_size: DEFAULT_VIEW_SIZE,
-        ..Default::default()
-    });
+    state.write_value().view_size = DEFAULT_VIEW_SIZE;
 
     // Tests if it is our turn to play.
     let our_turn = move || {
@@ -534,7 +538,6 @@ pub fn GameView(
             state.tentative = None;
             drop(state);
 
-            on_event(Event::Tentative(None));
             draw();
         } else if phantom == Some(cursor) {
             if !record.read_untracked().has_past() {
@@ -546,7 +549,6 @@ pub fn GameView(
                 state.phantom = None;
                 drop(state);
 
-                on_event(Event::Tentative(phantom));
                 draw();
             }
         } else {
@@ -941,7 +943,6 @@ pub fn GameView(
         }
         drop(state);
 
-        on_event(Event::Tentative(None));
         draw();
     });
 

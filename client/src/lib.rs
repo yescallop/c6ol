@@ -9,7 +9,6 @@ use c6ol_core::{
     protocol::{ClientMessage, GameId, Request, ServerMessage},
 };
 use dialog::*;
-use game_view::GameView;
 use leptos::{ev, prelude::*};
 use std::{
     collections::HashMap,
@@ -61,7 +60,6 @@ enum Event {
     Redo,
     Home,
     End,
-    Tentative(Option<Point>),
 }
 
 const STORAGE_KEY_RECORD: &str = "record";
@@ -381,8 +379,6 @@ pub fn App() -> impl IntoView {
         }
     };
 
-    let tentative = StoredValue::new(None::<Point>);
-
     let on_event = move |ev: Event| match ev {
         Event::Menu => show_game_menu_dialog(),
         Event::Submit(fst, snd) => {
@@ -437,8 +433,9 @@ pub fn App() -> impl IntoView {
                 record.jump(len);
             }
         }
-        Event::Tentative(pos) => tentative.set_value(pos),
     };
+
+    let view_state = StoredValue::<game_view::State>::default();
 
     let on_game_menu_return = move |ret_val: GameMenuRetVal| match ret_val {
         GameMenuRetVal::Resume => {}
@@ -472,7 +469,7 @@ pub fn App() -> impl IntoView {
             }
         }
         GameMenuRetVal::Pass => {
-            let tentative = tentative.get_value();
+            let tentative = view_state.read_value().tentative();
             if online() {
                 let (action, msg) = if let Some(pos) = tentative {
                     (Action::PlaceSingleStone, ClientMessage::Place(pos, None))
@@ -572,9 +569,10 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <GameView
+        <game_view::GameView
             record=record.read_only()
             stone=stone.read_only()
+            state=view_state
             disabled=move || !dialogs.read().is_empty()
             on_event=on_event
         />
