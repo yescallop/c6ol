@@ -485,8 +485,8 @@ impl DialogImpl for ConfirmDialog {
 
     fn inner_view(self) -> impl IntoView {
         let mut title = None;
-        let mut confirm = Some("Confirm");
-        let mut cancel = "Cancel";
+        let mut confirm = "Confirm";
+        let mut cancel = Some("Cancel");
 
         let message = match &self.0 {
             Confirm::MainMenu => "Back to main menu?",
@@ -499,7 +499,7 @@ impl DialogImpl for ConfirmDialog {
                 Request::Reset => "Request to reset the game?",
             },
             Confirm::Accept(req) => {
-                (confirm, cancel) = (Some("Accept"), "Ignore");
+                (confirm, cancel) = ("Accept", Some("Ignore"));
                 match req {
                     Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
@@ -509,12 +509,12 @@ impl DialogImpl for ConfirmDialog {
             Confirm::Resign => "Resign the game?",
             Confirm::ConnClosed(reason) => {
                 title = Some("Connection Closed");
-                (confirm, cancel) = (Some("Retry"), "Menu");
+                (confirm, cancel) = ("Retry", Some("Menu"));
                 reason
             }
             Confirm::Error(message) => {
                 title = Some("Error");
-                (confirm, cancel) = (None, "Main Menu");
+                (confirm, cancel) = ("Main Menu", None);
                 message
             }
         };
@@ -523,8 +523,8 @@ impl DialogImpl for ConfirmDialog {
             {title.map(|s| view! { <p class="title">{s}</p> })}
             <p>{message.to_owned()}</p>
             <div class="btn-group">
-                <button>{cancel}</button>
-                {confirm.map(|s| view! { <button value=ret!(Confirm)>{s}</button> })}
+                {cancel.map(|s| view! { <button>{s}</button> })}
+                <button value=ret!(Confirm)>{confirm}</button>
             </div>
         }
     }
