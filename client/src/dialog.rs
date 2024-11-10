@@ -143,7 +143,7 @@ impl DialogImpl for OnlineMenuDialog {
         let game_id = RwSignal::new(String::new());
 
         view! {
-            <p class="title">Play Online</p>
+            <p class="title">"Play Online"</p>
             <div class="radio-group">
                 <input
                     type="radio"
@@ -262,8 +262,8 @@ impl DialogImpl for ConnClosedDialog {
             <p class="title">"Connection Closed"</p>
             <p>{self.reason}</p>
             <div class="btn-group">
-                <button>Menu</button>
-                <button value=ret!(Retry)>Retry</button>
+                <button>"Menu"</button>
+                <button value=ret!(Retry)>"Retry"</button>
             </div>
         }
     }
@@ -558,10 +558,10 @@ impl DialogImpl for ErrorDialog {
 
     fn inner_view(self) -> impl IntoView {
         view! {
-            <p class="title">Error</p>
+            <p class="title">"Error"</p>
             <p>{self.message}</p>
             <div class="btn-group">
-                <button>Main Menu</button>
+                <button>"Main Menu"</button>
             </div>
         }
     }
