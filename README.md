@@ -1,8 +1,10 @@
 # c6ol: Connect6 Online
 
-A web app for playing [Connect6] games online.
+A web app for playing [Connect6] games online, built with Rust frameworks [Leptos] and [axum].
 
 [Connect6]: https://en.wikipedia.org/wiki/Connect6
+[Leptos]: https://github.com/leptos-rs/leptos
+[axum]: https://github.com/tokio-rs/axum
 
 ## Features
 
@@ -49,7 +51,7 @@ trunk build --release
 cd ../server
 # To deploy in place:
 cargo run --release -- -l [::]:8086 ../client/dist
-# Or you can copy the outputs somewhere and run:
+# Or you can copy the outputs elsewhere and run:
 /path/to/c6ol-server --listen [::]:8086 /path/to/dist
 ```
 
