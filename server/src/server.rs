@@ -1,7 +1,11 @@
 use crate::{manager, shutdown, ws};
 use axum::{routing::get, Router};
-use std::{future::Future, io};
-use tokio::net::TcpListener;
+use std::{
+    future::{Future, IntoFuture},
+    iter,
+    path::Path,
+};
+use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::services::ServeDir;
 
 /// Shared state for WebSocket handlers.
@@ -12,15 +16,11 @@ pub struct AppState {
 }
 
 /// Runs the server.
-///
-/// # Errors
-///
-/// Returns `Err` if an error occurred when serving.
 pub async fn run(
-    listener: TcpListener,
-    static_root: &str,
+    listeners: Vec<TcpListener>,
+    static_root: Option<&Path>,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
-) -> io::Result<()> {
+) {
     // Set up graceful shutdown, on which the following events happen:
     //
     // - All WebSocket handlers are cancelled, dropping all `GameManager`s
@@ -44,15 +44,35 @@ pub async fn run(
         manager,
     };
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/ws", get(ws::handle_websocket_upgrade))
-        .with_state(app_state)
-        .fallback_service(ServeDir::new(static_root));
+        .with_state(app_state);
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_rx.requested())
-        .await?;
+    if let Some(root) = static_root {
+        app = app.fallback_service(ServeDir::new(root));
+    }
 
-    manager_task.await.expect("manager task should not panic");
-    Ok(())
+    let mut server_tasks = JoinSet::new();
+
+    for ((app, shutdown_rx), listener) in iter::repeat((app, shutdown_rx)).zip(listeners) {
+        server_tasks.spawn(
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_rx.requested())
+                .into_future(),
+        );
+    }
+
+    while let Some(res) = server_tasks.join_next().await {
+        match res {
+            Ok(res) => match res {
+                Ok(()) => {}
+                Err(err) => tracing::error!("server task returned error: {err}"),
+            },
+            Err(err) => tracing::error!("server task panicked: {err}"),
+        }
+    }
+
+    if let Err(err) = manager_task.await {
+        tracing::error!("manager task panicked: {err}");
+    }
 }

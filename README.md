@@ -28,17 +28,30 @@ A web app for playing [Connect6] games online.
 
 ## Setup
 
-Install Rust 1.82+ and [Trunk](https://trunkrs.dev/). Then run:
+Install Rust 1.82+ and [Trunk](https://trunkrs.dev/). To develop, run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol
-cd c6ol/client
-trunk build
-cd ../server
+cd c6ol
+# In one terminal:
+cd server
 cargo run
+# In another:
+cd client
+trunk serve --open
 ```
 
-The app will be served on port 8086.
+To deploy, run:
+
+```sh
+cd client
+trunk build --release
+cd ../server
+# To deploy in place:
+cargo run --release -- -l [::]:8086 ../client/dist
+# Or you can copy the outputs somewhere and run:
+/path/to/c6ol-server --listen [::]:8086 /path/to/dist
+```
 
 ## Play
 

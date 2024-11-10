@@ -5,8 +5,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
+anyhow = "1"
 axum = { version = "0.7", features = ["ws"] }
 c6ol-core = { path = "../core" }
+clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }

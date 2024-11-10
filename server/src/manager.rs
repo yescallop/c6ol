@@ -134,6 +134,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
 
     let mut game_cmd_txs = HashMap::new();
     let mut game_tasks = JoinSet::new();
+    let mut game_ids_by_task_id = HashMap::new();
 
     loop {
         tokio::select! {
@@ -151,7 +152,9 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
 
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
-                        game_tasks.spawn(host_game(id, game_cmd_rx));
+
+                        let task_id = game_tasks.spawn(host_game(id, game_cmd_rx)).id();
+                        game_ids_by_task_id.insert(task_id, id);
 
                         let _ = resp_tx.send(Game::new(id, game_cmd_tx));
                         break;
@@ -168,9 +171,16 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
             }
             // When `join_next` returns `None`, `select!` will disable
             // this branch and still wait on the other branch.
-            Some(res) = game_tasks.join_next() => {
-                let id = res.expect("game task should not panic");
-                game_cmd_txs.remove(&id);
+            Some(res) = game_tasks.join_next_with_id() => {
+                let task_id = match res {
+                    Ok((id, ())) => id,
+                    Err(err) => {
+                        tracing::error!("game task panicked: {err}");
+                        err.id()
+                    },
+                };
+                let game_id = game_ids_by_task_id.remove(&task_id).unwrap();
+                game_cmd_txs.remove(&game_id);
             }
         }
     }
@@ -311,7 +321,7 @@ impl GameState {
     }
 }
 
-async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) -> GameId {
+async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) {
     tracing::debug!("game started: {}", id.escape_ascii());
 
     let mut state = GameState::new();
@@ -329,5 +339,4 @@ async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) -> GameI
 
     // All command senders are dropped.
     tracing::debug!("game ended: {}", id.escape_ascii());
-    id
 }
