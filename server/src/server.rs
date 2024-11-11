@@ -24,8 +24,8 @@ pub async fn run(
     // Set up graceful shutdown, on which the following events happen:
     //
     // - All WebSocket handlers are cancelled, dropping all `GameManager`s
-    //   (except the one in the axum server) and `Game`s.
-    // - The axum server shuts down after all connections are closed,
+    //   (except the one shared by the axum servers) and `Game`s.
+    // - The axum servers shut down after all connections are closed,
     //   dropping the last `GameManager`.
     // - All game tasks finish after no `Game`s are alive.
     // - The game manager task finishes after no `GameManager`s are alive

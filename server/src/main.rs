@@ -8,7 +8,10 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::PathBuf,
 };
-use tokio::{net::TcpSocket, signal};
+use tokio::{
+    net::{TcpListener, TcpSocket},
+    signal,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_PORT: u16 = 8086;
@@ -43,30 +46,12 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
-    let listeners = args
-        .listen
-        .into_iter()
-        .map(|addr| {
-            tracing::info!("listening on {addr}");
+    let mut listeners = vec![];
 
-            let socket = if addr.is_ipv4() {
-                TcpSocket::new_v4()?
-            } else {
-                TcpSocket::new_v6()?
-            };
-
-            if addr.ip() == Ipv6Addr::UNSPECIFIED {
-                socket2::SockRef::from(&socket).set_only_v6(false)?;
-            }
-
-            #[cfg(not(windows))]
-            socket.set_reuseaddr(true)?;
-
-            socket.bind(addr)?;
-            socket.listen(1024)
-        })
-        .collect::<io::Result<Vec<_>>>()
-        .context("failed to listen on previous address")?;
+    for addr in args.listen {
+        listeners.push(listen(addr).with_context(|| format!("failed to listen on {addr}"))?);
+        tracing::info!("listening on {addr}");
+    }
 
     let shutdown_signal = shutdown_signal().context("failed to listen for shutdown signals")?;
 
@@ -75,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
             .canonicalize()
             .ok()
             .filter(|path| path.is_dir())
-            .context("argument to `serve-dir` is not pointing to a valid directory")?;
+            .context("argument to --serve-dir is not pointing to a valid directory")?;
         tracing::info!("serving files from {}", path.display());
         Some(path)
     } else {
@@ -84,6 +69,24 @@ async fn main() -> anyhow::Result<()> {
 
     c6ol_server::run(listeners, serve_dir.as_deref(), shutdown_signal).await;
     Ok(())
+}
+
+fn listen(addr: SocketAddr) -> io::Result<TcpListener> {
+    let socket = if addr.is_ipv4() {
+        TcpSocket::new_v4()?
+    } else {
+        TcpSocket::new_v6()?
+    };
+
+    if addr.ip() == Ipv6Addr::UNSPECIFIED {
+        socket2::SockRef::from(&socket).set_only_v6(false)?;
+    }
+
+    #[cfg(not(windows))]
+    socket.set_reuseaddr(true)?;
+
+    socket.bind(addr)?;
+    socket.listen(1024)
 }
 
 #[cfg(unix)]
