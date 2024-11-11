@@ -419,8 +419,9 @@ pub fn App() -> impl IntoView {
                 confirm(Confirm::Resign);
             } else {
                 let mut record = record.write();
-                let stone = record.turn().unwrap();
-                record.make_move(Move::Resign(stone));
+                if let Some(stone) = record.turn() {
+                    record.make_move(Move::Resign(stone));
+                }
             }
         }
         GameMenuRetVal::Pass => {

@@ -326,10 +326,14 @@ impl Record {
         }
     }
 
+    fn turn_unchecked(&self) -> Stone {
+        Self::turn_at(self.index)
+    }
+
     /// Returns the current stone to play.
     #[must_use]
     pub fn turn(&self) -> Option<Stone> {
-        (!self.is_ended()).then(|| Self::turn_at(self.index))
+        (!self.is_ended()).then(|| self.turn_unchecked())
     }
 
     /// Returns the stone at the given position (if any).
@@ -354,7 +358,7 @@ impl Record {
                 return false;
             }
 
-            let stone = self.turn().unwrap();
+            let stone = self.turn_unchecked();
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
             }
@@ -386,7 +390,7 @@ impl Record {
     pub fn redo_move(&mut self) -> Option<Move> {
         let next = self.next_move()?;
         if let Move::Stone(fst, snd) = next {
-            let stone = self.turn().unwrap();
+            let stone = self.turn_unchecked();
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
             }

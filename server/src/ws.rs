@@ -22,7 +22,8 @@ pub async fn handle_websocket_upgrade(
     upgrade.on_upgrade(|mut socket| async move {
         let err = tokio::select! {
             res = handle_websocket(&mut socket, state.manager) => {
-                res.expect_err("must be an error")
+                let Err(err) = res;
+                err
             }
             () = state.shutdown_rx.requested() => {
                 Error::Shutdown
@@ -121,7 +122,7 @@ async fn handle_websocket(
         tokio::select! {
             res = sub.msg_rx.recv() => {
                 let msg = res.map_err(|err| match err {
-                    RecvError::Closed => unreachable!("sender should be alive"),
+                    RecvError::Closed => panic!("sender should be alive"),
                     RecvError::Lagged(_) => Error::Lagged,
                 })?;
                 socket.send(msg).await?;

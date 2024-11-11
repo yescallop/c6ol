@@ -425,10 +425,7 @@ impl DialogImpl for GameMenuDialog {
                             })}
                     </div>
                     <div class="btn-group">
-                        <button
-                            value=ret!(Pass)
-                            disabled=move || ended() || record.read().turn() != stone
-                        >
+                        <button value=ret!(Pass) disabled=move || record.read().turn() != stone>
                             "Pass"
                         </button>
                         <button
