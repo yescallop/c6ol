@@ -50,9 +50,9 @@ cd client
 trunk build --release
 cd ../server
 # To deploy in place:
-cargo run --release -- -l [::]:8086 ../client/dist
+cargo run --release -- --listen [::]:8086 --serve-dir ../client/dist
 # Or you can copy the outputs elsewhere and run:
-/path/to/c6ol-server --listen [::]:8086 /path/to/dist
+/path/to/c6ol-server --listen [::]:8086 --serve-dir /path/to/dist
 ```
 
 ## Play

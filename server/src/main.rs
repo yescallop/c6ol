@@ -22,12 +22,13 @@ const DEFAULT_LISTEN: [SocketAddr; 2] = [
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Socket address to listen on
-    #[arg(long, short, name = "ADDR", default_values_t = DEFAULT_LISTEN)]
+    /// Listen on the given socket addresses
+    #[arg(long, name = "ADDR", num_args = 1.., default_values_t = DEFAULT_LISTEN)]
     listen: Vec<SocketAddr>,
 
-    /// Path to the root of static files
-    static_root: Option<PathBuf>,
+    /// Serve files from the given directory
+    #[arg(long, name = "PATH")]
+    serve_dir: Option<PathBuf>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -69,19 +70,19 @@ async fn main() -> anyhow::Result<()> {
 
     let shutdown_signal = shutdown_signal().context("failed to listen for shutdown signals")?;
 
-    let static_root = if let Some(root) = &args.static_root {
-        let root = root
+    let serve_dir = if let Some(path) = &args.serve_dir {
+        let path = path
             .canonicalize()
             .ok()
             .filter(|path| path.is_dir())
-            .context("static root not pointing to valid directory")?;
-        tracing::info!("serving static files under {}", root.display());
-        Some(root)
+            .context("argument to `serve-dir` is not pointing to a valid directory")?;
+        tracing::info!("serving files from {}", path.display());
+        Some(path)
     } else {
         None
     };
 
-    c6ol_server::run(listeners, static_root.as_deref(), shutdown_signal).await;
+    c6ol_server::run(listeners, serve_dir.as_deref(), shutdown_signal).await;
     Ok(())
 }
 

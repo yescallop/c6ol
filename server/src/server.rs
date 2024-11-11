@@ -18,7 +18,7 @@ pub struct AppState {
 /// Runs the server.
 pub async fn run(
     listeners: Vec<TcpListener>,
-    static_root: Option<&Path>,
+    serve_dir: Option<&Path>,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) {
     // Set up graceful shutdown, on which the following events happen:
@@ -48,8 +48,8 @@ pub async fn run(
         .route("/ws", get(ws::handle_websocket_upgrade))
         .with_state(app_state);
 
-    if let Some(root) = static_root {
-        app = app.fallback_service(ServeDir::new(root));
+    if let Some(path) = serve_dir {
+        app = app.fallback_service(ServeDir::new(path));
     }
 
     let mut server_tasks = JoinSet::new();
