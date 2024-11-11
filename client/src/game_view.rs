@@ -503,7 +503,8 @@ pub fn GameView(
     let resize_callback = Closure::<dyn Fn()>::new(resize_canvas);
 
     Effect::new(move || {
-        // TODO: Determine if this is necessary.
+        // Required for the canvas not to break when we switch Chrome Mobile to
+        // background and go back after some time. Not required on PC however.
         resize_canvas();
 
         ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
