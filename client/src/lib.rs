@@ -86,9 +86,9 @@ pub fn App() -> impl IntoView {
     let stone = RwSignal::new(None::<Stone>);
 
     let game_id = RwSignal::new(String::new());
-    let requests = RwSignal::new([None::<Stone>; Request::VALUES.len()]);
 
-    let request = move |req: Request| requests.read_untracked()[req as usize];
+    let requests = RwSignal::new([None::<Stone>; Request::VALUES.len()]);
+    let who_requested = move |req: Request| requests.read()[req as usize];
 
     let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
 
@@ -106,23 +106,12 @@ pub fn App() -> impl IntoView {
     let online = move || ws_state.read_value().is_some();
 
     Effect::new(move || {
-        // Watch for changes to the record.
-        let record = record.read();
-        let game_id = &*game_id.read_untracked();
-
-        if game_id == "local" {
+        if *game_id.read() == "local" {
             // Save the record to local storage.
             let mut buf = vec![];
-            record.encode(&mut buf, true);
+            record.read().encode(&mut buf, true);
             let buf = BASE64_STANDARD.encode(buf);
             local_storage().set_item(STORAGE_KEY_RECORD, &buf).unwrap();
-        }
-
-        // FIXME: Maybe we shouldn't write to signals in an effect.
-        // But it's just easier to reason about.
-        if !online() && !game_id.is_empty() {
-            // Update the stone accordingly when offline.
-            stone.set(record.turn());
         }
     });
 
@@ -152,7 +141,7 @@ pub fn App() -> impl IntoView {
     };
 
     let confirm_request = move |req: Request| {
-        confirm(if request(req).is_some() {
+        confirm(if who_requested(req).is_some() {
             Confirm::Accept(req)
         } else {
             Confirm::Request(req)
@@ -161,8 +150,8 @@ pub fn App() -> impl IntoView {
 
     let show_game_menu_dialog = move || {
         show_dialog(Dialog::from(GameMenuDialog {
-            game_id: game_id.get_untracked(),
-            stone: stone.get_untracked(),
+            game_id: game_id.get(),
+            stone: stone.get(),
             online: online(),
             record: record.read_only(),
             requests: requests.read_only(),
@@ -198,7 +187,7 @@ pub fn App() -> impl IntoView {
                     show_game_menu_dialog();
                 }
                 for req in Request::VALUES {
-                    if request(req) == Some(our_stone.opposite()) {
+                    if who_requested(req) == Some(our_stone.opposite()) {
                         confirm_request(req);
                     }
                 }
@@ -220,7 +209,7 @@ pub fn App() -> impl IntoView {
             }
             ServerMessage::Request(req, req_stone) => {
                 requests.write()[req as usize] = Some(req_stone);
-                if stone.get_untracked() == Some(req_stone.opposite()) {
+                if stone.get() == Some(req_stone.opposite()) {
                     confirm_request(req);
                 }
             }
@@ -230,12 +219,12 @@ pub fn App() -> impl IntoView {
             // Clear the requests if the record changed.
             requests.write().fill(None);
 
-            // Also remove accept dialogs.
-            let mut dialogs = dialog_entries.write();
+            // Also clear all confirm dialogs.
+            let mut entries = dialog_entries.write();
             let mut removed = false;
 
-            dialogs.retain(|entry| match entry.dialog {
-                Dialog::Confirm(ConfirmDialog(Confirm::Accept(_))) => {
+            entries.retain(|entry| match &entry.dialog {
+                Dialog::Confirm(ConfirmDialog(_)) => {
                     removed = true;
                     false
                 }
@@ -243,7 +232,7 @@ pub fn App() -> impl IntoView {
             });
 
             if !removed {
-                dialogs.untrack();
+                entries.untrack();
             }
         }
 
@@ -263,7 +252,7 @@ pub fn App() -> impl IntoView {
 
         first_msg_seen.set_value(false);
 
-        let onmessage = Closure::<dyn Fn(MessageEvent)>::new(on_message);
+        let onmessage = Closure::<dyn Fn(MessageEvent)>::new(move |ev| untrack(|| on_message(ev)));
         ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
 
         ws_state.set_value(Some(WebSocketState {
@@ -283,18 +272,16 @@ pub fn App() -> impl IntoView {
             ws.close().unwrap();
         }
 
+        requests.write().fill(None);
         dialog_entries.write().clear();
 
-        if Some(id) != location_hash().as_deref() {
+        if location_hash().as_deref() != Some(id) {
             history_push_state(&format!("#{id}"));
         }
 
         game_id.set(id.into());
 
-        // This needs to be untracked for the cursor to show
-        // when we click "Play Offline" at the main menu.
-        *stone.write_untracked() = None;
-        requests.write().fill(None);
+        stone.set(None);
 
         if id.is_empty() {
             record.write().clear();
@@ -313,6 +300,7 @@ pub fn App() -> impl IntoView {
             } else {
                 record.write().clear();
             }
+            stone.set(record.read().turn());
             return;
         }
 
@@ -323,6 +311,7 @@ pub fn App() -> impl IntoView {
                 .and_then(|buf| Record::decode(&mut &buf[..], false))
             {
                 record.set(decoded_record);
+                stone.set(record.read().turn());
             } else {
                 confirm(Confirm::Error("Failed to decode record.".into()));
             }
@@ -340,60 +329,73 @@ pub fn App() -> impl IntoView {
         confirm(Confirm::Error("Invalid game ID.".into()));
     };
 
-    let on_event = move |ev: Event| match ev {
-        Event::Menu => show_game_menu_dialog(),
-        Event::Submit(fst, snd) => {
-            if online() {
-                confirm(Confirm::Submit(fst, snd));
-            } else {
-                record.write().make_move(Move::Stone(fst, snd));
-            }
-        }
-        Event::Undo => {
-            if !record.read_untracked().has_past() {
-                return;
-            }
-            if online() {
-                if request(Request::Retract) != stone.get_untracked() {
-                    confirm_request(Request::Retract);
+    let on_event = move |ev: Event| {
+        let mut record_changed = false;
+
+        match ev {
+            Event::Menu => show_game_menu_dialog(),
+            Event::Submit(fst, snd) => {
+                if online() {
+                    confirm(Confirm::Submit(fst, snd));
+                } else {
+                    record.write().make_move(Move::Stone(fst, snd));
+                    record_changed = true;
                 }
-            } else {
-                record.write().undo_move();
             }
-        }
-        Event::Redo => {
-            if !record.read_untracked().has_future() {
-                return;
-            }
-            if !online() {
-                record.write().redo_move();
-            }
-        }
-        Event::Home => {
-            if !record.read_untracked().has_past() {
-                return;
-            }
-            if online() {
-                if request(Request::Reset) != stone.get_untracked() {
-                    confirm_request(Request::Reset);
+            Event::Undo => {
+                if !record.read().has_past() {
+                    return;
                 }
-            } else {
-                record.write().jump(0);
+                if online() {
+                    if who_requested(Request::Retract) != stone.get() {
+                        confirm_request(Request::Retract);
+                    }
+                } else {
+                    record.write().undo_move();
+                    record_changed = true;
+                }
+            }
+            Event::Redo => {
+                if !record.read().has_future() {
+                    return;
+                }
+                if !online() {
+                    record.write().redo_move();
+                    record_changed = true;
+                }
+            }
+            Event::Home => {
+                if !record.read().has_past() {
+                    return;
+                }
+                if online() {
+                    if who_requested(Request::Reset) != stone.get() {
+                        confirm_request(Request::Reset);
+                    }
+                } else {
+                    record.write().jump(0);
+                    record_changed = true;
+                }
+            }
+            Event::End => {
+                if !record.read().has_future() {
+                    return;
+                }
+                if !online() {
+                    let mut record = record.write();
+                    let len = record.moves().len();
+                    record.jump(len);
+                    record_changed = true;
+                }
             }
         }
-        Event::End => {
-            if !record.read_untracked().has_future() {
-                return;
-            }
-            if !online() {
-                let mut record = record.write();
-                let len = record.moves().len();
-                record.jump(len);
-            }
+
+        if record_changed {
+            stone.set(record.read().turn());
         }
     };
 
-    let view_state = StoredValue::<game_view::State>::default();
+    let tentative_pos = RwSignal::new(None);
 
     let on_game_menu_return = move |ret_val: GameMenuRetVal| match ret_val {
         GameMenuRetVal::Resume => {}
@@ -425,7 +427,7 @@ pub fn App() -> impl IntoView {
             }
         }
         GameMenuRetVal::Pass => {
-            let tentative = view_state.read_value().tentative();
+            let tentative = tentative_pos.get();
             if online() {
                 confirm(if let Some(pos) = tentative {
                     Confirm::PlaceSingleStone(pos)
@@ -522,13 +524,14 @@ pub fn App() -> impl IntoView {
     let handle_hashchange = window_event_listener(ev::hashchange, move |_| on_hash_change());
 
     let handle_storage = window_event_listener(ev::storage, move |ev| {
-        if *game_id.read_untracked() == "local" && ev.key().as_deref() == Some(STORAGE_KEY_RECORD) {
+        if *game_id.read() == "local" && ev.key().as_deref() == Some(STORAGE_KEY_RECORD) {
             if let Some(buf) = ev
                 .new_value()
                 .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
                 .and_then(|buf| Record::decode(&mut &buf[..], true))
             {
                 record.set(buf);
+                stone.set(record.read().turn());
             }
         }
     });
@@ -542,9 +545,9 @@ pub fn App() -> impl IntoView {
         <game_view::GameView
             record=record.read_only()
             stone=stone.read_only()
-            state=view_state
             disabled=move || !dialog_entries.read().is_empty()
             on_event=on_event
+            tentative_pos=tentative_pos
         />
         <For each=move || dialog_entries.get() key=|entry| entry.id let(DialogEntry { id, dialog })>
             {dialog.show(id, on_dialog_return)}

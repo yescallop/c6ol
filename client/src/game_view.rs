@@ -110,33 +110,7 @@ enum PointerState {
 }
 
 #[derive(Default)]
-pub struct State {
-    /// Pixel size of the canvas.
-    size: f64,
-
-    /// Pixel size of a single grid on the canvas.
-    /// Equals `size / (viewSize + 1)`.
-    grid_size: f64,
-
-    /// Size of the view. Minimum value is 1.
-    ///
-    /// The *view* refers to the area where the user can see and place stones.
-    /// Stones outside the view are drawn in gray on its *border*.
-    view_size: i16,
-
-    // There are three kinds of positions:
-    //
-    // - Board position is in grids, relative to the origin of the board.
-    // - View position is in grids, relative to the top-left corner of the view.
-    // - Canvas position is in pixels, relative to the top-left corner of the canvas.
-    //
-    // The following are board positions.
-    view_center: Point,
-    // The user can *hit* a cursor by clicking the view or pressing Space or Enter.
-    cursor: Option<Point>,
-    phantom: Option<Point>,
-    tentative: Option<Point>,
-
+struct State {
     /// Info about active pointers.
     ///
     /// A pointer is added to this map on a `pointerdown` event,
@@ -150,18 +124,18 @@ pub struct State {
     pointer_state: PointerState,
 }
 
-impl State {
-    pub fn tentative(&self) -> Option<Point> {
-        self.tentative
-    }
-}
-
 enum ClampTo {
     Inside,
     InsideAndBorder,
 }
 
-impl State {
+struct Calc {
+    view_size: i16,
+    grid_size: f64,
+    view_center: Point,
+}
+
+impl Calc {
     /// Tests if a view position is out of view.
     fn view_pos_out_of_view(&self, x: i16, y: i16) -> bool {
         x < 0 || x >= self.view_size || y < 0 || y >= self.view_size
@@ -227,20 +201,53 @@ fn context_2d(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
         .unchecked_into::<CanvasRenderingContext2d>()
 }
 
+/// The game view component.
+///
+/// There are three kinds of positions:
+///
+/// - Board position is in grids, relative to the origin of the board.
+/// - View position is in grids, relative to the top-left corner of the view.
+/// - Canvas position is in pixels, relative to the top-left corner of the canvas.
+///
+/// All `Point`s in the props are board positions.
 #[component]
 pub fn GameView(
     record: ReadSignal<Record>,
     stone: ReadSignal<Option<Stone>>,
-    state: StoredValue<State>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
+    /// Size of the view.
+    ///
+    /// Defaults to 15. Minimum value is 1. Is always odd.
+    ///
+    /// The *view* refers to the area where the user can see and place stones.
+    /// Stones outside the view are drawn in gray on its *border*.
+    #[prop(default = RwSignal::new(DEFAULT_VIEW_SIZE))]
+    view_size: RwSignal<i16>,
+    #[prop(optional)] view_center: RwSignal<Point>,
+    #[prop(optional)] cursor_pos: RwSignal<Option<Point>>,
+    #[prop(optional)] phantom_pos: RwSignal<Option<Point>>,
+    #[prop(optional)] tentative_pos: RwSignal<Option<Point>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
 
     let container_ref = NodeRef::<html::Div>::new();
     let canvas_ref = NodeRef::<html::Canvas>::new();
 
-    state.write_value().view_size = DEFAULT_VIEW_SIZE;
+    // Non-reactive state.
+    let state = StoredValue::<State>::default();
+
+    // Pixel size of the canvas.
+    let canvas_size = RwSignal::new(0.0);
+
+    // Pixel size of a single grid on the canvas.
+    let grid_size = Memo::new(move |_| canvas_size.get() / (view_size.get() + 1) as f64);
+
+    let calc = move || Calc {
+        view_size: view_size.get(),
+        grid_size: grid_size.get(),
+        view_center: view_center.get(),
+    };
 
     // Tests if it is our turn to play.
     let our_turn = move || {
@@ -252,11 +259,12 @@ pub fn GameView(
     let draw = move || {
         console_log!("draw");
 
-        let ctx = context_2d(canvas_ref.get_untracked().unwrap());
-        let state = state.read_value();
-        let State {
-            size, grid_size, ..
-        } = *state;
+        let ctx = context_2d(canvas_ref.get().unwrap());
+
+        let size = canvas_size.get();
+        let view_size = view_size.get();
+        let grid_size = grid_size.get();
+        let calc = calc();
 
         let set_fill_style_by_stone = |stone: Stone| {
             ctx.set_fill_style_str(match stone {
@@ -267,7 +275,7 @@ pub fn GameView(
 
         // Draws a circle at a view position with the given radius.
         let draw_circle = |p: Point, r: f64| {
-            let (x, y) = state.view_to_canvas_pos(p);
+            let (x, y) = calc.view_to_canvas_pos(p);
             ctx.begin_path();
             ctx.arc(x, y, r, 0.0, f64::consts::TAU).unwrap();
             ctx.fill();
@@ -282,7 +290,7 @@ pub fn GameView(
 
         // Draw the solid lines inside the view.
         ctx.begin_path();
-        for i in 1..=state.view_size {
+        for i in 1..=view_size {
             let pos = grid_size * i as f64;
             ctx.move_to(grid_size, pos);
             ctx.line_to(size - grid_size, pos);
@@ -297,7 +305,7 @@ pub fn GameView(
         // Draw the dashed lines outside the view.
         ctx.begin_path();
         ctx.set_line_dash(&segments).unwrap();
-        for i in 1..=state.view_size {
+        for i in 1..=view_size {
             let pos = grid_size * i as f64;
             ctx.move_to(0.0, pos);
             ctx.line_to(grid_size, pos);
@@ -317,7 +325,7 @@ pub fn GameView(
 
         // Draw the board origin.
         let origin = Point::default();
-        if let Some(p) = state.board_to_view_pos(origin) {
+        if let Some(p) = calc.board_to_view_pos(origin) {
             if record.stone_at(origin).is_none() {
                 ctx.set_fill_style_str("black");
                 draw_circle(p, dot_radius);
@@ -339,7 +347,7 @@ pub fn GameView(
             let stone = Record::turn_at(i);
 
             for p in iter::once(fst).chain(snd) {
-                let (p, out) = state.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                 if out {
                     out_pos.insert(p);
                     continue;
@@ -363,7 +371,7 @@ pub fn GameView(
                 Move::Stone(fst, snd) => {
                     set_fill_style_by_stone(stone.opposite());
                     for p in iter::once(fst).chain(snd) {
-                        let (p, _) = state.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                        let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                         draw_circle(p, dot_radius);
                     }
                 }
@@ -411,7 +419,7 @@ pub fn GameView(
 
         if let Some(stone) = stone.get_untracked() {
             // Draw the phantom stone.
-            if let Some(p) = state.phantom.and_then(|p| state.board_to_view_pos(p)) {
+            if let Some(p) = phantom_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
                 ctx.set_global_alpha(PHANTOM_MOVE_OPACITY);
 
                 set_fill_style_by_stone(stone);
@@ -421,24 +429,18 @@ pub fn GameView(
             }
 
             // Draw the tentative stone.
-            if let Some(p) = state.tentative.and_then(|p| state.board_to_view_pos(p)) {
+            if let Some(p) = tentative_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
                 set_fill_style_by_stone(stone);
                 draw_circle(p, stone_radius);
 
-                let (x, y) = state.view_to_canvas_pos(p);
-                set_fill_style_by_stone(stone.opposite());
-                ctx.fill_rect(
-                    x - dot_radius,
-                    y - dot_radius,
-                    dot_radius * 2.0,
-                    dot_radius * 2.0,
-                );
+                ctx.set_fill_style_str("grey");
+                draw_circle(p, dot_radius);
             }
         }
 
         // Draw the cursor.
-        if let Some(p) = state.cursor.and_then(|p| state.board_to_view_pos(p)) {
-            let (x, y) = state.view_to_canvas_pos(p);
+        if let Some(p) = cursor_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
+            let (x, y) = calc.view_to_canvas_pos(p);
 
             let line_width = grid_size / CURSOR_LINE_WIDTH_RATIO;
             ctx.set_line_width(line_width);
@@ -473,13 +475,10 @@ pub fn GameView(
             .get_bounding_client_rect();
         let size = rect.width().min(rect.height());
 
-        let mut state = state.write_value();
-        if size == state.size {
+        if canvas_size.get_untracked() == size {
             return;
         }
-        state.size = size;
-        state.grid_size = size / (state.view_size + 1) as f64;
-        drop(state);
+        canvas_size.set(size);
 
         let canvas = canvas_ref.get_untracked().unwrap();
         let size_str = &format!("{size}px")[..];
@@ -493,8 +492,6 @@ pub fn GameView(
 
         // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio
         context_2d(canvas).scale(dpr, dpr).unwrap();
-
-        draw();
     };
 
     // We must put this outside `Effect::new` to make the `Closure`
@@ -517,59 +514,42 @@ pub fn GameView(
     // Hitting an empty position puts a phantom stone there. Hitting a phantom stone
     // makes it tentative. Hitting a tentative stone makes it phantom. When there are
     // enough tentative stones for this turn, the move is automatically submitted.
-    let hit_cursor = move || {
-        let mut state = state.write_value();
-        let State {
-            cursor,
-            tentative,
-            phantom,
-            ..
-        } = *state;
+    let hit_cursor = move |cursor: Point| {
+        let phantom = phantom_pos.get();
+        let tentative = tentative_pos.get();
+        let calc = calc();
 
-        let Some(cursor) = cursor else {
-            return;
-        };
-
-        if state.board_to_view_pos(cursor).is_none()
+        if calc.board_to_view_pos(cursor).is_none()
             || !our_turn()
-            || record.read_untracked().stone_at(cursor).is_some()
+            || record.read().stone_at(cursor).is_some()
         {
             return;
         }
 
         if tentative == Some(cursor) {
-            state.phantom = tentative;
-            state.tentative = None;
-            drop(state);
-
-            draw();
+            phantom_pos.set(tentative);
+            tentative_pos.set(None);
         } else if phantom == Some(cursor) {
-            if !record.read_untracked().has_past() {
+            if !record.read().has_past() {
                 on_event(Event::Submit(cursor, None));
             } else if let Some(tentative) = tentative {
                 on_event(Event::Submit(tentative, Some(cursor)));
             } else {
-                state.tentative = phantom;
-                state.phantom = None;
-                drop(state);
-
-                draw();
+                tentative_pos.set(phantom);
+                phantom_pos.set(None);
             }
         } else {
-            state.phantom = Some(cursor);
-            drop(state);
-
-            draw();
+            phantom_pos.set(Some(cursor));
         }
     };
 
     // Restricts the cursor to the inside of the view.
     let clamp_cursor = move || {
-        let mut state = state.write_value();
-        if let Some(cursor) = state.cursor {
-            let (p, out) = state.board_to_view_pos_clamped(cursor, ClampTo::Inside);
+        if let Some(cursor) = cursor_pos.get() {
+            let calc = calc();
+            let (p, out) = calc.board_to_view_pos_clamped(cursor, ClampTo::Inside);
             if out {
-                state.cursor = Some(state.view_to_board_pos(p));
+                cursor_pos.set(Some(calc.view_to_board_pos(p)));
             }
         }
     };
@@ -578,16 +558,17 @@ pub fn GameView(
     // at the same board position as when it became active.
     //
     // Returns whether the view center is changed.
-    let follow_board_pos_on_down = move || {
-        let mut state = state.write_value();
-        let pointer = state.down_pointers.values().next().unwrap();
+    let follow_board_pos_on_down = move |down_pointers: &HashMap<i32, Pointer>| {
+        let pointer = down_pointers.values().next().unwrap();
         let p0 = pointer.board_pos_on_down;
-        let (p, _) = state.canvas_to_board_pos(pointer.last.x, pointer.last.y);
+        let (p, _) = calc().canvas_to_board_pos(pointer.last.x, pointer.last.y);
 
         let (dx, dy) = (p.x - p0.x, p.y - p0.y);
         if dx != 0 || dy != 0 {
-            state.view_center.x -= dx;
-            state.view_center.y -= dy;
+            view_center.update(|pos| {
+                pos.x -= dx;
+                pos.y -= dy;
+            });
             true
         } else {
             false
@@ -595,19 +576,14 @@ pub fn GameView(
     };
 
     // Moves the cursor to the pointer position, or removes it when out of view.
-    let update_cursor = move |po: PointerOffsets, no_draw: bool| {
-        let mut state = state.write_value();
-        let (p, out) = state.canvas_to_board_pos(po.x, po.y);
+    let update_cursor = move |po: PointerOffsets| {
+        let (p, out) = calc().canvas_to_board_pos(po.x, po.y);
         let new_cursor = (!out).then_some(p);
 
-        // Draw if the cursor should appear, move, or disappear.
-        let should_draw = !no_draw && new_cursor != state.cursor;
-        state.cursor = new_cursor;
-        drop(state);
-
-        if should_draw {
-            draw();
+        if new_cursor != cursor_pos.get() {
+            cursor_pos.set(new_cursor);
         }
+        new_cursor
     };
 
     enum Zoom {
@@ -617,27 +593,25 @@ pub fn GameView(
 
     // Handles zooming by wheel or keyboard.
     let zoom = move |zoom: Zoom, wheel_event: Option<PointerOffsets>| {
-        let mut state = state.write_value();
+        let old_view_size = view_size.get();
         match zoom {
-            Zoom::Out => state.view_size += 2,
+            Zoom::Out => view_size.set(old_view_size + 2),
             Zoom::In => {
-                if state.view_size == 1 {
+                if old_view_size == 1 {
                     return;
                 }
-                state.view_size -= 2;
+                view_size.set(old_view_size - 2);
             }
         }
 
-        state.grid_size = state.size / (state.view_size + 1) as f64;
+        let mut state = state.write_value();
 
         // When no pointer is active, zoom at the view center.
         // When exactly one pointer is active, zoom at the pointer position.
         if state.down_pointers.is_empty() {
-            drop(state);
-
-            if let Some(e) = wheel_event {
+            if let Some(po) = wheel_event {
                 // Zooming by wheel. Try to keep the cursor at mouse position.
-                update_cursor(e, true);
+                update_cursor(po);
             } else {
                 // Zooming by keyboard. Restrict the cursor so that it doesn't go out of view.
                 clamp_cursor();
@@ -647,14 +621,9 @@ pub fn GameView(
             if state.pointer_state > PointerState::Moved {
                 return;
             }
+            follow_board_pos_on_down(&state.down_pointers);
             state.pointer_state = PointerState::Moved;
-            drop(state);
-
-            follow_board_pos_on_down();
-        } else {
-            return;
         }
-        draw();
     };
 
     // Handles `keydown` events.
@@ -669,7 +638,7 @@ pub fn GameView(
     // - Jumps to the state before the first move on Home key.
     // - Jumps to the state after the last move on End key.
     let on_keydown = move |ev: KeyboardEvent| {
-        if disabled.get_untracked() {
+        if disabled.get() {
             return;
         }
 
@@ -703,23 +672,18 @@ pub fn GameView(
                     return;
                 }
 
-                let mut state = state.write_value();
-                if state.cursor.is_some() {
-                    drop(state);
-
-                    return hit_cursor();
+                if let Some(cursor) = cursor_pos.get() {
+                    return hit_cursor(cursor);
                 }
 
                 // Put a cursor at the view center if there is no cursor.
-                state.cursor = Some(state.view_center);
-                drop(state);
-
-                return draw();
+                cursor_pos.set(Some(view_center.get()));
+                return;
             }
             _ => return,
         };
 
-        let mut state = state.write_value();
+        let state = state.read_value();
 
         // If the view is being dragged or pinched, bail out to avoid problems.
         if !state.down_pointers.is_empty() {
@@ -730,30 +694,31 @@ pub fn GameView(
 
         let (dx, dy) = DIRECTION_OFFSETS[direction as usize];
         if code.starts_with("Key") {
-            if let Some(cursor) = &mut state.cursor {
+            if let Some(cursor) = &mut *cursor_pos.write() {
                 cursor.x += dx;
                 cursor.y += dy;
 
                 // If the cursor is going out of view, adjust the view center to keep up.
                 let cursor = *cursor;
-                if state.board_to_view_pos(cursor).is_none() {
-                    state.view_center.x += dx;
-                    state.view_center.y += dy;
+                if calc().board_to_view_pos(cursor).is_none() {
+                    view_center.update(|pos| {
+                        pos.x += dx;
+                        pos.y += dy;
+                    });
                 }
             } else {
                 // Put a cursor at the view center if there is no cursor.
-                state.cursor = Some(state.view_center);
+                cursor_pos.set(Some(view_center.get()));
             }
-            drop(state);
         } else {
-            state.view_center.x += dx;
-            state.view_center.y += dy;
-            drop(state);
+            view_center.update(|pos| {
+                pos.x += dx;
+                pos.y += dy;
+            });
 
             // Restrict the cursor so that it doesn't go out of view.
             clamp_cursor();
         }
-        draw();
     };
 
     // Handles `wheel` events.
@@ -773,7 +738,7 @@ pub fn GameView(
         let po: PointerOffsets = ev.into();
 
         let mut state = state.write_value();
-        let (p, _) = state.canvas_to_board_pos(po.x, po.y);
+        let (p, _) = calc().canvas_to_board_pos(po.x, po.y);
         state.down_pointers.insert(
             po.id.unwrap(),
             Pointer {
@@ -784,7 +749,7 @@ pub fn GameView(
         );
 
         if state.down_pointers.len() == 2 {
-            state.prev_view_size = state.view_size;
+            state.prev_view_size = view_size.get();
             state.pointer_state = PointerState::Pinched;
         }
     };
@@ -800,26 +765,19 @@ pub fn GameView(
             // Bail out if the pointer is already inactive due to a `pointerleave` event.
             return;
         }
-
         if !state.down_pointers.is_empty() {
             return;
         }
-
         if state.pointer_state != PointerState::Calm {
             state.pointer_state = PointerState::Calm;
             return;
         }
-
-        if disabled.get_untracked() || ev.button() != 0 {
+        if disabled.get() || ev.button() != 0 {
             return;
         }
 
-        let (p, out) = state.canvas_to_board_pos(ev.offset_x(), ev.offset_y());
-        if !out {
-            state.cursor = Some(p);
-            drop(state);
-
-            hit_cursor();
+        if let Some(cursor) = update_cursor(ev.into()) {
+            hit_cursor(cursor);
         }
     };
 
@@ -834,9 +792,8 @@ pub fn GameView(
     // - 3: Retracts the previous move if all pointers have moved for at least
     //      a distance of `DIST_FOR_SWIPE_RETRACT`.
     let on_hover = move |po: PointerOffsets| {
-        let stored_state = state;
         let mut state = state.write_value();
-        if disabled.get_untracked() {
+        if disabled.get() {
             // We can reach here for either of the following reasons:
             // - A dialog was closed with a pointer which then entered the view,
             //   firing this event before the `close` event.
@@ -860,18 +817,13 @@ pub fn GameView(
         }
 
         if state.down_pointers.is_empty() {
-            drop(state);
-
-            update_cursor(po, false);
+            update_cursor(po);
         } else if state.down_pointers.len() == 1 {
             if state.pointer_state > PointerState::Moved {
                 return;
             }
-            drop(state);
-
-            if follow_board_pos_on_down() {
-                stored_state.write_value().pointer_state = PointerState::Moved;
-                draw();
+            if follow_board_pos_on_down(&state.down_pointers) {
+                state.pointer_state = PointerState::Moved;
             }
         } else if state.down_pointers.len() == 2 {
             let mut iter = state.down_pointers.values();
@@ -886,12 +838,8 @@ pub fn GameView(
                 new_view_size = 1;
             }
 
-            if new_view_size != state.view_size {
-                state.view_size = new_view_size;
-                state.grid_size = state.size / (new_view_size + 1) as f64;
-                drop(state);
-
-                draw();
+            if new_view_size != view_size.get() {
+                view_size.set(new_view_size);
             }
         } else if state.down_pointers.len() == 3 {
             if state.pointer_state == PointerState::Retracted {
@@ -905,7 +853,7 @@ pub fn GameView(
             }
 
             state.pointer_state = PointerState::Retracted;
-            if record.read_untracked().has_past() {
+            if record.read().has_past() {
                 on_event(Event::Undo);
             }
         }
@@ -935,29 +883,29 @@ pub fn GameView(
     let handle = window_event_listener(ev::keydown, on_keydown);
     on_cleanup(move || handle.remove());
 
+    let record_or_stone_changed = Trigger::new();
+
     Effect::new(move || {
-        // Clear phantom and tentative stones if the record changed.
-        let mut state = state.write_value();
-        state.phantom = None;
-        state.tentative = None;
+        record.track();
+        stone.track();
 
-        if record.read().move_index() == 0 && stone.get().is_none() {
-            // Clear the cursor if the record and the stone are both reset.
-            state.cursor = None;
-        }
-        drop(state);
+        // Clear phantom and tentative stones if the record or the stone changed.
+        phantom_pos.set(None);
+        tentative_pos.set(None);
 
+        record_or_stone_changed.notify();
+    });
+
+    Effect::new(move || {
+        record_or_stone_changed.track();
         draw();
     });
 
     Effect::new(move || {
         if !disabled.get() {
             let mut state = state.write_value();
-            if let Some(po) = state.last_hover_before_enabled {
-                state.last_hover_before_enabled = None;
-                drop(state);
-
-                on_hover(po);
+            if let Some(po) = state.last_hover_before_enabled.take() {
+                update_cursor(po);
             }
         }
     });
