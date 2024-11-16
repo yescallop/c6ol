@@ -316,6 +316,18 @@ impl Record {
         self.prev_move().is_some_and(Move::is_ending)
     }
 
+    /// Returns the maximum number of stones to play in the current turn.
+    #[must_use]
+    pub fn max_stones_to_play(&self) -> usize {
+        if !self.has_past() {
+            1
+        } else if !self.is_ended() {
+            2
+        } else {
+            0
+        }
+    }
+
     /// Returns the stone to play at the given move index.
     #[must_use]
     pub fn turn_at(index: usize) -> Stone {

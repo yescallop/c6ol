@@ -5,6 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     f64, iter,
 };
+use tinyvec::ArrayVec;
 use web_sys::{
     js_sys::Array, wasm_bindgen::prelude::*, CanvasRenderingContext2d, HtmlCanvasElement,
     KeyboardEvent, MouseEvent, PointerEvent, ResizeObserver, WheelEvent,
@@ -227,7 +228,7 @@ pub fn GameView(
     #[prop(optional)] view_center: RwSignal<Point>,
     #[prop(optional)] cursor_pos: RwSignal<Option<Point>>,
     #[prop(optional)] phantom_pos: RwSignal<Option<Point>>,
-    #[prop(optional)] tentative_pos: RwSignal<Option<Point>>,
+    #[prop(optional)] tentative_pos: RwSignal<ArrayVec<[Point; 2]>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
 
@@ -419,7 +420,10 @@ pub fn GameView(
 
         if let Some(stone) = stone.get_untracked() {
             // Draw the phantom stone.
-            if let Some(p) = phantom_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
+            if let Some(p) = phantom_pos
+                .get_untracked()
+                .and_then(|p| calc.board_to_view_pos(p))
+            {
                 ctx.set_global_alpha(PHANTOM_MOVE_OPACITY);
 
                 set_fill_style_by_stone(stone);
@@ -428,8 +432,12 @@ pub fn GameView(
                 ctx.set_global_alpha(1.0);
             }
 
-            // Draw the tentative stone.
-            if let Some(p) = tentative_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
+            // Draw the tentative stones.
+            for p in tentative_pos
+                .get_untracked()
+                .into_iter()
+                .filter_map(|p| calc.board_to_view_pos(p))
+            {
                 set_fill_style_by_stone(stone);
                 draw_circle(p, stone_radius);
 
@@ -511,12 +519,13 @@ pub fn GameView(
 
     // Hits the cursor.
     //
-    // Hitting an empty position puts a phantom stone there. Hitting a phantom stone
-    // makes it tentative. Hitting a tentative stone makes it phantom. When there are
-    // enough tentative stones for this turn, the move is automatically submitted.
+    // Hitting an empty position puts a phantom stone there if there are not
+    // enough tentative stones for this turn. Hitting a phantom stone makes
+    // it tentative. Hitting a tentative stone makes it phantom. When there
+    // are enough tentative stones, the move is automatically submitted.
     let hit_cursor = move |cursor: Point| {
         let phantom = phantom_pos.get();
-        let tentative = tentative_pos.get();
+        let mut tentative = tentative_pos.get();
         let calc = calc();
 
         if calc.board_to_view_pos(cursor).is_none()
@@ -526,19 +535,18 @@ pub fn GameView(
             return;
         }
 
-        if tentative == Some(cursor) {
-            phantom_pos.set(tentative);
-            tentative_pos.set(None);
+        if let Some(i) = tentative.iter().position(|&p| p == cursor) {
+            phantom_pos.set(Some(tentative.remove(i)));
+            tentative_pos.set(tentative);
         } else if phantom == Some(cursor) {
-            if !record.read().has_past() {
-                on_event(Event::Submit(cursor, None));
-            } else if let Some(tentative) = tentative {
-                on_event(Event::Submit(tentative, Some(cursor)));
-            } else {
-                tentative_pos.set(phantom);
-                phantom_pos.set(None);
+            phantom_pos.set(None);
+            tentative.push(cursor);
+            tentative_pos.set(tentative);
+
+            if tentative.len() == record.read().max_stones_to_play() {
+                on_event(Event::Submit);
             }
-        } else {
+        } else if tentative.len() < record.read().max_stones_to_play() {
             phantom_pos.set(Some(cursor));
         }
     };
@@ -883,21 +891,29 @@ pub fn GameView(
     let handle = window_event_listener(ev::keydown, on_keydown);
     on_cleanup(move || handle.remove());
 
-    let record_or_stone_changed = Trigger::new();
+    let changed = Trigger::new();
 
     Effect::new(move || {
         record.track();
         stone.track();
 
         // Clear phantom and tentative stones if the record or the stone changed.
-        phantom_pos.set(None);
-        tentative_pos.set(None);
+        *phantom_pos.write_untracked() = None;
+        *tentative_pos.write_untracked() = ArrayVec::new();
 
-        record_or_stone_changed.notify();
+        changed.notify();
     });
 
     Effect::new(move || {
-        record_or_stone_changed.track();
+        phantom_pos.track();
+        tentative_pos.track();
+
+        changed.notify();
+    });
+
+    Effect::new(move || {
+        changed.track();
+
         draw();
     });
 

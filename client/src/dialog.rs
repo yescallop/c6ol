@@ -1,7 +1,7 @@
 use crate::{Confirm, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
-    game::{Move, Record, Stone},
+    game::{Move, Point, Record, Stone},
     protocol::Request,
 };
 use leptos::{
@@ -10,6 +10,7 @@ use leptos::{
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
+use tinyvec::ArrayVec;
 
 trait DialogImpl {
     type RetVal;
@@ -251,6 +252,7 @@ pub struct GameMenuDialog {
     pub stone: Option<Stone>,
     pub online: bool,
     pub record: ReadSignal<Record>,
+    pub tentative_pos: ReadSignal<ArrayVec<[Point; 2]>>,
     pub requests: ReadSignal<[Option<Stone>; Request::VALUES.len()]>,
 }
 
@@ -266,7 +268,7 @@ pub enum GameMenuRetVal {
     End,
     ClaimWin,
     Resign,
-    Pass,
+    Submit,
     Draw,
 }
 
@@ -283,6 +285,7 @@ impl DialogImpl for GameMenuDialog {
             stone,
             online,
             record,
+            tentative_pos,
             requests,
         } = self;
 
@@ -397,8 +400,14 @@ impl DialogImpl for GameMenuDialog {
                         <button value=ret!(ClaimWin) disabled=ended>
                             "Claim Win"
                         </button>
-                        <button value=ret!(Resign) disabled=ended>
-                            "Resign"
+                        <button value=ret!(Submit) disabled=move || record.read().turn() != stone>
+                            {move || {
+                                if tentative_pos.read().len() < record.read().max_stones_to_play() {
+                                    "Pass"
+                                } else {
+                                    "Submit"
+                                }
+                            }}
                         </button>
                     </div>
                 }
@@ -425,15 +434,15 @@ impl DialogImpl for GameMenuDialog {
                             })}
                     </div>
                     <div class="btn-group">
-                        <button value=ret!(Pass) disabled=move || record.read().turn() != stone>
-                            "Pass"
-                        </button>
                         <button
                             value=ret!(Draw)
                             disabled=move || ended() || who_requested(Draw) == User
                             class:prominent=move || who_requested(Draw) == Opponent
                         >
                             "Draw"
+                        </button>
+                        <button value=ret!(Resign) disabled=ended>
+                            "Resign"
                         </button>
                     </div>
                 }
@@ -488,8 +497,8 @@ impl DialogImpl for ConfirmDialog {
         let message = match &self.0 {
             Confirm::MainMenu => "Back to main menu?",
             Confirm::Submit(_, _) => "Submit the move?",
-            Confirm::Pass => "Pass without placing stones?",
-            Confirm::PlaceSingleStone(_) => "Place a single stone?",
+            Confirm::Pass(None) => "Place no stone and pass?",
+            Confirm::Pass(Some(_)) => "Place one stone and pass?",
             Confirm::Request(req) => match req {
                 Request::Draw => "Offer a draw?",
                 Request::Retract => "Request to retract the previous move?",

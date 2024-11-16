@@ -11,6 +11,7 @@ use c6ol_core::{
 use dialog::*;
 use leptos::{ev, prelude::*};
 use std::sync::atomic::{AtomicU32, Ordering};
+use tinyvec::ArrayVec;
 use web_sys::{
     js_sys::{ArrayBuffer, Uint8Array},
     wasm_bindgen::prelude::*,
@@ -30,8 +31,7 @@ pub(crate) use console_log;
 enum Confirm {
     MainMenu,
     Submit(Point, Option<Point>),
-    Pass,
-    PlaceSingleStone(Point),
+    Pass(Option<Point>),
     Request(Request),
     Accept(Request),
     Resign,
@@ -41,11 +41,13 @@ enum Confirm {
 
 enum Event {
     Menu,
-    Submit(Point, Option<Point>),
+    Submit,
     Undo,
     Redo,
     Home,
     End,
+    Resign,
+    Draw,
 }
 
 const STORAGE_KEY_RECORD: &str = "record";
@@ -84,6 +86,8 @@ fn history_push_state(url: &str) {
 pub fn App() -> impl IntoView {
     let record = RwSignal::new(Record::new());
     let stone = RwSignal::new(None::<Stone>);
+
+    let tentative_pos = RwSignal::new(ArrayVec::new());
 
     let game_id = RwSignal::new(String::new());
 
@@ -154,6 +158,7 @@ pub fn App() -> impl IntoView {
             stone: stone.get(),
             online: online(),
             record: record.read_only(),
+            tentative_pos: tentative_pos.read_only(),
             requests: requests.read_only(),
         }));
     };
@@ -334,11 +339,24 @@ pub fn App() -> impl IntoView {
 
         match ev {
             Event::Menu => show_game_menu_dialog(),
-            Event::Submit(fst, snd) => {
+            Event::Submit => {
+                let tentative = tentative_pos.get();
                 if online() {
-                    confirm(Confirm::Submit(fst, snd));
+                    confirm(match tentative[..] {
+                        [] => Confirm::Pass(None),
+                        [pos] if record.read().has_past() => Confirm::Pass(Some(pos)),
+                        [pos] => Confirm::Submit(pos, None),
+                        [fst, snd] => Confirm::Submit(fst, Some(snd)),
+                        _ => unreachable!(),
+                    });
                 } else {
-                    record.write().make_move(Move::Stone(fst, snd));
+                    let mov = match tentative[..] {
+                        [] => Move::Pass,
+                        [pos] => Move::Stone(pos, None),
+                        [fst, snd] => Move::Stone(fst, Some(snd)),
+                        _ => unreachable!(),
+                    };
+                    record.write().make_move(mov);
                     record_changed = true;
                 }
             }
@@ -388,14 +406,28 @@ pub fn App() -> impl IntoView {
                     record_changed = true;
                 }
             }
+            Event::Resign => {
+                if online() {
+                    confirm(Confirm::Resign);
+                } else if let Some(stone) = record.read().turn() {
+                    record.write().make_move(Move::Resign(stone));
+                    record_changed = true;
+                }
+            }
+            Event::Draw => {
+                if online() {
+                    confirm_request(Request::Draw);
+                } else {
+                    record.write().make_move(Move::Draw);
+                    record_changed = true;
+                }
+            }
         }
 
         if record_changed {
             stone.set(record.read().turn());
         }
     };
-
-    let tentative_pos = RwSignal::new(None);
 
     let on_game_menu_return = move |ret_val: GameMenuRetVal| match ret_val {
         GameMenuRetVal::Resume => {}
@@ -416,40 +448,9 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::ClaimWin => {
             // TODO.
         }
-        GameMenuRetVal::Resign => {
-            if online() {
-                confirm(Confirm::Resign);
-            } else {
-                let mut record = record.write();
-                if let Some(stone) = record.turn() {
-                    record.make_move(Move::Resign(stone));
-                }
-            }
-        }
-        GameMenuRetVal::Pass => {
-            let tentative = tentative_pos.get();
-            if online() {
-                confirm(if let Some(pos) = tentative {
-                    Confirm::PlaceSingleStone(pos)
-                } else {
-                    Confirm::Pass
-                });
-            } else {
-                let mov = if let Some(pos) = tentative {
-                    Move::Stone(pos, None)
-                } else {
-                    Move::Pass
-                };
-                record.write().make_move(mov);
-            }
-        }
-        GameMenuRetVal::Draw => {
-            if online() {
-                confirm_request(Request::Draw);
-            } else {
-                record.write().make_move(Move::Draw);
-            }
-        }
+        GameMenuRetVal::Resign => on_event(Event::Resign),
+        GameMenuRetVal::Submit => on_event(Event::Submit),
+        GameMenuRetVal::Draw => on_event(Event::Draw),
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
@@ -500,8 +501,8 @@ pub fn App() -> impl IntoView {
                 match confirm {
                     Confirm::MainMenu => set_game_id(""),
                     Confirm::Submit(fst, snd) => send(ClientMessage::Place(fst, snd)),
-                    Confirm::Pass => send(ClientMessage::Pass),
-                    Confirm::PlaceSingleStone(pos) => send(ClientMessage::Place(pos, None)),
+                    Confirm::Pass(None) => send(ClientMessage::Pass),
+                    Confirm::Pass(Some(pos)) => send(ClientMessage::Place(pos, None)),
                     Confirm::Request(req) | Confirm::Accept(req) => {
                         send(ClientMessage::Request(req));
                     }
