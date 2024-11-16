@@ -481,48 +481,6 @@ pub fn GameView(
         }
     };
 
-    // Resizes the canvas to fit its container.
-    let resize_canvas = move || {
-        let rect = container_ref
-            .get_untracked()
-            .unwrap()
-            .get_bounding_client_rect();
-        let size = rect.width().min(rect.height());
-
-        if canvas_size.get_untracked() == size {
-            return;
-        }
-        canvas_size.set(size);
-
-        let canvas = canvas_ref.get_untracked().unwrap();
-        let size_str = &format!("{size}px")[..];
-        canvas.style(("width", size_str));
-        canvas.style(("height", size_str));
-
-        let dpr = window().device_pixel_ratio();
-        let physical_size = (size * dpr) as u32;
-        canvas.set_width(physical_size);
-        canvas.set_height(physical_size);
-
-        // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio
-        context_2d(canvas).scale(dpr, dpr).unwrap();
-    };
-
-    // We must put this outside `Effect::new` to make the `Closure`
-    // live as long as the view. Otherwise, the corresponding JS
-    // callback would be invalidated when the `Closure` is dropped.
-    let resize_callback = Closure::<dyn Fn()>::new(resize_canvas);
-
-    Effect::new(move || {
-        // Required for the canvas not to break when we switch Chrome Mobile to
-        // background and go back after some time. Not required on PC however.
-        resize_canvas();
-
-        ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
-            .unwrap()
-            .observe(&container_ref.get_untracked().unwrap());
-    });
-
     // Hits the cursor.
     //
     // Hitting an empty position puts a phantom stone there if there are not
@@ -923,10 +881,51 @@ pub fn GameView(
         changed.notify();
     });
 
-    Effect::new(move || {
-        changed.track();
+    // Resizes the canvas to fit its container.
+    let resize_canvas = move || {
+        let rect = container_ref
+            .get_untracked()
+            .unwrap()
+            .get_bounding_client_rect();
+        let size = rect.width().min(rect.height());
 
-        draw();
+        if canvas_size.get_untracked() == size {
+            return;
+        }
+        canvas_size.set(size);
+
+        let canvas = canvas_ref.get_untracked().unwrap();
+        let size_str = &format!("{size}px")[..];
+        canvas.style(("width", size_str));
+        canvas.style(("height", size_str));
+
+        let dpr = window().device_pixel_ratio();
+        let physical_size = (size * dpr) as u32;
+        canvas.set_width(physical_size);
+        canvas.set_height(physical_size);
+
+        // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio
+        context_2d(canvas).scale(dpr, dpr).unwrap();
+    };
+
+    // We must put this outside `Effect::new` to make the `Closure`
+    // live as long as the view. Otherwise, the corresponding JS
+    // callback would be invalidated when the `Closure` is dropped.
+    let resize_callback = Closure::<dyn Fn()>::new(resize_canvas);
+
+    Effect::new(move || {
+        // Required for the canvas not to break when we switch Chrome Mobile to
+        // background and go back after some time. Not required on PC however.
+        resize_canvas();
+
+        ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
+            .unwrap()
+            .observe(&container_ref.get_untracked().unwrap());
+
+        Effect::new(move || {
+            changed.track();
+            draw();
+        });
     });
 
     Effect::new(move || {
