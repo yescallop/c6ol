@@ -442,7 +442,13 @@ pub fn GameView(
                 draw_circle(p, stone_radius);
 
                 ctx.set_fill_style_str("grey");
-                draw_circle(p, dot_radius);
+                let (x, y) = calc.view_to_canvas_pos(p);
+                ctx.fill_rect(
+                    x - dot_radius,
+                    y - dot_radius,
+                    dot_radius * 2.0,
+                    dot_radius * 2.0,
+                );
             }
         }
 
@@ -759,6 +765,9 @@ pub fn GameView(
         if state.down_pointers.len() == 2 {
             state.prev_view_size = view_size.get();
             state.pointer_state = PointerState::Pinched;
+            if cursor_pos.get().is_some() {
+                cursor_pos.set(None);
+            }
         }
     };
 
@@ -880,6 +889,9 @@ pub fn GameView(
         if state.last_hover_before_enabled.and_then(|po| po.id) == po.id {
             state.last_hover_before_enabled = None;
         }
+        if cursor_pos.get().is_some() {
+            cursor_pos.set(None);
+        }
     };
 
     // Handles `contextmenu` events.
@@ -919,8 +931,7 @@ pub fn GameView(
 
     Effect::new(move || {
         if !disabled.get() {
-            let mut state = state.write_value();
-            if let Some(po) = state.last_hover_before_enabled.take() {
+            if let Some(po) = state.write_value().last_hover_before_enabled.take() {
                 update_cursor(po);
             }
         }
