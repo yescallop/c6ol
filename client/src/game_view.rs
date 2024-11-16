@@ -244,6 +244,7 @@ pub fn GameView(
     // Pixel size of a single grid on the canvas.
     let grid_size = Memo::new(move |_| canvas_size.get() / (view_size.get() + 1) as f64);
 
+    // Gets a calculator.
     let calc = move || Calc {
         view_size: view_size.get(),
         grid_size: grid_size.get(),
@@ -256,231 +257,6 @@ pub fn GameView(
         stone.is_some() && stone == record.read_untracked().turn()
     };
 
-    // Draws the view.
-    let draw = move || {
-        console_log!("draw");
-
-        let ctx = context_2d(canvas_ref.get().unwrap());
-
-        let size = canvas_size.get();
-        let view_size = view_size.get();
-        let grid_size = grid_size.get();
-        let calc = calc();
-
-        let set_fill_style_by_stone = |stone: Stone| {
-            ctx.set_fill_style_str(match stone {
-                Stone::Black => "black",
-                Stone::White => "white",
-            });
-        };
-
-        // Draws a circle at a view position with the given radius.
-        let draw_circle = |p: Point, r: f64| {
-            let (x, y) = calc.view_to_canvas_pos(p);
-            ctx.begin_path();
-            ctx.arc(x, y, r, 0.0, f64::consts::TAU).unwrap();
-            ctx.fill();
-        };
-
-        // Draw the board background.
-        ctx.set_fill_style_str(BOARD_COLOR);
-        ctx.fill_rect(0.0, 0.0, size, size);
-
-        ctx.set_stroke_style_str("black");
-        ctx.set_line_width(grid_size / LINE_WIDTH_RATIO);
-
-        // Draw the solid lines inside the view.
-        ctx.begin_path();
-        for i in 1..=view_size {
-            let pos = grid_size * i as f64;
-            ctx.move_to(grid_size, pos);
-            ctx.line_to(size - grid_size, pos);
-            ctx.move_to(pos, grid_size);
-            ctx.line_to(pos, size - grid_size);
-        }
-        ctx.stroke();
-
-        let segment = JsValue::from_f64(grid_size / LINE_DASH_RATIO);
-        let segments = Array::of2(&segment, &segment);
-
-        // Draw the dashed lines outside the view.
-        ctx.begin_path();
-        ctx.set_line_dash(&segments).unwrap();
-        for i in 1..=view_size {
-            let pos = grid_size * i as f64;
-            ctx.move_to(0.0, pos);
-            ctx.line_to(grid_size, pos);
-            ctx.move_to(size - grid_size, pos);
-            ctx.line_to(size, pos);
-
-            ctx.move_to(pos, 0.0);
-            ctx.line_to(pos, grid_size);
-            ctx.move_to(pos, size - grid_size);
-            ctx.line_to(pos, size);
-        }
-        ctx.stroke();
-        ctx.set_line_dash(&Array::new()).unwrap();
-
-        let record = record.read_untracked();
-        let dot_radius = grid_size / DOT_RADIUS_RATIO;
-
-        // Draw the board origin.
-        let origin = Point::default();
-        if let Some(p) = calc.board_to_view_pos(origin) {
-            if record.stone_at(origin).is_none() {
-                ctx.set_fill_style_str("black");
-                draw_circle(p, dot_radius);
-            }
-        }
-
-        let moves = record.moves();
-        let move_index = record.move_index();
-        let stone_radius = grid_size / STONE_RADIUS_RATIO;
-        // We project the out-of-view stones onto the view border,
-        // and stores the resulting positions in this set.
-        let mut out_pos = HashSet::new();
-
-        // Draw the stones.
-        for (i, &mov) in moves.iter().enumerate().take(move_index) {
-            let Move::Stone(fst, snd) = mov else {
-                continue;
-            };
-            let stone = Record::turn_at(i);
-
-            for p in iter::once(fst).chain(snd) {
-                let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
-                if out {
-                    out_pos.insert(p);
-                    continue;
-                }
-
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
-            }
-        }
-
-        // Draw the out-of-view stones on the view border.
-        ctx.set_fill_style_str("gray");
-        for p in out_pos {
-            draw_circle(p, stone_radius);
-        }
-
-        // Draw the previous move.
-        if let Some(mov) = record.prev_move() {
-            let stone = Record::turn_at(move_index - 1);
-            match mov {
-                Move::Stone(fst, snd) => {
-                    set_fill_style_by_stone(stone.opposite());
-                    for p in iter::once(fst).chain(snd) {
-                        let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
-                        draw_circle(p, dot_radius);
-                    }
-                }
-                Move::Win(_) => todo!(),
-                Move::Pass | Move::Draw | Move::Resign(_) => {
-                    let text = match mov {
-                        Move::Pass => "PASS",
-                        Move::Draw => "DRAW",
-                        Move::Resign(_) => "RESIGN",
-                        _ => unreachable!(),
-                    };
-
-                    ctx.set_font("10px sans-serif");
-                    let actual_width = ctx.measure_text(text).unwrap().width();
-                    let expected_width = size / MOVE_TEXT_WIDTH_RATIO;
-                    let font_size = expected_width / actual_width * 10.0;
-
-                    ctx.set_font(&format!("{font_size}px sans-serif"));
-                    ctx.set_text_align("center");
-                    ctx.set_text_baseline("middle");
-
-                    if let Move::Draw = mov {
-                        ctx.set_fill_style_str("grey");
-                    } else {
-                        let stone = match mov {
-                            Move::Resign(stone) => stone,
-                            _ => stone,
-                        };
-                        set_fill_style_by_stone(stone);
-                    }
-
-                    ctx.set_global_alpha(MOVE_TEXT_OPACITY);
-
-                    ctx.fill_text(text, size / 2.0, size / 2.0).unwrap();
-                    if !matches!(mov, Move::Draw) {
-                        ctx.set_line_width(font_size / MOVE_TEXT_BORDER_RATIO);
-                        ctx.set_stroke_style_str("grey");
-                        ctx.stroke_text(text, size / 2.0, size / 2.0).unwrap();
-                    }
-
-                    ctx.set_global_alpha(1.0);
-                }
-            }
-        }
-
-        if let Some(stone) = stone.get_untracked() {
-            // Draw the phantom stone.
-            if let Some(p) = phantom_pos
-                .get_untracked()
-                .and_then(|p| calc.board_to_view_pos(p))
-            {
-                ctx.set_global_alpha(PHANTOM_MOVE_OPACITY);
-
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
-
-                ctx.set_global_alpha(1.0);
-            }
-
-            // Draw the tentative stones.
-            for p in tentative_pos
-                .get_untracked()
-                .into_iter()
-                .filter_map(|p| calc.board_to_view_pos(p))
-            {
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
-
-                ctx.set_fill_style_str("grey");
-                let (x, y) = calc.view_to_canvas_pos(p);
-                ctx.fill_rect(
-                    x - dot_radius,
-                    y - dot_radius,
-                    dot_radius * 2.0,
-                    dot_radius * 2.0,
-                );
-            }
-        }
-
-        // Draw the cursor.
-        if let Some(p) = cursor_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
-            let (x, y) = calc.view_to_canvas_pos(p);
-
-            let line_width = grid_size / CURSOR_LINE_WIDTH_RATIO;
-            ctx.set_line_width(line_width);
-
-            let offset = grid_size / CURSOR_OFFSET_RATIO;
-            let side = grid_size / CURSOR_SIDE_RATIO;
-            let in_offset = offset - line_width / 2.0;
-            let out_offset = offset + side;
-
-            ctx.set_stroke_style_str(if our_turn() {
-                CURSOR_COLOR_ACTIVE
-            } else {
-                CURSOR_COLOR_INACTIVE
-            });
-            ctx.begin_path();
-            for (dx, dy) in [(1, 1), (1, -1), (-1, -1), (-1, 1)] {
-                let (dx, dy) = (dx as f64, dy as f64);
-                ctx.move_to(x + in_offset * dx, y + offset * dy);
-                ctx.line_to(x + out_offset * dx, y + offset * dy);
-                ctx.move_to(x + offset * dx, y + in_offset * dy);
-                ctx.line_to(x + offset * dx, y + out_offset * dy);
-            }
-            ctx.stroke();
-        }
-    };
-
     // Hits the cursor.
     //
     // Hitting an empty position puts a phantom stone there if there are not
@@ -490,9 +266,8 @@ pub fn GameView(
     let hit_cursor = move |cursor: Point| {
         let phantom = phantom_pos.get();
         let mut tentative = tentative_pos.get();
-        let calc = calc();
 
-        if calc.board_to_view_pos(cursor).is_none()
+        if calc().board_to_view_pos(cursor).is_none()
             || !our_turn()
             || record.read().stone_at(cursor).is_some()
         {
@@ -548,6 +323,8 @@ pub fn GameView(
     };
 
     // Moves the cursor to the pointer position, or removes it when out of view.
+    //
+    // Returns the new cursor position.
     let update_cursor = move |po: PointerOffsets| {
         let (p, out) = calc().canvas_to_board_pos(po.x, po.y);
         let new_cursor = (!out).then_some(p);
@@ -852,14 +629,239 @@ pub fn GameView(
         }
     };
 
-    // Handles `contextmenu` events.
-    let on_contextmenu = move |ev: MouseEvent| {
-        ev.prevent_default();
-        on_event(Event::Menu);
-    };
+    // Replay the recorded hover event (if any) after the view is enabled.
+    Effect::new(move || {
+        if !disabled.get() {
+            if let Some(po) = state.write_value().last_hover_before_enabled.take() {
+                update_cursor(po);
+            }
+        }
+    });
 
-    let handle = window_event_listener(ev::keydown, on_keydown);
-    on_cleanup(move || handle.remove());
+    // Draws the view.
+    let draw = move || {
+        console_log!("draw");
+
+        let ctx = context_2d(canvas_ref.get().unwrap());
+
+        let size = canvas_size.get();
+        let view_size = view_size.get();
+        let grid_size = grid_size.get();
+        let calc = calc();
+
+        let set_fill_style_by_stone = |stone: Stone| {
+            ctx.set_fill_style_str(match stone {
+                Stone::Black => "black",
+                Stone::White => "white",
+            });
+        };
+
+        // Draws a circle at a view position with the given radius.
+        let draw_circle = |p: Point, r: f64| {
+            let (x, y) = calc.view_to_canvas_pos(p);
+            ctx.begin_path();
+            ctx.arc(x, y, r, 0.0, f64::consts::TAU).unwrap();
+            ctx.fill();
+        };
+
+        // Draw the board background.
+        ctx.set_fill_style_str(BOARD_COLOR);
+        ctx.fill_rect(0.0, 0.0, size, size);
+
+        ctx.set_stroke_style_str("black");
+        ctx.set_line_width(grid_size / LINE_WIDTH_RATIO);
+
+        // Draw the solid lines inside the view.
+        ctx.begin_path();
+        for i in 1..=view_size {
+            let pos = grid_size * i as f64;
+            ctx.move_to(grid_size, pos);
+            ctx.line_to(size - grid_size, pos);
+            ctx.move_to(pos, grid_size);
+            ctx.line_to(pos, size - grid_size);
+        }
+        ctx.stroke();
+
+        let segment = JsValue::from_f64(grid_size / LINE_DASH_RATIO);
+        let segments = Array::of2(&segment, &segment);
+
+        // Draw the dashed lines outside the view.
+        ctx.begin_path();
+        ctx.set_line_dash(&segments).unwrap();
+        for i in 1..=view_size {
+            let pos = grid_size * i as f64;
+            ctx.move_to(0.0, pos);
+            ctx.line_to(grid_size, pos);
+            ctx.move_to(size - grid_size, pos);
+            ctx.line_to(size, pos);
+
+            ctx.move_to(pos, 0.0);
+            ctx.line_to(pos, grid_size);
+            ctx.move_to(pos, size - grid_size);
+            ctx.line_to(pos, size);
+        }
+        ctx.stroke();
+        ctx.set_line_dash(&Array::new()).unwrap();
+
+        let record = record.read_untracked();
+        let dot_radius = grid_size / DOT_RADIUS_RATIO;
+
+        // Draw the board origin.
+        let origin = Point::default();
+        if let Some(p) = calc.board_to_view_pos(origin) {
+            if record.stone_at(origin).is_none() {
+                ctx.set_fill_style_str("black");
+                draw_circle(p, dot_radius);
+            }
+        }
+
+        let moves = record.moves();
+        let move_index = record.move_index();
+        let stone_radius = grid_size / STONE_RADIUS_RATIO;
+        // We project the out-of-view stones onto the view border,
+        // and stores the resulting positions in this set.
+        let mut out_pos = HashSet::new();
+
+        // Draw the stones.
+        for (i, &mov) in moves.iter().enumerate().take(move_index) {
+            let Move::Stone(fst, snd) = mov else {
+                continue;
+            };
+            let stone = Record::turn_at(i);
+
+            for p in iter::once(fst).chain(snd) {
+                let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                if out {
+                    out_pos.insert(p);
+                    continue;
+                }
+
+                set_fill_style_by_stone(stone);
+                draw_circle(p, stone_radius);
+            }
+        }
+
+        // Draw the out-of-view stones on the view border.
+        ctx.set_fill_style_str("gray");
+        for p in out_pos {
+            draw_circle(p, stone_radius);
+        }
+
+        // Draw the previous move.
+        if let Some(mov) = record.prev_move() {
+            let stone = Record::turn_at(move_index - 1);
+            match mov {
+                Move::Stone(fst, snd) => {
+                    set_fill_style_by_stone(stone.opposite());
+                    for p in iter::once(fst).chain(snd) {
+                        let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                        draw_circle(p, dot_radius);
+                    }
+                }
+                Move::Win(_) => todo!(),
+                Move::Pass | Move::Draw | Move::Resign(_) => {
+                    let text = match mov {
+                        Move::Pass => "PASS",
+                        Move::Draw => "DRAW",
+                        Move::Resign(_) => "RESIGN",
+                        _ => unreachable!(),
+                    };
+
+                    ctx.set_font("10px sans-serif");
+                    let actual_width = ctx.measure_text(text).unwrap().width();
+                    let expected_width = size / MOVE_TEXT_WIDTH_RATIO;
+                    let font_size = expected_width / actual_width * 10.0;
+
+                    ctx.set_font(&format!("{font_size}px sans-serif"));
+                    ctx.set_text_align("center");
+                    ctx.set_text_baseline("middle");
+
+                    if let Move::Draw = mov {
+                        ctx.set_fill_style_str("grey");
+                    } else {
+                        let stone = match mov {
+                            Move::Resign(stone) => stone,
+                            _ => stone,
+                        };
+                        set_fill_style_by_stone(stone);
+                    }
+
+                    ctx.set_global_alpha(MOVE_TEXT_OPACITY);
+
+                    ctx.fill_text(text, size / 2.0, size / 2.0).unwrap();
+                    if !matches!(mov, Move::Draw) {
+                        ctx.set_line_width(font_size / MOVE_TEXT_BORDER_RATIO);
+                        ctx.set_stroke_style_str("grey");
+                        ctx.stroke_text(text, size / 2.0, size / 2.0).unwrap();
+                    }
+
+                    ctx.set_global_alpha(1.0);
+                }
+            }
+        }
+
+        if let Some(stone) = stone.get_untracked() {
+            // Draw the phantom stone.
+            if let Some(p) = phantom_pos
+                .get_untracked()
+                .and_then(|p| calc.board_to_view_pos(p))
+            {
+                ctx.set_global_alpha(PHANTOM_MOVE_OPACITY);
+
+                set_fill_style_by_stone(stone);
+                draw_circle(p, stone_radius);
+
+                ctx.set_global_alpha(1.0);
+            }
+
+            // Draw the tentative stones.
+            for p in tentative_pos
+                .get_untracked()
+                .into_iter()
+                .filter_map(|p| calc.board_to_view_pos(p))
+            {
+                set_fill_style_by_stone(stone);
+                draw_circle(p, stone_radius);
+
+                ctx.set_fill_style_str("grey");
+                let (x, y) = calc.view_to_canvas_pos(p);
+                ctx.fill_rect(
+                    x - dot_radius,
+                    y - dot_radius,
+                    dot_radius * 2.0,
+                    dot_radius * 2.0,
+                );
+            }
+        }
+
+        // Draw the cursor.
+        if let Some(p) = cursor_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
+            let (x, y) = calc.view_to_canvas_pos(p);
+
+            let line_width = grid_size / CURSOR_LINE_WIDTH_RATIO;
+            ctx.set_line_width(line_width);
+
+            let offset = grid_size / CURSOR_OFFSET_RATIO;
+            let side = grid_size / CURSOR_SIDE_RATIO;
+            let in_offset = offset - line_width / 2.0;
+            let out_offset = offset + side;
+
+            ctx.set_stroke_style_str(if our_turn() {
+                CURSOR_COLOR_ACTIVE
+            } else {
+                CURSOR_COLOR_INACTIVE
+            });
+            ctx.begin_path();
+            for (dx, dy) in [(1, 1), (1, -1), (-1, -1), (-1, 1)] {
+                let (dx, dy) = (dx as f64, dy as f64);
+                ctx.move_to(x + in_offset * dx, y + offset * dy);
+                ctx.line_to(x + out_offset * dx, y + offset * dy);
+                ctx.move_to(x + offset * dx, y + in_offset * dy);
+                ctx.line_to(x + offset * dx, y + out_offset * dy);
+            }
+            ctx.stroke();
+        }
+    };
 
     let changed = Trigger::new();
 
@@ -914,27 +916,21 @@ pub fn GameView(
     let resize_callback = Closure::<dyn Fn()>::new(resize_canvas);
 
     Effect::new(move || {
-        // Required for the canvas not to break when we switch Chrome Mobile to
-        // background and go back after some time. Not required on PC however.
         resize_canvas();
 
         ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
             .unwrap()
             .observe(&container_ref.get_untracked().unwrap());
 
+        // We should only draw after resizing the canvas in case it breaks.
         Effect::new(move || {
             changed.track();
             draw();
         });
     });
 
-    Effect::new(move || {
-        if !disabled.get() {
-            if let Some(po) = state.write_value().last_hover_before_enabled.take() {
-                update_cursor(po);
-            }
-        }
-    });
+    let handle = window_event_listener(ev::keydown, on_keydown);
+    on_cleanup(move || handle.remove());
 
     view! {
         <div id="view-container" node_ref=container_ref>
@@ -949,7 +945,10 @@ pub fn GameView(
                 on:mouseover=move |ev| on_hover(ev.into())
                 on:pointerleave=move |ev| on_leave(ev.into())
                 on:mouseleave=move |ev| on_leave(ev.into())
-                on:contextmenu=on_contextmenu
+                on:contextmenu=move |ev| {
+                    ev.prevent_default();
+                    on_event(Event::Menu);
+                }
             />
         </div>
     }
