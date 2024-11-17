@@ -574,10 +574,15 @@ pub fn GameView(
             if state.pointer_state > PointerState::Moved {
                 return;
             }
+
             if follow_board_pos_on_down(&state.down_pointers) {
                 state.pointer_state = PointerState::Moved;
             }
         } else if state.down_pointers.len() == 2 {
+            if state.pointer_state > PointerState::Pinched {
+                return;
+            }
+
             let mut iter = state.down_pointers.values();
             let p1 = iter.next().unwrap();
             let p2 = iter.next().unwrap();

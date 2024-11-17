@@ -409,9 +409,12 @@ pub fn App() -> impl IntoView {
             Event::Resign => {
                 if online() {
                     confirm(Confirm::Resign);
-                } else if let Some(stone) = record.read().turn() {
-                    record.write().make_move(Move::Resign(stone));
-                    record_changed = true;
+                } else {
+                    let turn = record.read().turn();
+                    if let Some(stone) = turn {
+                        record.write().make_move(Move::Resign(stone));
+                        record_changed = true;
+                    }
                 }
             }
             Event::Draw => {

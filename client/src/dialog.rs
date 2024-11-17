@@ -400,7 +400,10 @@ impl DialogImpl for GameMenuDialog {
                         <button value=ret!(ClaimWin) disabled=ended>
                             "Claim Win"
                         </button>
-                        <button value=ret!(Submit) disabled=move || record.read().turn() != stone>
+                        <button
+                            value=ret!(Submit)
+                            disabled=move || ended() || record.read().turn() != stone
+                        >
                             {move || {
                                 if tentative_pos.read().len() < record.read().max_stones_to_play() {
                                     "Pass"
