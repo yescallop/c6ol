@@ -317,7 +317,7 @@ impl DialogImpl for GameMenuDialog {
                 match record.prev_move().unwrap() {
                     Move::Draw => "Game Drawn".into(),
                     Move::Resign(stone) => format!("{stone:?} Resigned"),
-                    Move::Win(pos) => {
+                    Move::Win(pos, _) => {
                         let stone = record.stone_at(pos).unwrap();
                         format!("{stone:?} Won")
                     }

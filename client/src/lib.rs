@@ -212,7 +212,7 @@ pub fn App() -> impl IntoView {
                 record.write().undo_move();
                 record_changed = true;
             }
-            ServerMessage::Request(req, req_stone) => {
+            ServerMessage::Request(req_stone, req) => {
                 requests.write()[req as usize] = Some(req_stone);
                 if stone.get() == Some(req_stone.opposite()) {
                     confirm_request(req);
@@ -352,8 +352,8 @@ pub fn App() -> impl IntoView {
                 } else {
                     let mov = match tentative[..] {
                         [] => Move::Pass,
-                        [pos] => Move::Stone(pos, None),
-                        [fst, snd] => Move::Stone(fst, Some(snd)),
+                        [pos] => Move::Place(pos, None),
+                        [fst, snd] => Move::Place(fst, Some(snd)),
                         _ => unreachable!(),
                     };
                     record.write().make_move(mov);

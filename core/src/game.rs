@@ -4,32 +4,75 @@ use bytes::{Buf, BufMut};
 use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
 use std::{collections::HashMap, iter};
 
-/// An axis on the board.
-#[derive(Clone, Copy)]
-pub enum Axis {
-    /// The horizontal axis, with a unit vector of `(1, 0)`.
-    Horizontal,
-    /// The diagonal axis, with a unit vector of `(1, 1)`.
-    Diagonal,
-    /// The vertical axis, with a unit vector of `(0, 1)`.
-    Vertical,
-    /// The anti-diagonal axis, with a unit vector of `(1, -1)`.
-    AntiDiagonal,
+/// A direction on the board.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Direction {
+    /// Positive horizontal.
+    Right,
+    /// Positive diagonal.
+    DownRight,
+    /// Positive vertical.
+    Down,
+    /// Positive anti-diagonal.
+    DownLeft,
+    /// Negative horizontal.
+    Left,
+    /// Negative diagonal.
+    UpLeft,
+    /// Negative vertical.
+    Up,
+    /// Negative anti-diagonal.
+    UpRight,
 }
 
-impl Axis {
-    /// All axes on the board.
-    pub const VALUES: [Self; 4] = [
-        Self::Horizontal,
-        Self::Diagonal,
-        Self::Vertical,
-        Self::AntiDiagonal,
-    ];
+impl Direction {
+    /// List of positive directions.
+    pub const POSITIVES: [Self; 4] = [Self::Right, Self::DownRight, Self::Down, Self::DownLeft];
 
-    /// Returns the unit vector in the forward direction of the axis.
+    /// Creates a direction from a `u8`.
+    #[must_use]
+    pub fn from_u8(n: u8) -> Option<Self> {
+        Some(match n {
+            0 => Self::Right,
+            1 => Self::DownRight,
+            2 => Self::Down,
+            3 => Self::DownLeft,
+            4 => Self::Left,
+            5 => Self::UpLeft,
+            6 => Self::Up,
+            7 => Self::UpRight,
+            _ => return None,
+        })
+    }
+
+    /// Returns the unit vector in this direction.
     #[must_use]
     pub fn unit_vector(self) -> (i16, i16) {
-        [(1, 0), (1, 1), (0, 1), (1, -1)][self as usize]
+        match self {
+            Self::Right => (1, 0),
+            Self::DownRight => (1, 1),
+            Self::Down => (0, 1),
+            Self::DownLeft => (1, -1),
+            Self::Left => (-1, 0),
+            Self::UpLeft => (-1, -1),
+            Self::Up => (0, -1),
+            Self::UpRight => (-1, 1),
+        }
+    }
+
+    /// Returns the opposite direction.
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Right => Self::Left,
+            Self::DownRight => Self::UpLeft,
+            Self::Down => Self::Up,
+            Self::DownLeft => Self::UpRight,
+            Self::Left => Self::Right,
+            Self::UpLeft => Self::DownRight,
+            Self::Up => Self::Down,
+            Self::UpRight => Self::DownLeft,
+        }
     }
 }
 
@@ -96,9 +139,8 @@ impl Point {
     /// Returns the adjacent point in the given direction,
     /// or `None` if overflow occurred.
     #[must_use]
-    pub fn adjacent(self, axis: Axis, forward: bool) -> Option<Self> {
-        let (dx, dy) = axis.unit_vector();
-        let (dx, dy) = if forward { (dx, dy) } else { (-dx, -dy) };
+    pub fn adjacent(self, dir: Direction) -> Option<Self> {
+        let (dx, dy) = dir.unit_vector();
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
@@ -112,15 +154,6 @@ impl Point {
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
         buf.try_get_u32_varint().ok().map(Self::from_index)
     }
-}
-
-/// A contiguous row of stones on the board.
-#[derive(Clone, Copy)]
-pub struct Row {
-    /// The starting position of the row.
-    pub start: Point,
-    /// The ending position of the row.
-    pub end: Point,
 }
 
 /// A stone on the board, either black or white.
@@ -165,11 +198,11 @@ const MOVE_RESIGN: u32 = 3;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Move {
     /// One or two stones placed on the board by the current player.
-    Stone(Point, Option<Point>),
+    Place(Point, Option<Point>),
     /// A pass made by the current player.
     Pass,
-    /// A winning row at the given position claimed by any player.
-    Win(Point),
+    /// A winning row claimed by any player.
+    Win(Point, Direction),
     /// A draw agreed by both players.
     Draw,
     /// A resignation indicated by the player with the given stone.
@@ -180,7 +213,7 @@ impl Move {
     /// Tests if the move is an ending move.
     #[must_use]
     pub fn is_ending(self) -> bool {
-        matches!(self, Self::Win(_) | Self::Draw | Self::Resign(_))
+        matches!(self, Self::Win(_, _) | Self::Draw | Self::Resign(_))
     }
 
     /// Encodes the move to a buffer.
@@ -188,7 +221,7 @@ impl Move {
     /// If `compact`, omits the pass after a 1-stone move.
     pub fn encode(self, buf: &mut Vec<u8>, compact: bool) {
         match self {
-            Self::Stone(fst, snd) => {
+            Self::Place(fst, snd) => {
                 for pos in iter::once(fst).chain(snd) {
                     let x = pos.index() + MOVE_STONE_OFFSET;
                     buf.put_u32_varint(x);
@@ -198,9 +231,10 @@ impl Move {
                 }
             }
             Self::Pass => buf.put_u8(MOVE_PASS as u8),
-            Self::Win(pos) => {
+            Self::Win(pos, dir) => {
                 buf.put_u8(MOVE_WIN as u8);
                 buf.put_u32_varint(pos.index());
+                buf.put_u8(dir as u8);
             }
             Self::Draw => buf.put_u8(MOVE_DRAW as u8),
             Self::Resign(stone) => {
@@ -219,7 +253,7 @@ impl Move {
         if x >= MOVE_STONE_OFFSET {
             let fst = Point::from_index(x - MOVE_STONE_OFFSET);
             if first || !buf.has_remaining() {
-                return Some(Self::Stone(fst, None));
+                return Some(Self::Place(fst, None));
             }
 
             let mut snd = None;
@@ -229,13 +263,14 @@ impl Move {
             } else if x != MOVE_PASS {
                 return None;
             }
-            return Some(Self::Stone(fst, snd));
+            return Some(Self::Place(fst, snd));
         }
 
         match x {
             MOVE_WIN => {
                 let pos = Point::decode(buf)?;
-                Some(Self::Win(pos))
+                let dir = Direction::from_u8(buf.try_get_u8().ok()?)?;
+                Some(Self::Win(pos, dir))
             }
             MOVE_RESIGN => {
                 let stone = Stone::from_u8(buf.try_get_u8().ok()?)?;
@@ -362,7 +397,7 @@ impl Record {
             return false;
         }
 
-        if let Move::Stone(fst, snd) = mov {
+        if let Move::Place(fst, snd) = mov {
             if self.index == 0 && snd.is_some() {
                 return false;
             }
@@ -374,8 +409,8 @@ impl Record {
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
             }
-        } else if let Move::Win(pos) = mov {
-            if self.find_win_row(pos).is_none() {
+        } else if let Move::Win(pos, dir) = mov {
+            if !self.validate_winning_row(pos, dir) {
                 return false;
             }
         }
@@ -389,7 +424,7 @@ impl Record {
     /// Undoes the previous move (if any).
     pub fn undo_move(&mut self) -> Option<Move> {
         let prev = self.prev_move()?;
-        if let Move::Stone(fst, snd) = prev {
+        if let Move::Place(fst, snd) = prev {
             for pos in iter::once(fst).chain(snd) {
                 self.map.remove(&pos);
             }
@@ -401,7 +436,7 @@ impl Record {
     /// Redoes the next move (if any).
     pub fn redo_move(&mut self) -> Option<Move> {
         let next = self.next_move()?;
-        if let Move::Stone(fst, snd) = next {
+        if let Move::Place(fst, snd) = next {
             let stone = self.turn_unchecked();
             for pos in iter::once(fst).chain(snd) {
                 self.map.insert(pos, stone);
@@ -428,50 +463,47 @@ impl Record {
         true
     }
 
-    /// Scans the row through a position in both directions of an axis.
-    fn scan_row(&self, pos: Point, axis: Axis, max_len: u32) -> (Row, u32) {
-        let (mut start, mut end) = (pos, pos);
-        let Some(stone) = self.stone_at(pos) else {
-            return (Row { start, end }, 0);
-        };
-
-        let mut scan_one = |forward| {
-            let cur = if forward { &mut end } else { &mut start };
-            match cur.adjacent(axis, forward) {
-                Some(next) if self.stone_at(next) == Some(stone) => {
-                    *cur = next;
-                    true
-                }
-                _ => false,
+    /// Scans occurrences of `stone` in the direction `dir`, starting from `pos` (exclusive).
+    fn scan(&self, mut pos: Point, stone: Stone, dir: Direction) -> (Point, u32) {
+        let mut count = 0;
+        while let Some(next) = pos.adjacent(dir) {
+            if self.stone_at(pos) != Some(stone) {
+                break;
             }
-        };
-
-        let mut len = 1;
-        loop {
-            for forward in [false, true] {
-                if len < max_len && scan_one(forward) {
-                    len += 1;
-                    continue;
-                }
-                while len < max_len && scan_one(!forward) {
-                    len += 1;
-                }
-                return (Row { start, end }, len);
-            }
+            pos = next;
+            count += 1;
         }
+        (pos, count)
     }
 
-    /// Searches for a win row through a position.
+    /// Searches for a winning row through a position.
     #[must_use]
-    pub fn find_win_row(&self, pos: Point) -> Option<Row> {
-        _ = self.stone_at(pos)?;
-        for axis in Axis::VALUES {
-            let (row, len) = self.scan_row(pos, axis, 6);
-            if len == 6 {
-                return Some(row);
+    pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
+        let stone = self.stone_at(pos)?;
+        for dir in Direction::POSITIVES {
+            let (start, mut count) = self.scan(pos, stone, dir.opposite());
+            count += self.scan(pos, stone, dir).1;
+            if count >= 5 {
+                return Some((start, dir));
             }
         }
         None
+    }
+
+    /// Tests if a winning row is valid.
+    #[must_use]
+    pub fn validate_winning_row(&self, mut pos: Point, dir: Direction) -> bool {
+        (|| {
+            let stone = self.stone_at(pos)?;
+            for _ in 0..5 {
+                pos = pos.adjacent(dir)?;
+                if self.stone_at(pos)? != stone {
+                    return None;
+                }
+            }
+            Some(())
+        })()
+        .is_some()
     }
 
     /// Encodes the record to a buffer.

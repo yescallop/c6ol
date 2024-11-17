@@ -214,7 +214,7 @@ impl GameState {
         GameSubscription {
             init_msgs: iter::once(ServerMessage::Record(Box::new(self.record.clone())))
                 .chain(Request::VALUES.into_iter().filter_map(|req| {
-                    self.requests[req as usize].map(|stone| ServerMessage::Request(req, stone))
+                    self.requests[req as usize].map(|stone| ServerMessage::Request(stone, req))
                 }))
                 .collect(),
             msg_rx: self.msg_tx.subscribe(),
@@ -257,7 +257,7 @@ impl GameState {
                     // Not their turn.
                     return;
                 }
-                Action::Move(Move::Stone(fst, snd))
+                Action::Move(Move::Place(fst, snd))
             }
             Msg::Pass => {
                 if self.record.turn() != Some(stone) {
@@ -266,7 +266,7 @@ impl GameState {
                 }
                 Action::Move(Move::Pass)
             }
-            Msg::ClaimWin(pos) => Action::Move(Move::Win(pos)),
+            Msg::ClaimWin(pos, dir) => Action::Move(Move::Win(pos, dir)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
             Msg::Request(req) => {
                 let req_stone = &mut self.requests[req as usize];
@@ -283,7 +283,7 @@ impl GameState {
                 if req_stone.is_none() {
                     // No request present, make one.
                     *req_stone = Some(stone);
-                    _ = self.msg_tx.send(ServerMessage::Request(req, stone));
+                    _ = self.msg_tx.send(ServerMessage::Request(stone, req));
                     return;
                 }
 

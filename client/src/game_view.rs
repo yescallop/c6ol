@@ -729,7 +729,7 @@ pub fn GameView(
 
         // Draw the stones.
         for (i, &mov) in moves.iter().enumerate().take(move_index) {
-            let Move::Stone(fst, snd) = mov else {
+            let Move::Place(fst, snd) = mov else {
                 continue;
             };
             let stone = Record::turn_at(i);
@@ -756,14 +756,14 @@ pub fn GameView(
         if let Some(mov) = record.prev_move() {
             let stone = Record::turn_at(move_index - 1);
             match mov {
-                Move::Stone(fst, snd) => {
+                Move::Place(fst, snd) => {
                     set_fill_style_by_stone(stone.opposite());
                     for p in iter::once(fst).chain(snd) {
                         let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                         draw_circle(p, dot_radius);
                     }
                 }
-                Move::Win(_) => todo!(),
+                Move::Win(_, _) => todo!(),
                 Move::Pass | Move::Draw | Move::Resign(_) => {
                     let text = match mov {
                         Move::Pass => "PASS",

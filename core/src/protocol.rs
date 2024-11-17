@@ -1,6 +1,6 @@
 //! WebSocket protocol.
 
-use crate::game::{Move, Point, Record, Stone};
+use crate::game::{Direction, Move, Point, Record, Stone};
 use bytes::{Buf, BufMut};
 use bytes_varint::try_get_fixed::TryGetFixedSupport;
 use std::{iter, mem};
@@ -55,7 +55,7 @@ pub enum ClientMessage {
     /// Requests to pass.
     Pass = 3,
     /// Claims a win.
-    ClaimWin(Point) = 4,
+    ClaimWin(Point, Direction) = 4,
     /// Resigns the game.
     Resign = 5,
     /// Makes a request.
@@ -76,7 +76,10 @@ impl ClientMessage {
                 }
             }
             Self::Pass => {}
-            Self::ClaimWin(pos) => pos.encode(&mut buf),
+            Self::ClaimWin(pos, dir) => {
+                pos.encode(&mut buf);
+                buf.put_u8(dir as u8);
+            }
             Self::Resign => {}
             Self::Request(req) => buf.put_u8(req as u8),
         }
@@ -101,7 +104,10 @@ impl ClientMessage {
                 Self::Place(fst, snd)
             }
             Kind::Pass => Self::Pass,
-            Kind::ClaimWin => Self::ClaimWin(Point::decode(&mut buf)?),
+            Kind::ClaimWin => Self::ClaimWin(
+                Point::decode(&mut buf)?,
+                Direction::from_u8(buf.try_get_u8().ok()?)?,
+            ),
             Kind::Resign => Self::Resign,
             Kind::Request => Self::Request(Request::from_u8(buf.try_get_u8().ok()?)?),
         };
@@ -124,7 +130,7 @@ pub enum ServerMessage {
     /// The previous move was retracted.
     Retract = 9,
     /// A player made a request.
-    Request(Request, Stone) = 10,
+    Request(Stone, Request) = 10,
 }
 
 impl ServerMessage {
@@ -142,9 +148,9 @@ impl ServerMessage {
             Self::Record(rec) => rec.encode(&mut buf, false),
             Self::Move(mov) => mov.encode(&mut buf, true),
             Self::Retract => {}
-            Self::Request(request, stone) => {
-                buf.put_u8(request as u8);
+            Self::Request(stone, request) => {
                 buf.put_u8(stone as u8);
+                buf.put_u8(request as u8);
             }
         }
         buf
@@ -169,8 +175,8 @@ impl ServerMessage {
             Kind::Move => Self::Move(Move::decode(&mut buf, false)?),
             Kind::Retract => Self::Retract,
             Kind::Request => Self::Request(
-                Request::from_u8(buf.try_get_u8().ok()?)?,
                 Stone::from_u8(buf.try_get_u8().ok()?)?,
+                Request::from_u8(buf.try_get_u8().ok()?)?,
             ),
         };
         (!buf.has_remaining()).then_some(msg)
