@@ -46,7 +46,7 @@ pub async fn handle_websocket_upgrade(
             code,
             reason: err.to_string().into(),
         }));
-        let _ = socket.send(msg).await;
+        _ = socket.send(msg).await;
     })
 }
 

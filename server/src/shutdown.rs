@@ -15,7 +15,7 @@ pub struct Receiver(watch::Receiver<()>);
 impl Receiver {
     /// Waits unless or until a shutdown is requested or the sender is dropped.
     pub async fn requested(mut self) {
-        let _ = self.0.changed().await;
+        _ = self.0.changed().await;
     }
 }
 

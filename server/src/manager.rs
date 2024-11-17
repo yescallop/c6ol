@@ -156,7 +156,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                         let task_id = game_tasks.spawn(host_game(id, game_cmd_rx)).id();
                         game_ids_by_task_id.insert(task_id, id);
 
-                        let _ = resp_tx.send(Game::new(id, game_cmd_tx));
+                        _ = resp_tx.send(Game::new(id, game_cmd_tx));
                         break;
                     },
                     ManageCommand::Find(resp_tx, id) => {
@@ -165,7 +165,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                         let resp = game_cmd_txs
                             .get(&id)
                             .and_then(|tx| tx.upgrade().map(|tx| Game::new(id, tx)));
-                        let _ = resp_tx.send(resp);
+                        _ = resp_tx.send(resp);
                     }
                 }
             }
@@ -283,7 +283,7 @@ impl GameState {
                 if req_stone.is_none() {
                     // No request present, make one.
                     *req_stone = Some(stone);
-                    let _ = self.msg_tx.send(ServerMessage::Request(req, stone));
+                    _ = self.msg_tx.send(ServerMessage::Request(req, stone));
                     return;
                 }
 
@@ -317,7 +317,7 @@ impl GameState {
 
         // Clear the requests.
         self.requests.fill(None);
-        let _ = self.msg_tx.send(msg);
+        _ = self.msg_tx.send(msg);
     }
 }
 
@@ -328,10 +328,10 @@ async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) {
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             GameCommand::Subscribe(resp_tx) => {
-                let _ = resp_tx.send(state.subscribe());
+                _ = resp_tx.send(state.subscribe());
             }
             GameCommand::Authenticate(resp_tx, pass) => {
-                let _ = resp_tx.send(state.authenticate(pass));
+                _ = resp_tx.send(state.authenticate(pass));
             }
             GameCommand::Play(stone, msg) => state.play(stone, msg),
         }

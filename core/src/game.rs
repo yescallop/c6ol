@@ -464,7 +464,7 @@ impl Record {
     /// Searches for a win row through a position.
     #[must_use]
     pub fn find_win_row(&self, pos: Point) -> Option<Row> {
-        let _ = self.stone_at(pos)?;
+        _ = self.stone_at(pos)?;
         for axis in Axis::VALUES {
             let (row, len) = self.scan_row(pos, axis, 6);
             if len == 6 {
