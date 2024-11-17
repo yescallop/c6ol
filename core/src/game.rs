@@ -138,8 +138,10 @@ impl Point {
     /// Returns an iterator of adjacent points in the given direction.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
         let mut cur = self;
+        let (dx, dy) = dir.unit_vector();
+
         iter::from_fn(move || {
-            cur = cur.adjacent(dir)?;
+            cur = Self::new(cur.x.checked_add(dx)?, cur.y.checked_add(dy)?);
             Some(cur)
         })
     }
@@ -373,11 +375,12 @@ impl Record {
         }
     }
 
+    /// Returns the current stone to play, without checking if the game is ended.
     fn turn_unchecked(&self) -> Stone {
         Self::turn_at(self.index)
     }
 
-    /// Returns the current stone to play.
+    /// Returns the current stone to play, or `None` if the game is ended.
     #[must_use]
     pub fn turn(&self) -> Option<Stone> {
         (!self.is_ended()).then(|| self.turn_unchecked())
