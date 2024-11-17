@@ -2,45 +2,51 @@
 
 use bytes::{Buf, BufMut};
 use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
+use itertools::{Either, Itertools};
 use std::{collections::HashMap, iter};
 
 /// A direction on the board.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Direction {
-    /// Positive horizontal.
-    Right,
-    /// Positive diagonal.
-    DownRight,
-    /// Positive vertical.
-    Down,
-    /// Positive anti-diagonal.
-    DownLeft,
-    /// Negative horizontal.
-    Left,
-    /// Negative diagonal.
-    UpLeft,
-    /// Negative vertical.
-    Up,
-    /// Negative anti-diagonal.
-    UpRight,
+    /// North, with a unit vector of `(0, -1)`.
+    North,
+    /// Northeast, with a unit vector of `(-1, 1)`.
+    Northeast,
+    /// East, with a unit vector of `(1, 0)`.
+    East,
+    /// Southeast, with a unit vector of `(1, 1)`.
+    Southeast,
+    /// South, with a unit vector of `(0, 1)`.
+    South,
+    /// Southwest, with a unit vector of `(1, -1)`.
+    Southwest,
+    /// West, with a unit vector of `(-1, 0)`.
+    West,
+    /// Northwest, with a unit vector of `(-1, -1)`.
+    Northwest,
 }
 
 impl Direction {
-    /// List of positive directions.
-    pub const POSITIVES: [Self; 4] = [Self::Right, Self::DownRight, Self::Down, Self::DownLeft];
+    /// Four pairs of opposite directions.
+    pub const OPPOSITE_PAIRS: [(Self, Self); 4] = [
+        (Self::North, Self::South),
+        (Self::Northeast, Self::Southwest),
+        (Self::East, Self::West),
+        (Self::Southeast, Self::Northwest),
+    ];
 
     /// Creates a direction from a `u8`.
     #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
         Some(match n {
-            0 => Self::Right,
-            1 => Self::DownRight,
-            2 => Self::Down,
-            3 => Self::DownLeft,
-            4 => Self::Left,
-            5 => Self::UpLeft,
-            6 => Self::Up,
-            7 => Self::UpRight,
+            0 => Self::North,
+            1 => Self::Northeast,
+            2 => Self::East,
+            3 => Self::Southeast,
+            4 => Self::South,
+            5 => Self::Southwest,
+            6 => Self::West,
+            7 => Self::Northwest,
             _ => return None,
         })
     }
@@ -49,29 +55,14 @@ impl Direction {
     #[must_use]
     pub fn unit_vector(self) -> (i16, i16) {
         match self {
-            Self::Right => (1, 0),
-            Self::DownRight => (1, 1),
-            Self::Down => (0, 1),
-            Self::DownLeft => (1, -1),
-            Self::Left => (-1, 0),
-            Self::UpLeft => (-1, -1),
-            Self::Up => (0, -1),
-            Self::UpRight => (-1, 1),
-        }
-    }
-
-    /// Returns the opposite direction.
-    #[must_use]
-    pub fn opposite(self) -> Self {
-        match self {
-            Self::Right => Self::Left,
-            Self::DownRight => Self::UpLeft,
-            Self::Down => Self::Up,
-            Self::DownLeft => Self::UpRight,
-            Self::Left => Self::Right,
-            Self::UpLeft => Self::DownRight,
-            Self::Up => Self::Down,
-            Self::UpRight => Self::DownLeft,
+            Self::North => (0, -1),
+            Self::Northeast => (-1, 1),
+            Self::East => (1, 0),
+            Self::Southeast => (1, 1),
+            Self::South => (0, 1),
+            Self::Southwest => (1, -1),
+            Self::West => (-1, 0),
+            Self::Northwest => (-1, -1),
         }
     }
 }
@@ -142,6 +133,15 @@ impl Point {
     pub fn adjacent(self, dir: Direction) -> Option<Self> {
         let (dx, dy) = dir.unit_vector();
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
+    }
+
+    /// Returns an iterator of adjacent points in the given direction.
+    pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
+        let mut cur = self;
+        iter::from_fn(move || {
+            cur = cur.adjacent(dir)?;
+            Some(cur)
+        })
     }
 
     /// Encodes the point to a buffer.
@@ -410,7 +410,7 @@ impl Record {
                 self.map.insert(pos, stone);
             }
         } else if let Move::Win(pos, dir) = mov {
-            if !self.validate_winning_row(pos, dir) {
+            if self.test_winning_row(pos, dir).is_none() {
                 return false;
             }
         }
@@ -463,47 +463,46 @@ impl Record {
         true
     }
 
-    /// Scans occurrences of `stone` in the direction `dir`, starting from `pos` (exclusive).
-    fn scan(&self, mut pos: Point, stone: Stone, dir: Direction) -> (Point, u32) {
-        let mut count = 0;
-        while let Some(next) = pos.adjacent(dir) {
-            if self.stone_at(pos) != Some(stone) {
-                break;
-            }
-            pos = next;
-            count += 1;
-        }
-        (pos, count)
+    /// Returns an iterator of adjacent positions occupied by `stone`
+    /// in the direction `dir`, starting from `pos` (exclusive).
+    fn scan_row(
+        &self,
+        pos: Point,
+        dir: Direction,
+        stone: Stone,
+    ) -> impl Iterator<Item = Point> + use<'_> {
+        pos.adjacent_iter(dir)
+            .take_while(move |&pos| self.stone_at(pos) == Some(stone))
     }
 
-    /// Searches for a winning row through a position.
+    /// Searches in all directions for a winning row through the given position.
     #[must_use]
     pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(pos)?;
-        for dir in Direction::POSITIVES {
-            let (start, mut count) = self.scan(pos, stone, dir.opposite());
-            count += self.scan(pos, stone, dir).1;
-            if count >= 5 {
-                return Some((start, dir));
+        for (dir_fwd, dir_bwd) in Direction::OPPOSITE_PAIRS {
+            let row_fwd = self.scan_row(pos, dir_fwd, stone).map(Either::Left);
+            let row_bwd = self.scan_row(pos, dir_bwd, stone).map(Either::Right);
+
+            if let Some(end) = row_fwd.interleave(row_bwd).nth(4) {
+                // A six-in-a-row sequence was found:
+                // - `end` is the position of the sixth matching stone in the sequence.
+                // - `row_fwd` scans in the forward direction (`dir_fwd`), so if it yields `end`,
+                //   the opposite direction (`dir_bwd`) points to the other end of the sequence.
+                // - `row_bwd` scans in the backward direction (`dir_bwd`), so if it yields `end`,
+                //   the opposite direction (`dir_fwd`) points to the other end of the sequence.
+                return Some(match end {
+                    Either::Left(pos) => (pos, dir_bwd),
+                    Either::Right(pos) => (pos, dir_fwd),
+                });
             }
         }
         None
     }
 
-    /// Tests if a winning row is valid.
+    /// Tests if the given winning row is valid, returning the other end if so.
     #[must_use]
-    pub fn validate_winning_row(&self, mut pos: Point, dir: Direction) -> bool {
-        (|| {
-            let stone = self.stone_at(pos)?;
-            for _ in 0..5 {
-                pos = pos.adjacent(dir)?;
-                if self.stone_at(pos)? != stone {
-                    return None;
-                }
-            }
-            Some(())
-        })()
-        .is_some()
+    pub fn test_winning_row(&self, pos: Point, dir: Direction) -> Option<Point> {
+        self.scan_row(pos, dir, self.stone_at(pos)?).nth(4)
     }
 
     /// Encodes the record to a buffer.

@@ -7,6 +7,7 @@ publish = false
 [dependencies]
 bytes = "1"
 bytes-varint = "1"
+itertools = "0.13"
 strum = { version = "0.26", features = ["derive"] }
 
 [lints]
