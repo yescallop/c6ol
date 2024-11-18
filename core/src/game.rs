@@ -224,19 +224,19 @@ impl Move {
     /// If `compact`, omits the pass after a 1-stone move.
     pub fn encode(self, buf: &mut Vec<u8>, compact: bool) {
         match self {
-            Self::Place(fst, snd) => {
-                for pos in iter::once(fst).chain(snd) {
-                    let x = pos.index() + MOVE_STONE_OFFSET;
+            Self::Place(p1, p2) => {
+                for p in iter::once(p1).chain(p2) {
+                    let x = p.index() + MOVE_STONE_OFFSET;
                     buf.put_u32_varint(x);
                 }
-                if snd.is_none() && !compact {
+                if p2.is_none() && !compact {
                     buf.put_u8(MOVE_PASS as u8);
                 }
             }
             Self::Pass => buf.put_u8(MOVE_PASS as u8),
-            Self::Win(pos, dir) => {
+            Self::Win(p, dir) => {
                 buf.put_u8(MOVE_WIN as u8);
-                buf.put_u32_varint(pos.index());
+                buf.put_u32_varint(p.index());
                 buf.put_u8(dir as u8);
             }
             Self::Draw => buf.put_u8(MOVE_DRAW as u8),
@@ -254,19 +254,19 @@ impl Move {
     pub fn decode(buf: &mut &[u8], first: bool) -> Option<Self> {
         let x = buf.try_get_u32_varint().ok()?;
         if x >= MOVE_STONE_OFFSET {
-            let fst = Point::from_index(x - MOVE_STONE_OFFSET);
+            let p1 = Point::from_index(x - MOVE_STONE_OFFSET);
             if first || !buf.has_remaining() {
-                return Some(Self::Place(fst, None));
+                return Some(Self::Place(p1, None));
             }
 
-            let mut snd = None;
+            let mut p2 = None;
             let x = buf.try_get_u32_varint().ok()?;
             if x >= MOVE_STONE_OFFSET {
-                snd = Some(Point::from_index(x - MOVE_STONE_OFFSET));
+                p2 = Some(Point::from_index(x - MOVE_STONE_OFFSET));
             } else if x != MOVE_PASS {
                 return None;
             }
-            return Some(Self::Place(fst, snd));
+            return Some(Self::Place(p1, p2));
         }
 
         Some(match x {
@@ -385,8 +385,8 @@ impl Record {
 
     /// Returns the stone at the given position (if any).
     #[must_use]
-    pub fn stone_at(&self, pos: Point) -> Option<Stone> {
-        self.map.get(&pos).copied()
+    pub fn stone_at(&self, p: Point) -> Option<Stone> {
+        self.map.get(&p).copied()
     }
 
     /// Makes a move, clearing moves in the future.
@@ -397,20 +397,20 @@ impl Record {
             return false;
         }
 
-        if let Move::Place(fst, snd) = mov {
-            if self.index == 0 && snd.is_some() {
+        if let Move::Place(p1, p2) = mov {
+            if self.index == 0 && p2.is_some() {
                 return false;
             }
-            if self.map.contains_key(&fst) || snd.is_some_and(|pos| self.map.contains_key(&pos)) {
+            if self.map.contains_key(&p1) || p2.is_some_and(|p| self.map.contains_key(&p)) {
                 return false;
             }
 
             let stone = self.turn_unchecked();
-            for pos in iter::once(fst).chain(snd) {
-                self.map.insert(pos, stone);
+            for p in iter::once(p1).chain(p2) {
+                self.map.insert(p, stone);
             }
-        } else if let Move::Win(pos, dir) = mov {
-            if self.test_winning_row(pos, dir).is_none() {
+        } else if let Move::Win(p, dir) = mov {
+            if self.test_winning_row(p, dir).is_none() {
                 return false;
             }
         }
@@ -424,9 +424,9 @@ impl Record {
     /// Undoes the previous move (if any).
     pub fn undo_move(&mut self) -> Option<Move> {
         let prev = self.prev_move()?;
-        if let Move::Place(fst, snd) = prev {
-            for pos in iter::once(fst).chain(snd) {
-                self.map.remove(&pos);
+        if let Move::Place(p1, p2) = prev {
+            for p in iter::once(p1).chain(p2) {
+                self.map.remove(&p);
             }
         }
         self.index -= 1;
@@ -436,10 +436,10 @@ impl Record {
     /// Redoes the next move (if any).
     pub fn redo_move(&mut self) -> Option<Move> {
         let next = self.next_move()?;
-        if let Move::Place(fst, snd) = next {
+        if let Move::Place(p1, p2) = next {
             let stone = self.turn_unchecked();
-            for pos in iter::once(fst).chain(snd) {
-                self.map.insert(pos, stone);
+            for p in iter::once(p1).chain(p2) {
+                self.map.insert(p, stone);
             }
         }
         self.index += 1;
@@ -464,27 +464,27 @@ impl Record {
     }
 
     /// Returns an iterator of adjacent positions occupied by `stone`
-    /// in the direction `dir`, starting from `pos` (exclusive).
+    /// in the direction `dir`, starting from `p` (exclusive).
     fn scan(
         &self,
-        pos: Point,
+        p: Point,
         dir: Direction,
         stone: Stone,
     ) -> impl Iterator<Item = Point> + use<'_> {
-        pos.adjacent_iter(dir)
-            .take_while(move |&pos| self.stone_at(pos) == Some(stone))
+        p.adjacent_iter(dir)
+            .take_while(move |&p| self.stone_at(p) == Some(stone))
     }
 
-    /// Searches in all directions for a winning row through `pos`.
+    /// Searches in all directions for a winning row through `p`.
     ///
     /// When a winning row is found, returns one of its endpoints
     /// along with a direction pointing to the other endpoint.
     #[must_use]
-    pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
-        let stone = self.stone_at(pos)?;
+    pub fn find_winning_row(&self, p: Point) -> Option<(Point, Direction)> {
+        let stone = self.stone_at(p)?;
         for (dir_fwd, dir_bwd) in Direction::OPPOSITE_PAIRS {
-            let scan_fwd = self.scan(pos, dir_fwd, stone).map(|p| (p, dir_bwd));
-            let scan_bwd = self.scan(pos, dir_bwd, stone).map(|p| (p, dir_fwd));
+            let scan_fwd = self.scan(p, dir_fwd, stone).map(|p| (p, dir_bwd));
+            let scan_bwd = self.scan(p, dir_bwd, stone).map(|p| (p, dir_fwd));
 
             if let Some(res) = scan_fwd.interleave(scan_bwd).nth(4) {
                 return Some(res);
@@ -495,8 +495,8 @@ impl Record {
 
     /// Tests if the given winning row is valid, returning the other endpoint if so.
     #[must_use]
-    pub fn test_winning_row(&self, pos: Point, dir: Direction) -> Option<Point> {
-        self.scan(pos, dir, self.stone_at(pos)?).nth(4)
+    pub fn test_winning_row(&self, p: Point, dir: Direction) -> Option<Point> {
+        self.scan(p, dir, self.stone_at(p)?).nth(4)
     }
 
     /// Encodes the record to a buffer.

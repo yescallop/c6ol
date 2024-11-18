@@ -312,9 +312,9 @@ pub fn GameView(
 
         let (dx, dy) = (p.x - p0.x, p.y - p0.y);
         if dx != 0 || dy != 0 {
-            view_center.update(|pos| {
-                pos.x -= dx;
-                pos.y -= dy;
+            view_center.update(|p| {
+                p.x -= dx;
+                p.y -= dy;
             });
             true
         } else {
@@ -450,9 +450,9 @@ pub fn GameView(
                 // If the cursor is going out of view, adjust the view center to keep up.
                 let cursor = *cursor;
                 if calc().board_to_view_pos(cursor).is_none() {
-                    view_center.update(|pos| {
-                        pos.x += dx;
-                        pos.y += dy;
+                    view_center.update(|p| {
+                        p.x += dx;
+                        p.y += dy;
                     });
                 }
             } else {
@@ -460,9 +460,9 @@ pub fn GameView(
                 cursor_pos.set(Some(view_center.get()));
             }
         } else {
-            view_center.update(|pos| {
-                pos.x += dx;
-                pos.y += dy;
+            view_center.update(|p| {
+                p.x += dx;
+                p.y += dy;
             });
 
             // Restrict the cursor so that it doesn't go out of view.
@@ -679,11 +679,11 @@ pub fn GameView(
         // Draw the solid lines inside the view.
         ctx.begin_path();
         for i in 1..=view_size {
-            let pos = grid_size * i as f64;
-            ctx.move_to(grid_size, pos);
-            ctx.line_to(size - grid_size, pos);
-            ctx.move_to(pos, grid_size);
-            ctx.line_to(pos, size - grid_size);
+            let offset = grid_size * i as f64;
+            ctx.move_to(grid_size, offset);
+            ctx.line_to(size - grid_size, offset);
+            ctx.move_to(offset, grid_size);
+            ctx.line_to(offset, size - grid_size);
         }
         ctx.stroke();
 
@@ -694,16 +694,16 @@ pub fn GameView(
         ctx.begin_path();
         ctx.set_line_dash(&segments).unwrap();
         for i in 1..=view_size {
-            let pos = grid_size * i as f64;
-            ctx.move_to(0.0, pos);
-            ctx.line_to(grid_size, pos);
-            ctx.move_to(size - grid_size, pos);
-            ctx.line_to(size, pos);
+            let offset = grid_size * i as f64;
+            ctx.move_to(0.0, offset);
+            ctx.line_to(grid_size, offset);
+            ctx.move_to(size - grid_size, offset);
+            ctx.line_to(size, offset);
 
-            ctx.move_to(pos, 0.0);
-            ctx.line_to(pos, grid_size);
-            ctx.move_to(pos, size - grid_size);
-            ctx.line_to(pos, size);
+            ctx.move_to(offset, 0.0);
+            ctx.line_to(offset, grid_size);
+            ctx.move_to(offset, size - grid_size);
+            ctx.line_to(offset, size);
         }
         ctx.stroke();
         ctx.set_line_dash(&Array::new()).unwrap();
@@ -729,12 +729,12 @@ pub fn GameView(
 
         // Draw the stones.
         for (i, &mov) in moves.iter().enumerate().take(move_index) {
-            let Move::Place(fst, snd) = mov else {
+            let Move::Place(p1, p2) = mov else {
                 continue;
             };
             let stone = Record::turn_at(i);
 
-            for p in iter::once(fst).chain(snd) {
+            for p in iter::once(p1).chain(p2) {
                 let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                 if out {
                     out_pos.insert(p);
@@ -756,9 +756,9 @@ pub fn GameView(
         if let Some(mov) = record.prev_move() {
             let stone = Record::turn_at(move_index - 1);
             match mov {
-                Move::Place(fst, snd) => {
+                Move::Place(p1, p2) => {
                     set_fill_style_by_stone(stone.opposite());
-                    for p in iter::once(fst).chain(snd) {
+                    for p in iter::once(p1).chain(p2) {
                         let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                         draw_circle(p, dot_radius);
                     }

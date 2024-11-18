@@ -256,12 +256,12 @@ impl GameState {
 
         let action = match msg {
             Msg::Start(_) | Msg::Join(_) => return,
-            Msg::Place(fst, snd) => {
+            Msg::Place(p1, p2) => {
                 if self.record.turn() != Some(stone) {
                     // Not their turn.
                     return;
                 }
-                Action::Move(Move::Place(fst, snd))
+                Action::Move(Move::Place(p1, p2))
             }
             Msg::Pass => {
                 if self.record.turn() != Some(stone) {
@@ -270,7 +270,7 @@ impl GameState {
                 }
                 Action::Move(Move::Pass)
             }
-            Msg::ClaimWin(pos, dir) => Action::Move(Move::Win(pos, dir)),
+            Msg::ClaimWin(p, dir) => Action::Move(Move::Win(p, dir)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
             Msg::Request(req) => {
                 let req_stone = &mut self.requests[req as usize];

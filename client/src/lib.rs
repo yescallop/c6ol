@@ -344,16 +344,16 @@ pub fn App() -> impl IntoView {
                 if online() {
                     confirm(match tentative[..] {
                         [] => Confirm::Pass(None),
-                        [pos] if record.read().has_past() => Confirm::Pass(Some(pos)),
-                        [pos] => Confirm::Submit(pos, None),
-                        [fst, snd] => Confirm::Submit(fst, Some(snd)),
+                        [p] if record.read().has_past() => Confirm::Pass(Some(p)),
+                        [p] => Confirm::Submit(p, None),
+                        [p1, p2] => Confirm::Submit(p1, Some(p2)),
                         _ => unreachable!(),
                     });
                 } else {
                     let mov = match tentative[..] {
                         [] => Move::Pass,
-                        [pos] => Move::Place(pos, None),
-                        [fst, snd] => Move::Place(fst, Some(snd)),
+                        [p] => Move::Place(p, None),
+                        [p1, p2] => Move::Place(p1, Some(p2)),
                         _ => unreachable!(),
                     };
                     record.write().make_move(mov);
@@ -503,9 +503,9 @@ pub fn App() -> impl IntoView {
 
                 match confirm {
                     Confirm::MainMenu => set_game_id(""),
-                    Confirm::Submit(fst, snd) => send(ClientMessage::Place(fst, snd)),
+                    Confirm::Submit(p1, p2) => send(ClientMessage::Place(p1, p2)),
                     Confirm::Pass(None) => send(ClientMessage::Pass),
-                    Confirm::Pass(Some(pos)) => send(ClientMessage::Place(pos, None)),
+                    Confirm::Pass(Some(p)) => send(ClientMessage::Place(p, None)),
                     Confirm::Request(req) | Confirm::Accept(req) => {
                         send(ClientMessage::Request(req));
                     }

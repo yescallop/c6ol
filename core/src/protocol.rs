@@ -67,14 +67,14 @@ impl ClientMessage {
         match self {
             Self::Start(passcode) => buf.put_slice(&passcode),
             Self::Join(game_id) => buf.put_slice(&game_id),
-            Self::Place(fst, snd) => {
-                for pos in iter::once(fst).chain(snd) {
-                    pos.encode(&mut buf);
+            Self::Place(p1, p2) => {
+                for p in iter::once(p1).chain(p2) {
+                    p.encode(&mut buf);
                 }
             }
             Self::Pass => {}
-            Self::ClaimWin(pos, dir) => {
-                pos.encode(&mut buf);
+            Self::ClaimWin(p, dir) => {
+                p.encode(&mut buf);
                 buf.put_u8(dir as u8);
             }
             Self::Resign => {}
@@ -92,13 +92,13 @@ impl ClientMessage {
             Kind::Start => Self::Start(Box::from(mem::take(&mut buf))),
             Kind::Join => Self::Join(mem::take(&mut buf).try_into().ok()?),
             Kind::Place => {
-                let fst = Point::decode(&mut buf)?;
-                let snd = if buf.has_remaining() {
+                let p1 = Point::decode(&mut buf)?;
+                let p2 = if buf.has_remaining() {
                     Some(Point::decode(&mut buf)?)
                 } else {
                     None
                 };
-                Self::Place(fst, snd)
+                Self::Place(p1, p2)
             }
             Kind::Pass => Self::Pass,
             Kind::ClaimWin => Self::ClaimWin(
