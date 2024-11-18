@@ -64,10 +64,8 @@ pub async fn run(
 
     while let Some(res) = server_tasks.join_next().await {
         match res {
-            Ok(res) => match res {
-                Ok(()) => {}
-                Err(err) => tracing::error!("server task returned error: {err}"),
-            },
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => tracing::error!("server task returned error: {err}"),
             Err(err) => tracing::error!("server task panicked: {err}"),
         }
     }

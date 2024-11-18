@@ -11,6 +11,10 @@ use tokio::{
     task::JoinSet,
 };
 
+const CHANNEL_CAPACITY_MANAGE_CMD: usize = 64;
+const CHANNEL_CAPACITY_GAME_CMD: usize = 8;
+const CHANNEL_CAPACITY_GAME_MSG: usize = 8;
+
 /// Convenience macro for command execution.
 macro_rules! execute {
     ($cmd_tx:expr, $variant:path, $($args:expr),*) => {{
@@ -107,7 +111,7 @@ fn rand_game_id() -> GameId {
 ///
 /// Returns a command handle to it and a future to run it.
 pub fn create() -> (GameManager, impl Future<Output = ()>) {
-    let (cmd_tx, cmd_rx) = mpsc::channel::<ManageCommand>(100);
+    let (cmd_tx, cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_MANAGE_CMD);
     (GameManager { cmd_tx }, manage_games(cmd_rx))
 }
 
@@ -150,7 +154,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                             continue;
                         }
 
-                        let (game_cmd_tx, game_cmd_rx) = mpsc::channel(100);
+                        let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
                         let task_id = game_tasks.spawn(host_game(id, game_cmd_rx)).id();
@@ -202,7 +206,7 @@ struct GameState {
 impl GameState {
     fn new() -> Self {
         Self {
-            msg_tx: broadcast::channel(100).0,
+            msg_tx: broadcast::channel(CHANNEL_CAPACITY_GAME_MSG).0,
             record: Record::new(),
             passcode_black: None,
             passcode_white: None,

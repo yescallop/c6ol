@@ -27,7 +27,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    /// Four pairs of opposite directions.
+    /// List of all pairs of opposite directions.
     pub const OPPOSITE_PAIRS: [(Self, Self); 4] = [
         (Self::North, Self::South),
         (Self::Northeast, Self::Southwest),
@@ -101,9 +101,9 @@ fn elegant_unpair(z: u32) -> (u16, u16) {
 /// A 2D point with integer coordinates.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Point {
-    /// The horizontal coordinate.
+    /// The east-west coordinate.
     pub x: i16,
-    /// The vertical coordinate.
+    /// The north-south coordinate.
     pub y: i16,
 }
 
@@ -135,7 +135,8 @@ impl Point {
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
-    /// Returns an iterator of adjacent points in the given direction.
+    /// Returns an iterator of adjacent points in the given direction,
+    /// which stops on overflow.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
         let mut cur = self;
         let (dx, dy) = dir.unit_vector();
@@ -281,7 +282,7 @@ impl Move {
     }
 }
 
-/// A Connect6 game record on an infinite board.
+/// A Connect6 game record.
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct Record {
     map: HashMap<Point, Stone>,
@@ -290,7 +291,7 @@ pub struct Record {
 }
 
 impl Record {
-    /// Creates a new empty record.
+    /// Creates an empty record.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -477,7 +478,7 @@ impl Record {
     /// Searches in all directions for a winning row through `pos`.
     ///
     /// When a winning row is found, returns one of its endpoints
-    /// and a direction pointing to the other endpoint.
+    /// along with a direction pointing to the other endpoint.
     #[must_use]
     pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(pos)?;
@@ -517,25 +518,26 @@ impl Record {
     /// Decodes a record from a buffer.
     #[must_use]
     pub fn decode(buf: &mut &[u8], all: bool) -> Option<Self> {
-        let mut rec = Self::new();
         let index = if all {
             Some(buf.try_get_usize_varint().ok()?)
         } else {
             None
         };
 
+        let mut record = Self::new();
+
         while buf.has_remaining() {
-            let mov = Move::decode(buf, !rec.has_past())?;
-            if !rec.make_move(mov) {
+            let mov = Move::decode(buf, !record.has_past())?;
+            if !record.make_move(mov) {
                 return None;
             }
         }
 
         if let Some(index) = index {
-            if !rec.jump(index) {
+            if !record.jump(index) {
                 return None;
             }
         }
-        Some(rec)
+        Some(record)
     }
 }

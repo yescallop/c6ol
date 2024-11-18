@@ -6,12 +6,10 @@ use bytes_varint::try_get_fixed::TryGetFixedSupport;
 use std::{iter, mem};
 use strum::{EnumDiscriminants, FromRepr};
 
-const GAME_ID_SIZE: usize = 10;
-
 /// A passcode.
 pub type Passcode = Box<[u8]>;
 /// A game ID.
-pub type GameId = [u8; GAME_ID_SIZE];
+pub type GameId = [u8; 10];
 
 /// A player's request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,7 +23,7 @@ pub enum Request {
 }
 
 impl Request {
-    /// All requests available.
+    /// List of all available requests.
     pub const VALUES: [Self; 3] = [Self::Draw, Self::Retract, Self::Reset];
 
     /// Creates a request from a `u8`.
@@ -42,24 +40,23 @@ impl Request {
 
 /// A client message.
 #[derive(Clone, Debug, EnumDiscriminants)]
-#[repr(u8)]
-#[strum_discriminants(derive(FromRepr), name(ClientMessageKind), vis(pub(self)))]
+#[strum_discriminants(derive(FromRepr), name(ClientMessageKind), repr(u8), vis(pub(self)))]
 pub enum ClientMessage {
     /// When sent upon connection, requests to start a new game.
     /// When sent after `Join`, requests to authenticate.
-    Start(Passcode) = 0,
+    Start(Passcode),
     /// When sent upon connection, requests to join an existing game.
-    Join(GameId) = 1,
+    Join(GameId),
     /// Requests to place one or two stones.
-    Place(Point, Option<Point>) = 2,
+    Place(Point, Option<Point>),
     /// Requests to pass.
-    Pass = 3,
+    Pass,
     /// Claims a win.
-    ClaimWin(Point, Direction) = 4,
+    ClaimWin(Point, Direction),
     /// Resigns the game.
-    Resign = 5,
+    Resign,
     /// Makes a request.
-    Request(Request) = 10,
+    Request(Request),
 }
 
 impl ClientMessage {
@@ -117,20 +114,19 @@ impl ClientMessage {
 
 /// A server message.
 #[derive(Clone, EnumDiscriminants)]
-#[strum_discriminants(derive(FromRepr), name(ServerMessageKind), vis(pub(self)))]
-#[repr(u8)]
+#[strum_discriminants(derive(FromRepr), name(ServerMessageKind), repr(u8), vis(pub(self)))]
 pub enum ServerMessage {
     /// The user is authenticated.
     /// Sent before `Record` with the game ID if a new game is started.
-    Started(Stone, Option<GameId>) = 6,
+    Started(Stone, Option<GameId>),
     /// The entire record is updated.
-    Record(Box<Record>) = 7,
+    Record(Box<Record>),
     /// A move was made.
-    Move(Move) = 8,
+    Move(Move),
     /// The previous move was retracted.
-    Retract = 9,
+    Retract,
     /// A player made a request.
-    Request(Stone, Request) = 10,
+    Request(Stone, Request),
 }
 
 impl ServerMessage {
@@ -145,7 +141,7 @@ impl ServerMessage {
                     buf.put_slice(&id);
                 }
             }
-            Self::Record(rec) => rec.encode(&mut buf, false),
+            Self::Record(record) => record.encode(&mut buf, false),
             Self::Move(mov) => mov.encode(&mut buf, true),
             Self::Retract => {}
             Self::Request(stone, request) => {
