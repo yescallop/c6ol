@@ -2,7 +2,6 @@
 
 use bytes::{Buf, BufMut};
 use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
-use itertools::Itertools;
 use std::{collections::HashMap, iter};
 
 /// A direction on the board.
@@ -475,10 +474,10 @@ impl Record {
             .take_while(move |&p| self.stone_at(p) == Some(stone))
     }
 
-    /// Searches in all directions for a winning row through `p`.
+    /// Searches in all directions for a winning row passing through `p`.
     ///
-    /// When a winning row is found, returns one of its endpoints
-    /// along with a direction pointing to the other endpoint.
+    /// If a winning row is found, returns one of its endpoints
+    /// and a direction pointing to the other endpoint.
     #[must_use]
     pub fn find_winning_row(&self, p: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(p)?;
@@ -486,7 +485,7 @@ impl Record {
             let scan_fwd = self.scan(p, dir_fwd, stone).map(|p| (p, dir_bwd));
             let scan_bwd = self.scan(p, dir_bwd, stone).map(|p| (p, dir_fwd));
 
-            if let Some(res) = scan_fwd.interleave(scan_bwd).nth(4) {
+            if let Some(res) = scan_fwd.chain(scan_bwd).nth(4) {
                 return Some(res);
             }
         }
