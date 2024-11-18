@@ -2,7 +2,7 @@
 
 use bytes::{Buf, BufMut};
 use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use std::{collections::HashMap, iter};
 
 /// A direction on the board.
@@ -465,7 +465,7 @@ impl Record {
 
     /// Returns an iterator of adjacent positions occupied by `stone`
     /// in the direction `dir`, starting from `pos` (exclusive).
-    fn scan_row(
+    fn scan(
         &self,
         pos: Point,
         dir: Direction,
@@ -483,14 +483,11 @@ impl Record {
     pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(pos)?;
         for (dir_fwd, dir_bwd) in Direction::OPPOSITE_PAIRS {
-            let row_fwd = self.scan_row(pos, dir_fwd, stone).map(Either::Left);
-            let row_bwd = self.scan_row(pos, dir_bwd, stone).map(Either::Right);
+            let scan_fwd = self.scan(pos, dir_fwd, stone).map(|p| (p, dir_bwd));
+            let scan_bwd = self.scan(pos, dir_bwd, stone).map(|p| (p, dir_fwd));
 
-            if let Some(pos) = row_fwd.interleave(row_bwd).nth(4) {
-                return Some(match pos {
-                    Either::Left(pos) => (pos, dir_bwd),
-                    Either::Right(pos) => (pos, dir_fwd),
-                });
+            if let Some(res) = scan_fwd.interleave(scan_bwd).nth(4) {
+                return Some(res);
             }
         }
         None
@@ -499,7 +496,7 @@ impl Record {
     /// Tests if the given winning row is valid, returning the other endpoint if so.
     #[must_use]
     pub fn test_winning_row(&self, pos: Point, dir: Direction) -> Option<Point> {
-        self.scan_row(pos, dir, self.stone_at(pos)?).nth(4)
+        self.scan(pos, dir, self.stone_at(pos)?).nth(4)
     }
 
     /// Encodes the record to a buffer.
