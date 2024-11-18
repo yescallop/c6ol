@@ -268,20 +268,16 @@ impl Move {
             return Some(Self::Place(fst, snd));
         }
 
-        match x {
-            MOVE_WIN => {
-                let pos = Point::decode(buf)?;
-                let dir = Direction::from_u8(buf.try_get_u8().ok()?)?;
-                Some(Self::Win(pos, dir))
-            }
-            MOVE_RESIGN => {
-                let stone = Stone::from_u8(buf.try_get_u8().ok()?)?;
-                Some(Self::Resign(stone))
-            }
-            MOVE_PASS => Some(Self::Pass),
-            MOVE_DRAW => Some(Self::Draw),
-            _ => None,
-        }
+        Some(match x {
+            MOVE_WIN => Self::Win(
+                Point::decode(buf)?,
+                Direction::from_u8(buf.try_get_u8().ok()?)?,
+            ),
+            MOVE_RESIGN => Self::Resign(Stone::from_u8(buf.try_get_u8().ok()?)?),
+            MOVE_PASS => Self::Pass,
+            MOVE_DRAW => Self::Draw,
+            _ => return None,
+        })
     }
 }
 
@@ -478,7 +474,10 @@ impl Record {
             .take_while(move |&pos| self.stone_at(pos) == Some(stone))
     }
 
-    /// Searches in all directions for a winning row through the given position.
+    /// Searches in all directions for a winning row through `pos`.
+    ///
+    /// When a winning row is found, returns one of its endpoints
+    /// and a direction pointing to the other endpoint.
     #[must_use]
     pub fn find_winning_row(&self, pos: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(pos)?;
@@ -486,14 +485,8 @@ impl Record {
             let row_fwd = self.scan_row(pos, dir_fwd, stone).map(Either::Left);
             let row_bwd = self.scan_row(pos, dir_bwd, stone).map(Either::Right);
 
-            if let Some(end) = row_fwd.interleave(row_bwd).nth(4) {
-                // A six-in-a-row sequence was found:
-                // - `end` is the position of the sixth matching stone in the sequence.
-                // - `row_fwd` scans in the forward direction (`dir_fwd`), so if it yields `end`,
-                //   the opposite direction (`dir_bwd`) points to the other end of the sequence.
-                // - `row_bwd` scans in the backward direction (`dir_bwd`), so if it yields `end`,
-                //   the opposite direction (`dir_fwd`) points to the other end of the sequence.
-                return Some(match end {
+            if let Some(pos) = row_fwd.interleave(row_bwd).nth(4) {
+                return Some(match pos {
                     Either::Left(pos) => (pos, dir_bwd),
                     Either::Right(pos) => (pos, dir_fwd),
                 });
@@ -502,7 +495,7 @@ impl Record {
         None
     }
 
-    /// Tests if the given winning row is valid, returning the other end if so.
+    /// Tests if the given winning row is valid, returning the other endpoint if so.
     #[must_use]
     pub fn test_winning_row(&self, pos: Point, dir: Direction) -> Option<Point> {
         self.scan_row(pos, dir, self.stone_at(pos)?).nth(4)
