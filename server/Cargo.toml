@@ -15,7 +15,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 rand = "0.8"
 remain = "0.2"
 socket2 = "0.5"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
