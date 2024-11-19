@@ -5,7 +5,7 @@ mod game_view;
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 use c6ol_core::{
-    game::{Move, Point, Record, Stone},
+    game::{Direction, Move, Point, Record, Stone},
     protocol::{ClientMessage, Request, ServerMessage},
 };
 use dialog::*;
@@ -32,6 +32,7 @@ enum Confirm {
     MainMenu,
     Submit(Point, Option<Point>),
     Pass(Option<Point>),
+    Claim(ArrayVec<[Point; 2]>, Point, Direction),
     Request(Request),
     Accept(Request),
     Resign,
@@ -48,6 +49,13 @@ enum Event {
     End,
     Resign,
     Draw,
+}
+
+#[derive(Clone, Copy)]
+enum WinClaim {
+    PendingPoint,
+    PendingDirection(Point),
+    Ready(Point, Direction),
 }
 
 const STORAGE_KEY_RECORD: &str = "record";
@@ -88,6 +96,7 @@ pub fn App() -> impl IntoView {
     let stone = RwSignal::new(None::<Stone>);
 
     let tentative_pos = RwSignal::new(ArrayVec::new());
+    let win_claim = RwSignal::new(None);
 
     let game_id = RwSignal::new(String::new());
 
@@ -158,7 +167,7 @@ pub fn App() -> impl IntoView {
             stone: stone.get(),
             online: online(),
             record: record.read_only(),
-            tentative_pos: tentative_pos.read_only(),
+            win_claim: win_claim.read_only(),
             requests: requests.read_only(),
         }));
     };
@@ -341,22 +350,35 @@ pub fn App() -> impl IntoView {
             Event::Menu => show_game_menu_dialog(),
             Event::Submit => {
                 let tentative = tentative_pos.get();
+                let claim = win_claim.get();
                 if online() {
-                    confirm(match tentative[..] {
-                        [] => Confirm::Pass(None),
-                        [p] if record.read().has_past() => Confirm::Pass(Some(p)),
-                        [p] => Confirm::Submit(p, None),
-                        [p1, p2] => Confirm::Submit(p1, Some(p2)),
-                        _ => unreachable!(),
+                    confirm(match claim {
+                        Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentative, p, dir),
+                        _ => match tentative[..] {
+                            [] => Confirm::Pass(None),
+                            [p] if record.read().has_past() => Confirm::Pass(Some(p)),
+                            [p] => Confirm::Submit(p, None),
+                            [p1, p2] => Confirm::Submit(p1, Some(p2)),
+                            _ => unreachable!(),
+                        },
                     });
                 } else {
-                    let mov = match tentative[..] {
-                        [] => Move::Pass,
-                        [p] => Move::Place(p, None),
-                        [p1, p2] => Move::Place(p1, Some(p2)),
-                        _ => unreachable!(),
-                    };
-                    record.write().make_move(mov);
+                    let mut record = record.write();
+
+                    if let Some(WinClaim::Ready(p, dir)) = claim {
+                        if !tentative.is_empty() {
+                            record.make_move(Move::Place(tentative[0], tentative.get(1).copied()));
+                        }
+                        record.make_move(Move::Win(p, dir));
+                    } else {
+                        record.make_move(match tentative[..] {
+                            [] => Move::Pass,
+                            [p] => Move::Place(p, None),
+                            [p1, p2] => Move::Place(p1, Some(p2)),
+                            _ => unreachable!(),
+                        });
+                    }
+
                     record_changed = true;
                 }
             }
@@ -449,7 +471,11 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Home => on_event(Event::Home),
         GameMenuRetVal::End => on_event(Event::End),
         GameMenuRetVal::ClaimWin => {
-            // TODO.
+            if win_claim.get().is_none() {
+                win_claim.set(Some(WinClaim::PendingPoint));
+            } else {
+                win_claim.set(None);
+            }
         }
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
@@ -506,6 +532,15 @@ pub fn App() -> impl IntoView {
                     Confirm::Submit(p1, p2) => send(ClientMessage::Place(p1, p2)),
                     Confirm::Pass(None) => send(ClientMessage::Pass),
                     Confirm::Pass(Some(p)) => send(ClientMessage::Place(p, None)),
+                    Confirm::Claim(tentative, p, dir) => {
+                        if !tentative.is_empty() {
+                            send(ClientMessage::Place(
+                                tentative[0],
+                                tentative.get(1).copied(),
+                            ));
+                        }
+                        send(ClientMessage::ClaimWin(p, dir));
+                    }
                     Confirm::Request(req) | Confirm::Accept(req) => {
                         send(ClientMessage::Request(req));
                     }
@@ -547,11 +582,12 @@ pub fn App() -> impl IntoView {
 
     view! {
         <game_view::GameView
-            record=record.read_only()
+            record=record
             stone=stone.read_only()
             disabled=move || !dialog_entries.read().is_empty()
             on_event=on_event
             tentative_pos=tentative_pos
+            win_claim=win_claim
         />
         <For each=move || dialog_entries.get() key=|entry| entry.id let(DialogEntry { id, dialog })>
             {dialog.show(id, on_dialog_return)}

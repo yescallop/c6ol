@@ -1,5 +1,5 @@
-use crate::{console_log, Event};
-use c6ol_core::game::{Move, Point, Record, Stone};
+use crate::{console_log, Event, WinClaim};
+use c6ol_core::game::{Direction, Move, Point, Record, Stone};
 use leptos::{ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
@@ -14,6 +14,7 @@ use web_sys::{
 const BOARD_COLOR: &str = "#ffcc66";
 const CURSOR_COLOR_ACTIVE: &str = "darkred";
 const CURSOR_COLOR_INACTIVE: &str = "grey";
+const WIN_RING_COLOR: &str = "darkred";
 
 const DEFAULT_VIEW_SIZE: i16 = 15;
 
@@ -24,6 +25,7 @@ const LINE_DASH_RATIO: f64 = 5.0;
 
 const STONE_RADIUS_RATIO: f64 = 2.25;
 const DOT_RADIUS_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
+const WIN_RING_WIDTH_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
 
 const CURSOR_LINE_WIDTH_RATIO: f64 = 16.0;
 const CURSOR_OFFSET_RATIO: f64 = 8.0;
@@ -213,7 +215,7 @@ fn context_2d(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
 /// All `Point`s in the props are board positions.
 #[component]
 pub fn GameView(
-    record: ReadSignal<Record>,
+    record: RwSignal<Record>,
     stone: ReadSignal<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
@@ -229,6 +231,7 @@ pub fn GameView(
     #[prop(optional)] cursor_pos: RwSignal<Option<Point>>,
     #[prop(optional)] phantom_pos: RwSignal<Option<Point>>,
     #[prop(optional)] tentative_pos: RwSignal<ArrayVec<[Point; 2]>>,
+    #[prop(optional)] win_claim: RwSignal<Option<WinClaim>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
 
@@ -267,10 +270,49 @@ pub fn GameView(
         let phantom = phantom_pos.get();
         let mut tentative = tentative_pos.get();
 
-        if calc().board_to_view_pos(cursor).is_none()
-            || !our_turn()
-            || record.read().stone_at(cursor).is_some()
-        {
+        if calc().board_to_view_pos(cursor).is_none() {
+            return;
+        }
+
+        if let Some(claim) = win_claim.get() {
+            let Some(stone) = stone.get() else {
+                return;
+            };
+
+            let new_claim = match claim {
+                WinClaim::PendingPoint | WinClaim::Ready(..) => WinClaim::PendingDirection(cursor),
+                WinClaim::PendingDirection(p) => {
+                    let dx = cursor.x - p.x;
+                    let dy = cursor.y - p.y;
+
+                    if dx == 0 && dy == 0 {
+                        WinClaim::PendingPoint
+                    } else if dx == 0 || dy == 0 || dx.abs() == dy.abs() {
+                        let dir = Direction::from_unit_vec(dx.signum(), dy.signum()).unwrap();
+
+                        if record.write_untracked().with_temp_placements(
+                            stone,
+                            &tentative,
+                            |record| record.test_winning_row(p, dir).is_some(),
+                        ) {
+                            WinClaim::Ready(p, dir)
+                        } else {
+                            WinClaim::PendingDirection(cursor)
+                        }
+                    } else {
+                        WinClaim::PendingDirection(cursor)
+                    }
+                }
+            };
+            win_claim.set(Some(new_claim));
+
+            if let WinClaim::Ready(..) = new_claim {
+                on_event(Event::Submit);
+            }
+            return;
+        }
+
+        if !our_turn() || record.read().stone_at(cursor).is_some() {
             return;
         }
 
@@ -752,6 +794,25 @@ pub fn GameView(
             draw_circle(p, stone_radius);
         }
 
+        let draw_win_ring = |p: Point| {
+            let ring_width = grid_size / WIN_RING_WIDTH_RATIO;
+            ctx.set_line_width(ring_width);
+
+            let (x, y) = calc.view_to_canvas_pos(p);
+            ctx.begin_path();
+            ctx.arc(x, y, stone_radius - ring_width / 2.0, 0.0, f64::consts::TAU)
+                .unwrap();
+            ctx.stroke();
+        };
+
+        let draw_win = |p: Point, dir: Direction| {
+            for p in iter::once(p).chain(p.adjacent_iter(dir).take(5)) {
+                if let Some(p) = calc.board_to_view_pos(p) {
+                    draw_win_ring(p);
+                }
+            }
+        };
+
         // Draw the previous move.
         if let Some(mov) = record.prev_move() {
             let stone = Record::turn_at(move_index - 1);
@@ -763,7 +824,10 @@ pub fn GameView(
                         draw_circle(p, dot_radius);
                     }
                 }
-                Move::Win(_, _) => todo!(),
+                Move::Win(p, dir) => {
+                    ctx.set_stroke_style_str(WIN_RING_COLOR);
+                    draw_win(p, dir);
+                }
                 Move::Pass | Move::Draw | Move::Resign(_) => {
                     let text = match mov {
                         Move::Pass => "PASS",
@@ -839,6 +903,23 @@ pub fn GameView(
             }
         }
 
+        // Draw the win claim.
+        if let Some(claim) = win_claim.get_untracked() {
+            match claim {
+                WinClaim::PendingPoint => {}
+                WinClaim::PendingDirection(p) => {
+                    if let Some(p) = calc.board_to_view_pos(p) {
+                        ctx.set_stroke_style_str("grey");
+                        draw_win_ring(p);
+                    }
+                }
+                WinClaim::Ready(p, dir) => {
+                    ctx.set_stroke_style_str("grey");
+                    draw_win(p, dir);
+                }
+            }
+        }
+
         // Draw the cursor.
         if let Some(p) = cursor_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
             let (x, y) = calc.view_to_canvas_pos(p);
@@ -874,9 +955,10 @@ pub fn GameView(
         record.track();
         stone.track();
 
-        // Clear phantom and tentative stones if the record or the stone changed.
+        // Clear phantom, tentatives and win claim if the record or the stone changed.
         *phantom_pos.write_untracked() = None;
         *tentative_pos.write_untracked() = ArrayVec::new();
+        *win_claim.write_untracked() = None;
 
         changed.notify();
     });
@@ -884,6 +966,7 @@ pub fn GameView(
     Effect::new(move || {
         phantom_pos.track();
         tentative_pos.track();
+        win_claim.track();
 
         changed.notify();
     });

@@ -1,7 +1,7 @@
-use crate::{Confirm, ANALYZE_PREFIX};
+use crate::{Confirm, WinClaim, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
-    game::{Move, Point, Record, Stone},
+    game::{Move, Record, Stone},
     protocol::Request,
 };
 use leptos::{
@@ -10,7 +10,6 @@ use leptos::{
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
-use tinyvec::ArrayVec;
 
 trait DialogImpl {
     type RetVal;
@@ -252,7 +251,7 @@ pub struct GameMenuDialog {
     pub stone: Option<Stone>,
     pub online: bool,
     pub record: ReadSignal<Record>,
-    pub tentative_pos: ReadSignal<ArrayVec<[Point; 2]>>,
+    pub win_claim: ReadSignal<Option<WinClaim>>,
     pub requests: ReadSignal<[Option<Stone>; Request::VALUES.len()]>,
 }
 
@@ -285,7 +284,7 @@ impl DialogImpl for GameMenuDialog {
             stone,
             online,
             record,
-            tentative_pos,
+            win_claim,
             requests,
         } = self;
 
@@ -397,20 +396,22 @@ impl DialogImpl for GameMenuDialog {
                             })}
                     </div>
                     <div class="btn-group">
-                        <button value=ret!(ClaimWin) disabled=ended>
+                        <button
+                            class:pushed=move || win_claim.read().is_some()
+                            value=ret!(ClaimWin)
+                            disabled=ended
+                        >
                             "Claim Win"
                         </button>
                         <button
                             value=ret!(Submit)
-                            disabled=move || ended() || record.read().turn() != stone
+                            disabled=move || {
+                                ended()
+                                    || (record.read().turn() != stone
+                                        && !matches!(win_claim.get(), Some(WinClaim::Ready(..))))
+                            }
                         >
-                            {move || {
-                                if tentative_pos.read().len() < record.read().max_stones_to_play() {
-                                    "Pass"
-                                } else {
-                                    "Submit"
-                                }
-                            }}
+                            "Submit"
                         </button>
                     </div>
                 }
@@ -499,9 +500,16 @@ impl DialogImpl for ConfirmDialog {
 
         let message = match &self.0 {
             Confirm::MainMenu => "Back to main menu?",
-            Confirm::Submit(_, _) => "Submit the move?",
+            Confirm::Submit(_, None) => "Place one stone?",
+            Confirm::Submit(_, Some(_)) => "Place two stones?",
             Confirm::Pass(None) => "Place no stone and pass?",
             Confirm::Pass(Some(_)) => "Place one stone and pass?",
+            Confirm::Claim(tentative, ..) => match tentative.len() {
+                // TODO: Inform the user if they're claiming a win for the opponent?
+                0 => "Claim a win?",
+                1 => "Place one stone and claim a win?",
+                _ => "Place two stones and claim a win?",
+            },
             Confirm::Request(req) => match req {
                 Request::Draw => "Offer a draw?",
                 Request::Retract => "Request to retract the previous move?",

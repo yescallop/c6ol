@@ -50,9 +50,25 @@ impl Direction {
         })
     }
 
+    /// Creates a direction from a unit vector.
+    #[must_use]
+    pub fn from_unit_vec(dx: i16, dy: i16) -> Option<Self> {
+        Some(match (dx, dy) {
+            (0, -1) => Self::North,
+            (-1, 1) => Self::Northeast,
+            (1, 0) => Self::East,
+            (1, 1) => Self::Southeast,
+            (0, 1) => Self::South,
+            (1, -1) => Self::Southwest,
+            (-1, 0) => Self::West,
+            (-1, -1) => Self::Northwest,
+            _ => return None,
+        })
+    }
+
     /// Returns the unit vector in this direction.
     #[must_use]
-    pub fn unit_vector(self) -> (i16, i16) {
+    pub fn unit_vec(self) -> (i16, i16) {
         match self {
             Self::North => (0, -1),
             Self::Northeast => (-1, 1),
@@ -130,7 +146,7 @@ impl Point {
     /// or `None` if overflow occurred.
     #[must_use]
     pub fn adjacent(self, dir: Direction) -> Option<Self> {
-        let (dx, dy) = dir.unit_vector();
+        let (dx, dy) = dir.unit_vec();
         Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
     }
 
@@ -138,7 +154,7 @@ impl Point {
     /// which stops on overflow.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
         let mut cur = self;
-        let (dx, dy) = dir.unit_vector();
+        let (dx, dy) = dir.unit_vec();
 
         iter::from_fn(move || {
             cur = Self::new(cur.x.checked_add(dx)?, cur.y.checked_add(dy)?);
@@ -215,7 +231,7 @@ impl Move {
     /// Tests if the move is an ending move.
     #[must_use]
     pub fn is_ending(self) -> bool {
-        matches!(self, Self::Win(_, _) | Self::Draw | Self::Resign(_))
+        matches!(self, Self::Win(..) | Self::Draw | Self::Resign(_))
     }
 
     /// Encodes the move to a buffer.
@@ -496,6 +512,26 @@ impl Record {
     #[must_use]
     pub fn test_winning_row(&self, p: Point, dir: Direction) -> Option<Point> {
         self.scan(p, dir, self.stone_at(p)?).nth(4)
+    }
+
+    /// Places `stone` at each of `positions` temporarily, calls `f`
+    /// and returns the result after undoing the placements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of `positions` is occupied.
+    pub fn with_temp_placements<T, F>(&mut self, stone: Stone, positions: &[Point], f: F) -> T
+    where
+        F: FnOnce(&Self) -> T,
+    {
+        for &p in positions {
+            assert!(self.map.insert(p, stone).is_none());
+        }
+        let res = f(self);
+        for &p in positions {
+            self.map.remove(&p);
+        }
+        res
     }
 
     /// Encodes the record to a buffer.
