@@ -504,7 +504,7 @@ impl DialogImpl for ConfirmDialog {
             Confirm::Submit(_, Some(_)) => "Place two stones?",
             Confirm::Pass(None) => "Place no stone and pass?",
             Confirm::Pass(Some(_)) => "Place one stone and pass?",
-            Confirm::Claim(tentative, ..) => match tentative.len() {
+            Confirm::Claim(tentatives, ..) => match tentatives.len() {
                 // TODO: Inform the user if they're claiming a win for the opponent?
                 0 => "Claim a win?",
                 1 => "Place one stone and claim a win?",

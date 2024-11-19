@@ -95,7 +95,7 @@ pub fn App() -> impl IntoView {
     let record = RwSignal::new(Record::new());
     let stone = RwSignal::new(None::<Stone>);
 
-    let tentative_pos = RwSignal::new(ArrayVec::new());
+    let tentatives_pos = RwSignal::new(ArrayVec::new());
     let win_claim = RwSignal::new(None);
 
     let game_id = RwSignal::new(String::new());
@@ -349,12 +349,12 @@ pub fn App() -> impl IntoView {
         match ev {
             Event::Menu => show_game_menu_dialog(),
             Event::Submit => {
-                let tentative = tentative_pos.get();
+                let tentatives = tentatives_pos.get();
                 let claim = win_claim.get();
                 if online() {
                     confirm(match claim {
-                        Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentative, p, dir),
-                        _ => match tentative[..] {
+                        Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentatives, p, dir),
+                        _ => match tentatives[..] {
                             [] => Confirm::Pass(None),
                             [p] if record.read().has_past() => Confirm::Pass(Some(p)),
                             [p] => Confirm::Submit(p, None),
@@ -366,12 +366,12 @@ pub fn App() -> impl IntoView {
                     let mut record = record.write();
 
                     if let Some(WinClaim::Ready(p, dir)) = claim {
-                        if !tentative.is_empty() {
-                            record.make_move(Move::Place(tentative[0], tentative.get(1).copied()));
+                        if !tentatives.is_empty() {
+                            record.make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
                         }
                         record.make_move(Move::Win(p, dir));
                     } else {
-                        record.make_move(match tentative[..] {
+                        record.make_move(match tentatives[..] {
                             [] => Move::Pass,
                             [p] => Move::Place(p, None),
                             [p1, p2] => Move::Place(p1, Some(p2)),
@@ -532,11 +532,11 @@ pub fn App() -> impl IntoView {
                     Confirm::Submit(p1, p2) => send(ClientMessage::Place(p1, p2)),
                     Confirm::Pass(None) => send(ClientMessage::Pass),
                     Confirm::Pass(Some(p)) => send(ClientMessage::Place(p, None)),
-                    Confirm::Claim(tentative, p, dir) => {
-                        if !tentative.is_empty() {
+                    Confirm::Claim(tentatives, p, dir) => {
+                        if !tentatives.is_empty() {
                             send(ClientMessage::Place(
-                                tentative[0],
-                                tentative.get(1).copied(),
+                                tentatives[0],
+                                tentatives.get(1).copied(),
                             ));
                         }
                         send(ClientMessage::ClaimWin(p, dir));
@@ -586,7 +586,7 @@ pub fn App() -> impl IntoView {
             stone=stone.read_only()
             disabled=move || !dialog_entries.read().is_empty()
             on_event=on_event
-            tentative_pos=tentative_pos
+            tentatives_pos=tentatives_pos
             win_claim=win_claim
         />
         <For each=move || dialog_entries.get() key=|entry| entry.id let(DialogEntry { id, dialog })>

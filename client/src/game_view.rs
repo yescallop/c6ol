@@ -230,7 +230,7 @@ pub fn GameView(
     #[prop(optional)] view_center: RwSignal<Point>,
     #[prop(optional)] cursor_pos: RwSignal<Option<Point>>,
     #[prop(optional)] phantom_pos: RwSignal<Option<Point>>,
-    #[prop(optional)] tentative_pos: RwSignal<ArrayVec<[Point; 2]>>,
+    #[prop(optional)] tentatives_pos: RwSignal<ArrayVec<[Point; 2]>>,
     #[prop(optional)] win_claim: RwSignal<Option<WinClaim>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
@@ -268,7 +268,7 @@ pub fn GameView(
     // are enough tentative stones, the move is automatically submitted.
     let hit_cursor = move |cursor: Point| {
         let phantom = phantom_pos.get();
-        let mut tentative = tentative_pos.get();
+        let mut tentatives = tentatives_pos.get();
 
         if calc().board_to_view_pos(cursor).is_none() {
             return;
@@ -292,7 +292,7 @@ pub fn GameView(
 
                         if record.write_untracked().with_temp_placements(
                             stone,
-                            &tentative,
+                            &tentatives,
                             |record| record.test_winning_row(p, dir).is_some(),
                         ) {
                             WinClaim::Ready(p, dir)
@@ -316,18 +316,18 @@ pub fn GameView(
             return;
         }
 
-        if let Some(i) = tentative.iter().position(|&p| p == cursor) {
-            phantom_pos.set(Some(tentative.remove(i)));
-            tentative_pos.set(tentative);
+        if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
+            phantom_pos.set(Some(tentatives.remove(i)));
+            tentatives_pos.set(tentatives);
         } else if phantom == Some(cursor) {
             phantom_pos.set(None);
-            tentative.push(cursor);
-            tentative_pos.set(tentative);
+            tentatives.push(cursor);
+            tentatives_pos.set(tentatives);
 
-            if tentative.len() == record.read().max_stones_to_play() {
+            if tentatives.len() == record.read().max_stones_to_play() {
                 on_event(Event::Submit);
             }
-        } else if tentative.len() < record.read().max_stones_to_play() {
+        } else if tentatives.len() < record.read().max_stones_to_play() {
             phantom_pos.set(Some(cursor));
         }
     };
@@ -884,7 +884,7 @@ pub fn GameView(
             }
 
             // Draw the tentative stones.
-            for p in tentative_pos
+            for p in tentatives_pos
                 .get_untracked()
                 .into_iter()
                 .filter_map(|p| calc.board_to_view_pos(p))
@@ -957,7 +957,7 @@ pub fn GameView(
 
         // Clear phantom, tentatives and win claim if the record or the stone changed.
         *phantom_pos.write_untracked() = None;
-        *tentative_pos.write_untracked() = ArrayVec::new();
+        *tentatives_pos.write_untracked() = ArrayVec::new();
         *win_claim.write_untracked() = None;
 
         changed.notify();
@@ -965,7 +965,7 @@ pub fn GameView(
 
     Effect::new(move || {
         phantom_pos.track();
-        tentative_pos.track();
+        tentatives_pos.track();
         win_claim.track();
 
         changed.notify();
