@@ -298,7 +298,7 @@ impl Move {
 }
 
 /// A Connect6 game record.
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Record {
     map: HashMap<Point, Stone>,
     moves: Vec<Move>,
