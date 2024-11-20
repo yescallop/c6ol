@@ -371,7 +371,7 @@ pub fn GameView(
         let (p, out) = calc().canvas_to_board_pos(po.x, po.y);
         let new_cursor = (!out).then_some(p);
 
-        if new_cursor != cursor_pos.get() {
+        if new_cursor != cursor_pos.get_untracked() {
             cursor_pos.set(new_cursor);
         }
         new_cursor
