@@ -32,6 +32,7 @@ enum Confirm {
     MainMenu,
     Submit(Point, Option<Point>),
     Pass(Option<Point>),
+    BeginClaim,
     Claim(ArrayVec<[Point; 2]>, Point, Direction),
     Request(Request),
     Accept(Request),
@@ -254,8 +255,14 @@ pub fn App() -> impl IntoView {
     };
 
     let connect = move |init_msg: ClientMessage| {
-        let host = document().location().unwrap().host().unwrap();
-        let ws = WebSocket::new(&format!("ws://{host}/ws")).unwrap();
+        let proto = if location().protocol().unwrap() == "https:" {
+            "wss:"
+        } else {
+            "ws:"
+        };
+        let host = location().host().unwrap();
+
+        let ws = WebSocket::new(&format!("{proto}//{host}/ws")).unwrap();
         ws.set_binary_type(BinaryType::Arraybuffer);
 
         let onopen = Closure::once(move || send(init_msg));
@@ -367,7 +374,8 @@ pub fn App() -> impl IntoView {
 
                     if let Some(WinClaim::Ready(p, dir)) = claim {
                         if !tentatives.is_empty() {
-                            record.make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
+                            record
+                                .make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
                         }
                         record.make_move(Move::Win(p, dir));
                     } else {
@@ -473,6 +481,9 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::ClaimWin => {
             if win_claim.get().is_none() {
                 win_claim.set(Some(WinClaim::PendingPoint));
+                if online() {
+                    confirm(Confirm::BeginClaim);
+                }
             } else {
                 win_claim.set(None);
             }
@@ -532,6 +543,7 @@ pub fn App() -> impl IntoView {
                     Confirm::Submit(p1, p2) => send(ClientMessage::Place(p1, p2)),
                     Confirm::Pass(None) => send(ClientMessage::Pass),
                     Confirm::Pass(Some(p)) => send(ClientMessage::Place(p, None)),
+                    Confirm::BeginClaim => {}
                     Confirm::Claim(tentatives, p, dir) => {
                         if !tentatives.is_empty() {
                             send(ClientMessage::Place(

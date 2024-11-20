@@ -12,9 +12,9 @@ use web_sys::{
 };
 
 const BOARD_COLOR: &str = "#ffcc66";
-const CURSOR_COLOR_ACTIVE: &str = "darkred";
+const CURSOR_COLOR_ACTIVE: &str = "firebrick";
 const CURSOR_COLOR_INACTIVE: &str = "grey";
-const WIN_RING_COLOR: &str = "darkred";
+const WIN_RING_COLOR: &str = "seagreen";
 
 const DEFAULT_VIEW_SIZE: i16 = 15;
 
@@ -27,9 +27,9 @@ const STONE_RADIUS_RATIO: f64 = 2.25;
 const DOT_RADIUS_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
 const WIN_RING_WIDTH_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
 
-const CURSOR_LINE_WIDTH_RATIO: f64 = 16.0;
-const CURSOR_OFFSET_RATIO: f64 = 8.0;
-const CURSOR_SIDE_RATIO: f64 = 4.0;
+const CURSOR_LINE_WIDTH_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
+const CURSOR_SIDE_RATIO: f64 = 4.25;
+const CURSOR_OFFSET_RATIO: f64 = CURSOR_SIDE_RATIO * 2.0;
 
 const PHANTOM_MOVE_OPACITY: f64 = 0.5;
 
@@ -282,23 +282,20 @@ pub fn GameView(
             let new_claim = match claim {
                 WinClaim::PendingPoint | WinClaim::Ready(..) => WinClaim::PendingDirection(cursor),
                 WinClaim::PendingDirection(p) => {
-                    let dx = cursor.x - p.x;
-                    let dy = cursor.y - p.y;
+                    let Some(dir) = Direction::from_unit_vec(
+                        (cursor.x - p.x).signum(),
+                        (cursor.y - p.y).signum(),
+                    ) else {
+                        return;
+                    };
 
-                    if dx == 0 && dy == 0 {
-                        WinClaim::PendingPoint
-                    } else if dx == 0 || dy == 0 || dx.abs() == dy.abs() {
-                        let dir = Direction::from_unit_vec(dx.signum(), dy.signum()).unwrap();
-
-                        if record.write_untracked().with_temp_placements(
-                            stone,
-                            &tentatives,
-                            |record| record.test_winning_row(p, dir).is_some(),
-                        ) {
-                            WinClaim::Ready(p, dir)
-                        } else {
-                            WinClaim::PendingDirection(cursor)
-                        }
+                    if record
+                        .write_untracked()
+                        .with_temp_placements(stone, &tentatives, |record| {
+                            record.test_winning_row(p, dir) == Some(cursor)
+                        })
+                    {
+                        WinClaim::Ready(p, dir)
                     } else {
                         WinClaim::PendingDirection(cursor)
                     }
