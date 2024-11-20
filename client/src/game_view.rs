@@ -602,12 +602,16 @@ pub fn GameView(
             return;
         }
 
-        // We can also get a `mouseover` event, because Firefox does not fire a
-        // `pointerover` event after a dialog is closed.
         if let Some(id) = po.id {
             if let Some(pointer) = state.down_pointers.get_mut(&id) {
                 pointer.last = po;
             }
+        } else {
+            // Firefox does not fire a `pointerover` event after a dialog is closed,
+            // so we accept `mouseover` as a replacement. We bail out here, because
+            // it is spuriously fired on Chrome when touching the screen on startup
+            // or after a dialog is closed.
+            return;
         }
 
         if state.down_pointers.is_empty() {
