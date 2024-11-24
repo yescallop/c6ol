@@ -8,7 +8,7 @@ publish = false
 base64 = "0.22"
 c6ol-core = { path = "../core" }
 console_error_panic_hook = "0.1.7"
-leptos = { version = "=0.7.0-rc1", features = ["csr"] }
+leptos = { version = "=0.7.0-rc2", features = ["csr"] }
 paste = "1"
 ron = "0.8"
 serde = "1"
