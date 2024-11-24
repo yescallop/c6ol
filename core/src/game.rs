@@ -205,12 +205,12 @@ impl Stone {
 }
 
 /// Allows room for extension. Equals (2^7-11^2).
-const MOVE_STONE_OFFSET: u32 = 7;
+const MOVE_STONE_OFFSET: u64 = 7;
 
-const MOVE_PASS: u32 = 0;
-const MOVE_WIN: u32 = 1;
-const MOVE_DRAW: u32 = 2;
-const MOVE_RESIGN: u32 = 3;
+const MOVE_PASS: u64 = 0;
+const MOVE_WIN: u64 = 1;
+const MOVE_DRAW: u64 = 2;
+const MOVE_RESIGN: u64 = 3;
 
 /// A move made by one player or both players.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -241,8 +241,8 @@ impl Move {
         match self {
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
-                    let x = p.index() + MOVE_STONE_OFFSET;
-                    buf.put_u32_varint(x);
+                    let x = p.index() as u64 + MOVE_STONE_OFFSET;
+                    buf.put_u64_varint(x);
                 }
                 if p2.is_none() && !compact {
                     buf.put_u8(MOVE_PASS as u8);
@@ -267,17 +267,17 @@ impl Move {
     /// If `first`, eagerly returns a 1-stone move.
     #[must_use]
     pub fn decode(buf: &mut &[u8], first: bool) -> Option<Self> {
-        let x = buf.try_get_u32_varint().ok()?;
-        if x >= MOVE_STONE_OFFSET {
-            let p1 = Point::from_index(x - MOVE_STONE_OFFSET);
+        let x = buf.try_get_u64_varint().ok()?;
+        if let Some(i) = x.checked_sub(MOVE_STONE_OFFSET) {
+            let p1 = Point::from_index(i.try_into().ok()?);
             if first || !buf.has_remaining() {
                 return Some(Self::Place(p1, None));
             }
 
             let mut p2 = None;
-            let x = buf.try_get_u32_varint().ok()?;
-            if x >= MOVE_STONE_OFFSET {
-                p2 = Some(Point::from_index(x - MOVE_STONE_OFFSET));
+            let x = buf.try_get_u64_varint().ok()?;
+            if let Some(i) = x.checked_sub(MOVE_STONE_OFFSET) {
+                p2 = Some(Point::from_index(i.try_into().ok()?));
             } else if x != MOVE_PASS {
                 return None;
             }
