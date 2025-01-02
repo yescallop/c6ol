@@ -90,7 +90,9 @@ async fn handle_websocket(
                 Err(err) => Some(Err(err.into())),
             })
         })
-        .with(|msg: ServerMessage| future::ok::<_, axum::Error>(Message::Binary(msg.encode())));
+        .with(|msg: ServerMessage| {
+            future::ok::<_, axum::Error>(Message::Binary(msg.encode().into()))
+        });
 
     let mut game;
 

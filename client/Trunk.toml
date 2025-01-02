@@ -5,7 +5,7 @@ minify = "on_release"
 no_sri = true
 
 [tools]
-wasm_opt = "version_120_b"
+wasm_opt = "version_121"
 
 [[proxy]]
 backend = "ws://localhost:8086/ws"

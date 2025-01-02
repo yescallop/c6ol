@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use c6ol_core::game::{Move, Point, Record};
 
 #[test]

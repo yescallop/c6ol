@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 c6ol-core = { path = "../core" }
 clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
