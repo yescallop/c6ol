@@ -30,7 +30,7 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 
 ## Setup
 
-Install Rust 1.82+ and [Trunk](https://trunkrs.dev/). To develop, run:
+Install Rust 1.84+ and [Trunk](https://trunkrs.dev/). To develop, run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol

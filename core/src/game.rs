@@ -104,7 +104,7 @@ fn elegant_pair(x: u16, y: u16) -> u32 {
 
 /// Maps one natural number to two (undoes `elegant_pair`).
 fn elegant_unpair(z: u32) -> (u16, u16) {
-    let s = (z as f64).sqrt() as u32;
+    let s = z.isqrt();
     let t = z - s * s;
     if t < s {
         (t as u16, s as u16)
