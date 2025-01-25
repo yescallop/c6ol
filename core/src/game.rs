@@ -9,7 +9,7 @@ use std::{collections::HashMap, iter};
 pub enum Direction {
     /// North, with a unit vector of `(0, -1)`.
     North,
-    /// Northeast, with a unit vector of `(-1, 1)`.
+    /// Northeast, with a unit vector of `(1, -1)`.
     Northeast,
     /// East, with a unit vector of `(1, 0)`.
     East,
@@ -17,7 +17,7 @@ pub enum Direction {
     Southeast,
     /// South, with a unit vector of `(0, 1)`.
     South,
-    /// Southwest, with a unit vector of `(1, -1)`.
+    /// Southwest, with a unit vector of `(-1, 1)`.
     Southwest,
     /// West, with a unit vector of `(-1, 0)`.
     West,
@@ -55,11 +55,11 @@ impl Direction {
     pub fn from_unit_vec(dx: i16, dy: i16) -> Option<Self> {
         Some(match (dx, dy) {
             (0, -1) => Self::North,
-            (-1, 1) => Self::Northeast,
+            (1, -1) => Self::Northeast,
             (1, 0) => Self::East,
             (1, 1) => Self::Southeast,
             (0, 1) => Self::South,
-            (1, -1) => Self::Southwest,
+            (-1, 1) => Self::Southwest,
             (-1, 0) => Self::West,
             (-1, -1) => Self::Northwest,
             _ => return None,
@@ -71,11 +71,11 @@ impl Direction {
     pub fn unit_vec(self) -> (i16, i16) {
         match self {
             Self::North => (0, -1),
-            Self::Northeast => (-1, 1),
+            Self::Northeast => (1, -1),
             Self::East => (1, 0),
             Self::Southeast => (1, 1),
             Self::South => (0, 1),
-            Self::Southwest => (1, -1),
+            Self::Southwest => (-1, 1),
             Self::West => (-1, 0),
             Self::Northwest => (-1, -1),
         }
