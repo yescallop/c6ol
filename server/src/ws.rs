@@ -101,7 +101,7 @@ async fn handle_websocket(
             game = manager.new_game().await;
             game.authenticate(passcode)
                 .await
-                .ok_or(Error::WrongPasscode)?;
+                .expect("should be able to authenticate");
 
             let msg = ServerMessage::Started(
                 game.stone().expect("should be authenticated"),

@@ -480,12 +480,7 @@ impl Record {
 
     /// Returns an iterator of adjacent positions occupied by `stone`
     /// in the direction `dir`, starting from `p` (exclusive).
-    fn scan(
-        &self,
-        p: Point,
-        dir: Direction,
-        stone: Stone,
-    ) -> impl Iterator<Item = Point> + use<'_> {
+    fn scan(&self, p: Point, dir: Direction, stone: Stone) -> impl Iterator<Item = Point> + '_ {
         p.adjacent_iter(dir)
             .take_while(move |&p| self.stone_at(p) == Some(stone))
     }
@@ -528,8 +523,8 @@ impl Record {
             assert!(self.map.insert(p, stone).is_none());
         }
         let res = f(self);
-        for &p in positions {
-            self.map.remove(&p);
+        for p in positions {
+            self.map.remove(p);
         }
         res
     }
