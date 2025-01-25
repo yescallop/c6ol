@@ -482,12 +482,12 @@ pub fn GameView(
 
         let (dx, dy) = DIRECTION_OFFSETS[direction as usize];
         if code.starts_with("Key") {
-            if let Some(cursor) = &mut *cursor_pos.write() {
+            if let Some(mut cursor) = cursor_pos.get() {
                 cursor.x += dx;
                 cursor.y += dy;
+                cursor_pos.set(Some(cursor));
 
                 // If the cursor is going out of view, adjust the view center to keep up.
-                let cursor = *cursor;
                 if calc().board_to_view_pos(cursor).is_none() {
                     view_center.update(|p| {
                         p.x += dx;
