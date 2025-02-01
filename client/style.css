@@ -1,11 +1,15 @@
 body {
   /* Remove the default 8px margin from body. */
   margin: 0;
-  background-color: #ffcc66;
+  background-color: #fc6;
   font-family: sans-serif;
 
   /* Avoid refresh on overscroll. */
   overscroll-behavior-y: contain;
+}
+
+body::backdrop {
+  background-color: #fc6;
 }
 
 /* Use `svh` to prevent overflow on mobile due to the hidable address bar. */

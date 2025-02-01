@@ -11,7 +11,7 @@ use web_sys::{
     KeyboardEvent, MouseEvent, PointerEvent, ResizeObserver, WheelEvent,
 };
 
-const BOARD_COLOR: &str = "#ffcc66";
+const BOARD_COLOR: &str = "#fc6";
 const CURSOR_COLOR_ACTIVE: &str = "firebrick";
 const CURSOR_COLOR_INACTIVE: &str = "grey";
 const WIN_RING_COLOR: &str = "seagreen";
