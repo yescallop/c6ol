@@ -321,7 +321,7 @@ pub fn App() -> impl IntoView {
             } else {
                 record.write().clear();
             }
-            stone.set(record.read().turn());
+            stone.set(record.read_untracked().turn());
             return;
         }
 

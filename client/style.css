@@ -3,6 +3,9 @@ body {
   margin: 0;
   background-color: #ffcc66;
   font-family: sans-serif;
+
+  /* Avoid refresh on overscroll. */
+  overscroll-behavior-y: contain;
 }
 
 /* Use `svh` to prevent overflow on mobile due to the hidable address bar. */
@@ -125,6 +128,8 @@ button {
     Touch input by default triggers browser behavior such as refresh and zooming.
     Disable it to make the pointer events fire.
   */
-  /* FIXME: This does not work correctly with Safari. */
   touch-action: none;
+
+  /* Avoid selecting the canvas on WebKit. */
+  -webkit-user-select: none;
 }
