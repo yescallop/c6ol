@@ -1,9 +1,1 @@
-<svg viewBox="0 0 184 184" xmlns="http://www.w3.org/2000/svg">
-    <rect width="184" height="184" fill="#fc6" />
-    <line x1="0" y1="56" x2="184" y2="56" stroke="black" stroke-width="3" />
-    <line x1="0" y1="128" x2="184" y2="128" stroke="black" stroke-width="3" />
-    <line x1="56" y1="0" x2="56" y2="184" stroke="black" stroke-width="3" />
-    <line x1="128" y1="0" x2="128" y2="184" stroke="black" stroke-width="3" />
-    <circle cx="128" cy="56" r="32" fill="white" />
-    <circle cx="56" cy="128" r="32" fill="black" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 184 184"><path fill="#fc6" d="M0 0h184v184H0"/><path stroke="#000" stroke-width="3" d="M0 56h184M0 128h184M56 0v184M128 0v184"/><circle cx="56" cy="128" r="32"/><circle cx="128" cy="56" r="32" fill="#fff"/></svg>
