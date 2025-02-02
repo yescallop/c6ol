@@ -448,6 +448,11 @@ pub fn GameView(
             "Escape" => {
                 // Required for the dialog not to close immediately.
                 ev.prevent_default();
+
+                if ev.repeat() {
+                    return;
+                }
+
                 state.write_value().abort_long_press();
                 return on_event(Event::Menu);
             }
@@ -538,7 +543,7 @@ pub fn GameView(
 
     // Handles `pointerdown` events.
     let on_pointerdown = move |ev: PointerEvent| {
-        let po: PointerOffsets = ev.into();
+        let po: PointerOffsets = ev.clone().into();
 
         let mut state = state.write_value();
         let (p, _) = calc().canvas_to_board_pos(po.x, po.y);
@@ -552,6 +557,10 @@ pub fn GameView(
         );
 
         if state.down_pointers.len() == 1 {
+            if ev.pointer_type() != "touch" {
+                return;
+            }
+
             let handle =
                 set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
                     .unwrap();
