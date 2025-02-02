@@ -4,6 +4,7 @@ use leptos::{ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
     f64, iter,
+    time::Duration,
 };
 use tinyvec::ArrayVec;
 use web_sys::{
@@ -39,6 +40,8 @@ const MOVE_TEXT_OPACITY: f64 = 0.5;
 
 const DIST_FOR_PINCH_ZOOM: f64 = 2.0 * 96.0 / 2.54; // 2cm
 const DIST_FOR_SWIPE_RETRACT: f64 = 4.0 * 96.0 / 2.54; // 4cm
+
+const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
 /// Represents `pointerId`, `offsetX` and `offsetY` fields
 /// of a `PointerEvent` or `MouseEvent`.
@@ -125,6 +128,16 @@ struct State {
     last_hover_before_enabled: Option<PointerOffsets>,
     // See comments at `PointerState`.
     pointer_state: PointerState,
+    // Open a game menu after a long press of duration `LONG_PRESS_MENU_TIMEOUT`.
+    long_press_handle: Option<TimeoutHandle>,
+}
+
+impl State {
+    fn abort_long_press(&mut self) {
+        if let Some(handle) = self.long_press_handle.take() {
+            handle.clear();
+        }
+    }
 }
 
 enum ClampTo {
@@ -435,6 +448,7 @@ pub fn GameView(
             "Escape" => {
                 // Required for the dialog not to close immediately.
                 ev.prevent_default();
+                state.write_value().abort_long_press();
                 return on_event(Event::Menu);
             }
             "KeyW" | "ArrowUp" => 0,
@@ -519,6 +533,7 @@ pub fn GameView(
             },
             Some(MouseEvent::from(ev).into()),
         );
+        state.write_value().abort_long_press();
     };
 
     // Handles `pointerdown` events.
@@ -536,12 +551,18 @@ pub fn GameView(
             },
         );
 
-        if state.down_pointers.len() == 2 {
+        if state.down_pointers.len() == 1 {
+            let handle =
+                set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
+                    .unwrap();
+            state.long_press_handle = Some(handle);
+        } else if state.down_pointers.len() == 2 {
             state.prev_view_size = view_size.get();
             state.pointer_state = PointerState::Pinched;
             if cursor_pos.get().is_some() {
                 cursor_pos.set(None);
             }
+            state.abort_long_press();
         }
     };
 
@@ -570,6 +591,7 @@ pub fn GameView(
         if let Some(cursor) = update_cursor(ev.into()) {
             hit_cursor(cursor);
         }
+        state.abort_long_press();
     };
 
     // Handles `pointerover`, `pointermove` and `mouseover` events.
@@ -620,6 +642,7 @@ pub fn GameView(
 
             if follow_board_pos_on_down(&state.down_pointers) {
                 state.pointer_state = PointerState::Moved;
+                state.abort_long_press();
             }
         } else if state.down_pointers.len() == 2 {
             if state.pointer_state > PointerState::Pinched {
@@ -668,6 +691,7 @@ pub fn GameView(
         }
         if state.down_pointers.is_empty() {
             state.pointer_state = PointerState::Calm;
+            state.abort_long_press();
         }
         if state.last_hover_before_enabled.and_then(|po| po.id) == po.id {
             state.last_hover_before_enabled = None;
@@ -1036,6 +1060,7 @@ pub fn GameView(
                 on:mouseleave=move |ev| on_leave(ev.into())
                 on:contextmenu=move |ev| {
                     ev.prevent_default();
+                    state.write_value().abort_long_press();
                     on_event(Event::Menu);
                 }
             />
