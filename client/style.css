@@ -55,7 +55,7 @@ a {
 input[type="text"] {
   text-align: center;
   /* More consistent than the `size` attribute. */
-  width: 8.5em;
+  width: 9em;
 }
 
 button {
