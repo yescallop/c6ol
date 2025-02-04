@@ -2,7 +2,6 @@
 
 use crate::game::{Direction, Move, Point, Record, Stone};
 use bytes::{Buf, BufMut};
-use bytes_varint::try_get_fixed::TryGetFixedSupport;
 use std::{iter, mem};
 use strum::{EnumDiscriminants, FromRepr};
 

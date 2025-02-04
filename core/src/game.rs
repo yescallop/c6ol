@@ -1,7 +1,7 @@
 //! Connect6 game logic, record, and serialization.
 
 use bytes::{Buf, BufMut};
-use bytes_varint::{try_get_fixed::TryGetFixedSupport, VarIntSupport, VarIntSupportMut};
+use bytes_varint::{VarIntSupport, VarIntSupportMut};
 use std::{collections::HashMap, iter};
 
 /// A direction on the board.
