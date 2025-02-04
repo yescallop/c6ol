@@ -18,6 +18,7 @@ use web_sys::{
     BinaryType, CloseEvent, MessageEvent, Storage, WebSocket,
 };
 
+#[allow(unused)]
 macro_rules! console_log {
     ($($t:tt)*) => {
         web_sys::console::log_1(
@@ -25,6 +26,7 @@ macro_rules! console_log {
         )
     };
 }
+#[allow(unused)]
 pub(crate) use console_log;
 
 #[derive(Clone)]

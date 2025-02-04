@@ -1,36 +1,35 @@
-use crate::{console_log, Event, WinClaim};
+use crate::{Event, WinClaim};
 use c6ol_core::game::{Direction, Move, Point, Record, Stone};
-use leptos::{ev, html, prelude::*};
+use leptos::{either::EitherOf3, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
-    f64, iter,
+    f64,
+    fmt::Write as _,
+    iter,
     time::Duration,
 };
 use tinyvec::ArrayVec;
 use web_sys::{
-    js_sys::Array, wasm_bindgen::prelude::*, CanvasRenderingContext2d, HtmlCanvasElement,
-    KeyboardEvent, MouseEvent, PointerEvent, ResizeObserver, WheelEvent,
+    wasm_bindgen::prelude::*, CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent,
+    MouseEvent, PointerEvent, WheelEvent,
 };
 
-const BOARD_COLOR: &str = "#fc6";
 const CURSOR_COLOR_ACTIVE: &str = "firebrick";
-const CURSOR_COLOR_INACTIVE: &str = "grey";
+const CURSOR_COLOR_INACTIVE: &str = "gray";
 const WIN_RING_COLOR: &str = "seagreen";
 
 const DEFAULT_VIEW_SIZE: i16 = 15;
 
-// Divide `gridSize` by the following ratios to get the corresponding lengths.
+const LINE_WIDTH: f32 = 1.0 / 24.0;
+const LINE_DASH: f32 = 1.0 / 5.0;
 
-const LINE_WIDTH_RATIO: f64 = 24.0;
-const LINE_DASH_RATIO: f64 = 5.0;
+const STONE_RADIUS: f32 = 1.0 / 2.25;
+const DOT_RADIUS: f32 = STONE_RADIUS / 6.0;
+const WIN_RING_WIDTH: f32 = STONE_RADIUS / 6.0;
 
-const STONE_RADIUS_RATIO: f64 = 2.25;
-const DOT_RADIUS_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
-const WIN_RING_WIDTH_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
-
-const CURSOR_LINE_WIDTH_RATIO: f64 = STONE_RADIUS_RATIO * 6.0;
-const CURSOR_SIDE_RATIO: f64 = 4.25;
-const CURSOR_OFFSET_RATIO: f64 = CURSOR_SIDE_RATIO * 2.0;
+const CURSOR_LINE_WIDTH: f32 = STONE_RADIUS / 6.0;
+const CURSOR_SIDE: f32 = 1.0 / 4.25;
+const CURSOR_OFFSET: f32 = CURSOR_SIDE / 2.0;
 
 const PHANTOM_MOVE_OPACITY: f64 = 0.5;
 
@@ -147,7 +146,6 @@ enum ClampTo {
 
 struct Calc {
     view_size: i16,
-    grid_size: f64,
     view_center: Point,
 }
 
@@ -157,24 +155,11 @@ impl Calc {
         x < 0 || x >= self.view_size || y < 0 || y >= self.view_size
     }
 
-    /// Converts a canvas position to view position, testing if it is out of view.
-    fn canvas_to_view_pos(&self, x: i32, y: i32) -> (Point, bool) {
-        let x = (x as f64 / self.grid_size).round() as i16 - 1;
-        let y = (y as f64 / self.grid_size).round() as i16 - 1;
-        (Point { x, y }, self.view_pos_out_of_view(x, y))
-    }
-
     /// Converts a view position to board position.
     fn view_to_board_pos(&self, p: Point) -> Point {
         let x = p.x - self.view_size / 2 + self.view_center.x;
         let y = p.y - self.view_size / 2 + self.view_center.y;
         Point { x, y }
-    }
-
-    /// Converts a canvas position to board position, testing if it is out of view.
-    fn canvas_to_board_pos(&self, x: i32, y: i32) -> (Point, bool) {
-        let (p, out) = self.canvas_to_view_pos(x, y);
-        (self.view_to_board_pos(p), out)
     }
 
     fn board_to_view_pos_unclamped(&self, p: Point) -> (i16, i16) {
@@ -200,21 +185,46 @@ impl Calc {
         };
         (Point::new(x.clamp(min, max), y.clamp(min, max)), out)
     }
+}
 
-    /// Converts a view position to canvas position.
-    fn view_to_canvas_pos(&self, p: Point) -> (f64, f64) {
-        let x = (p.x + 1) as f64 * self.grid_size;
-        let y = (p.y + 1) as f64 * self.grid_size;
-        (x, y)
+struct SvgCalc {
+    calc: Calc,
+    grid_size: f64,
+    view_x: f64,
+    view_y: f64,
+}
+
+impl SvgCalc {
+    /// Converts an SVG position to view position, testing if it is out of view.
+    fn svg_to_view_pos(&self, x: i32, y: i32) -> (Point, bool) {
+        let x = ((x as f64 - self.view_x) / self.grid_size).round() as i16 - 1;
+        let y = ((y as f64 - self.view_y) / self.grid_size).round() as i16 - 1;
+        (Point { x, y }, self.calc.view_pos_out_of_view(x, y))
+    }
+
+    /// Converts an SVG position to board position, testing if it is out of view.
+    fn svg_to_board_pos(&self, x: i32, y: i32) -> (Point, bool) {
+        let (p, out) = self.svg_to_view_pos(x, y);
+        (self.calc.view_to_board_pos(p), out)
     }
 }
 
-fn context_2d(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
-    canvas
+fn canvas_context_2d() -> CanvasRenderingContext2d {
+    document()
+        .create_element("canvas")
+        .unwrap()
+        .unchecked_into::<HtmlCanvasElement>()
         .get_context("2d")
         .unwrap()
         .unwrap()
         .unchecked_into::<CanvasRenderingContext2d>()
+}
+
+fn stone_fill(stone: Stone) -> &'static str {
+    match stone {
+        Stone::Black => "black",
+        Stone::White => "white",
+    }
 }
 
 /// The game view component.
@@ -223,7 +233,7 @@ fn context_2d(canvas: HtmlCanvasElement) -> CanvasRenderingContext2d {
 ///
 /// - Board position is in grids, relative to the origin of the board.
 /// - View position is in grids, relative to the top-left corner of the view.
-/// - Canvas position is in pixels, relative to the top-left corner of the canvas.
+/// - SVG position is in pixels, relative to the top-left corner of the SVG element.
 ///
 /// All `Point`s in the props are board positions.
 #[component]
@@ -249,28 +259,42 @@ pub fn GameView(
     let disabled = Memo::new(move |_| disabled());
 
     let container_ref = NodeRef::<html::Div>::new();
-    let canvas_ref = NodeRef::<html::Canvas>::new();
 
     // Non-reactive state.
     let state = StoredValue::<State>::default();
 
-    // Pixel size of the canvas.
-    let canvas_size = RwSignal::new(0.0);
-
-    // Pixel size of a single grid on the canvas.
-    let grid_size = Memo::new(move |_| canvas_size.get() / (view_size.get() + 1) as f64);
-
-    // Gets a calculator.
+    // Creates a view-board position calculator.
     let calc = move || Calc {
         view_size: view_size.get(),
-        grid_size: grid_size.get(),
         view_center: view_center.get(),
+    };
+
+    // Creates an SVG-view-board position calculator.
+    let svg_calc = move || {
+        let rect = container_ref.get().unwrap().get_bounding_client_rect();
+        let w = rect.width();
+        let h = rect.height();
+
+        let calc = calc();
+        let s = (calc.view_size + 1) as f64;
+
+        let (grid_size, view_x, view_y) = if w > h {
+            (h / s, (w - h) / 2.0, 0.0)
+        } else {
+            (w / s, 0.0, (h - w) / 2.0)
+        };
+        SvgCalc {
+            calc,
+            grid_size,
+            view_x,
+            view_y,
+        }
     };
 
     // Tests if it is our turn to play.
     let our_turn = move || {
-        let stone = stone.get_untracked();
-        stone.is_some() && stone == record.read_untracked().turn()
+        let stone = stone.get();
+        stone.is_some() && stone == record.read().turn()
     };
 
     // Hits the cursor.
@@ -360,7 +384,7 @@ pub fn GameView(
     let follow_board_pos_on_down = move |down_pointers: &HashMap<i32, Pointer>| {
         let pointer = down_pointers.values().next().unwrap();
         let p0 = pointer.board_pos_on_down;
-        let (p, _) = calc().canvas_to_board_pos(pointer.last.x, pointer.last.y);
+        let (p, _) = svg_calc().svg_to_board_pos(pointer.last.x, pointer.last.y);
 
         let (dx, dy) = (p.x - p0.x, p.y - p0.y);
         if dx != 0 || dy != 0 {
@@ -378,10 +402,10 @@ pub fn GameView(
     //
     // Returns the new cursor position.
     let update_cursor = move |po: PointerOffsets| {
-        let (p, out) = calc().canvas_to_board_pos(po.x, po.y);
+        let (p, out) = svg_calc().svg_to_board_pos(po.x, po.y);
         let new_cursor = (!out).then_some(p);
 
-        if new_cursor != cursor_pos.get_untracked() {
+        if new_cursor != cursor_pos.get() {
             cursor_pos.set(new_cursor);
         }
         new_cursor
@@ -546,7 +570,7 @@ pub fn GameView(
         let po: PointerOffsets = ev.clone().into();
 
         let mut state = state.write_value();
-        let (p, _) = calc().canvas_to_board_pos(po.x, po.y);
+        let (p, _) = svg_calc().svg_to_board_pos(po.x, po.y);
         state.down_pointers.insert(
             po.id.unwrap(),
             Pointer {
@@ -719,91 +743,31 @@ pub fn GameView(
         }
     });
 
-    // Draws the view.
-    let draw = move || {
-        console_log!("draw");
+    Effect::new(move || {
+        record.track();
+        stone.track();
 
-        let ctx = context_2d(canvas_ref.get().unwrap());
+        // Clear phantom, tentatives and win claim if the record or the stone changed.
+        phantom_pos.set(None);
+        tentatives_pos.set(ArrayVec::new());
+        win_claim.set(None);
+    });
 
-        let size = canvas_size.get();
-        let view_size = view_size.get();
-        let grid_size = grid_size.get();
-        let calc = calc();
+    let handle = window_event_listener(ev::keydown, on_keydown);
+    on_cleanup(move || handle.remove());
 
-        let set_fill_style_by_stone = |stone: Stone| {
-            ctx.set_fill_style_str(match stone {
-                Stone::Black => "black",
-                Stone::White => "white",
-            });
-        };
-
-        // Draws a circle at a view position with the given radius.
-        let draw_circle = |p: Point, r: f64| {
-            let (x, y) = calc.view_to_canvas_pos(p);
-            ctx.begin_path();
-            ctx.arc(x, y, r, 0.0, f64::consts::TAU).unwrap();
-            ctx.fill();
-        };
-
-        // Draw the board background.
-        ctx.set_fill_style_str(BOARD_COLOR);
-        ctx.fill_rect(0.0, 0.0, size, size);
-
-        ctx.set_stroke_style_str("black");
-        ctx.set_line_width(grid_size / LINE_WIDTH_RATIO);
-
-        // Draw the solid lines inside the view.
-        ctx.begin_path();
-        for i in 1..=view_size {
-            let offset = grid_size * i as f64;
-            ctx.move_to(grid_size, offset);
-            ctx.line_to(size - grid_size, offset);
-            ctx.move_to(offset, grid_size);
-            ctx.line_to(offset, size - grid_size);
-        }
-        ctx.stroke();
-
-        let segment = JsValue::from_f64(grid_size / LINE_DASH_RATIO);
-        let segments = Array::of2(&segment, &segment);
-
-        // Draw the dashed lines outside the view.
-        ctx.begin_path();
-        ctx.set_line_dash(&segments).unwrap();
-        for i in 1..=view_size {
-            let offset = grid_size * i as f64;
-            ctx.move_to(0.0, offset);
-            ctx.line_to(grid_size, offset);
-            ctx.move_to(size - grid_size, offset);
-            ctx.line_to(size, offset);
-
-            ctx.move_to(offset, 0.0);
-            ctx.line_to(offset, grid_size);
-            ctx.move_to(offset, size - grid_size);
-            ctx.line_to(offset, size);
-        }
-        ctx.stroke();
-        ctx.set_line_dash(&Array::new()).unwrap();
-
-        let record = record.read_untracked();
-        let dot_radius = grid_size / DOT_RADIUS_RATIO;
-
-        // Draw the board origin.
-        let origin = Point::default();
-        if let Some(p) = calc.board_to_view_pos(origin) {
-            if record.stone_at(origin).is_none() {
-                ctx.set_fill_style_str("black");
-                draw_circle(p, dot_radius);
-            }
-        }
-
+    let stones = move || {
+        let record = record.read();
         let moves = record.moves();
         let move_index = record.move_index();
-        let stone_radius = grid_size / STONE_RADIUS_RATIO;
-        // We project the out-of-view stones onto the view border,
-        // and stores the resulting positions in this set.
+
+        let mut blacks = vec![];
+        let mut whites = vec![];
+        let mut grays = vec![];
+
+        let calc = calc();
         let mut out_pos = HashSet::new();
 
-        // Draw the stones.
         for (i, &mov) in moves.iter().enumerate().take(move_index) {
             let Move::Place(p1, p2) = mov else {
                 continue;
@@ -812,267 +776,242 @@ pub fn GameView(
 
             for p in iter::once(p1).chain(p2) {
                 let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
-                if out {
-                    out_pos.insert(p);
+                if out && !out_pos.insert(p) {
                     continue;
                 }
 
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
+                let group = if out {
+                    &mut grays
+                } else if stone == Stone::Black {
+                    &mut blacks
+                } else {
+                    &mut whites
+                };
+                group.push(view! { <circle cx=p.x cy=p.y r=STONE_RADIUS /> });
             }
         }
 
-        // Draw the out-of-view stones on the view border.
-        ctx.set_fill_style_str("gray");
-        for p in out_pos {
-            draw_circle(p, stone_radius);
+        view! {
+            <g fill="black">{blacks}</g>
+            <g fill="white">{whites}</g>
+            <g fill="gray">{grays}</g>
         }
+    };
 
-        let draw_win_ring = |p: Point| {
-            let ring_width = grid_size / WIN_RING_WIDTH_RATIO;
-            ctx.set_line_width(ring_width);
+    let win_rings = move |p: Point, dir: Option<Direction>, color: &'static str| {
+        let calc = calc();
+        let rings = iter::once(p)
+            .chain(dir.iter().flat_map(|&d| p.adjacent_iter(d).take(5)))
+            .filter_map(|p| calc.board_to_view_pos(p))
+            .map(|p| view! { <circle cx=p.x cy=p.y r=STONE_RADIUS - WIN_RING_WIDTH / 2.0 /> })
+            .collect::<Vec<_>>();
+        view! {
+            <g stroke=color stroke-width=WIN_RING_WIDTH>
+                {rings}
+            </g>
+        }
+    };
 
-            let (x, y) = calc.view_to_canvas_pos(p);
-            ctx.begin_path();
-            ctx.arc(x, y, stone_radius - ring_width / 2.0, 0.0, f64::consts::TAU)
-                .unwrap();
-            ctx.stroke();
+    let previous_move = move || {
+        let record = record.read();
+        let Some(mov) = record.prev_move() else {
+            return EitherOf3::A(vec![]);
         };
 
-        let draw_win = |p: Point, dir: Direction| {
-            for p in iter::once(p).chain(p.adjacent_iter(dir).take(5)) {
-                if let Some(p) = calc.board_to_view_pos(p) {
-                    draw_win_ring(p);
-                }
-            }
-        };
-
-        // Draw the previous move.
-        if let Some(mov) = record.prev_move() {
-            let stone = Record::turn_at(move_index - 1);
-            match mov {
-                Move::Place(p1, p2) => {
-                    set_fill_style_by_stone(stone.opposite());
-                    for p in iter::once(p1).chain(p2) {
+        let stone = Record::turn_at(record.move_index() - 1);
+        match mov {
+            Move::Place(p1, p2) => {
+                let calc = calc();
+                let circles = iter::once(p1)
+                    .chain(p2)
+                    .map(|p| {
                         let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
-                        draw_circle(p, dot_radius);
-                    }
-                }
-                Move::Win(p, dir) => {
-                    ctx.set_stroke_style_str(WIN_RING_COLOR);
-                    draw_win(p, dir);
-                }
-                Move::Pass | Move::Draw | Move::Resign(_) => {
-                    let text = match mov {
-                        Move::Pass => "PASS",
-                        Move::Draw => "DRAW",
-                        Move::Resign(_) => "RESIGN",
-                        _ => unreachable!(),
-                    };
-
-                    ctx.set_font("10px sans-serif");
-                    let actual_width = ctx.measure_text(text).unwrap().width();
-                    let expected_width = size / MOVE_TEXT_WIDTH_RATIO;
-                    let font_size = expected_width / actual_width * 10.0;
-
-                    ctx.set_font(&format!("{font_size}px sans-serif"));
-                    ctx.set_text_align("center");
-                    ctx.set_text_baseline("middle");
-
-                    if let Move::Draw = mov {
-                        ctx.set_fill_style_str("grey");
-                    } else {
-                        let stone = match mov {
-                            Move::Resign(stone) => stone,
-                            _ => stone,
-                        };
-                        set_fill_style_by_stone(stone);
-                    }
-
-                    ctx.set_global_alpha(MOVE_TEXT_OPACITY);
-
-                    ctx.fill_text(text, size / 2.0, size / 2.0).unwrap();
-                    if !matches!(mov, Move::Draw) {
-                        ctx.set_line_width(font_size / MOVE_TEXT_BORDER_RATIO);
-                        ctx.set_stroke_style_str("grey");
-                        ctx.stroke_text(text, size / 2.0, size / 2.0).unwrap();
-                    }
-
-                    ctx.set_global_alpha(1.0);
-                }
+                        view! { <circle cx=p.x cy=p.y r=DOT_RADIUS fill=stone_fill(stone.opposite()) /> }
+                    })
+                    .collect();
+                EitherOf3::A(circles)
             }
-        }
+            Move::Win(p, dir) => EitherOf3::B(win_rings(p, Some(dir), WIN_RING_COLOR)),
+            Move::Pass | Move::Draw | Move::Resign(_) => {
+                let text = match mov {
+                    Move::Pass => "PASS",
+                    Move::Draw => "DRAW",
+                    Move::Resign(_) => "RESIGN",
+                    _ => unreachable!(),
+                };
+                let view_size = view_size.get();
 
-        if let Some(stone) = stone.get_untracked() {
-            // Draw the phantom stone.
-            if let Some(p) = phantom_pos
-                .get_untracked()
-                .and_then(|p| calc.board_to_view_pos(p))
-            {
-                ctx.set_global_alpha(PHANTOM_MOVE_OPACITY);
+                let ctx = canvas_context_2d();
+                ctx.set_font("10px sans-serif");
+                let actual_width = ctx.measure_text(text).unwrap().width();
+                let expected_width = (view_size + 1) as f64 / MOVE_TEXT_WIDTH_RATIO;
+                let font_size = expected_width / actual_width * 10.0;
 
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
+                let fill = if let Move::Draw = mov {
+                    "gray"
+                } else {
+                    stone_fill(match mov {
+                        Move::Resign(stone) => stone,
+                        _ => stone,
+                    })
+                };
 
-                ctx.set_global_alpha(1.0);
+                EitherOf3::C(view! {
+                    <text
+                        x=view_size / 2
+                        y=view_size / 2
+                        font-size=font_size as f32
+                        font-family="sans-serif"
+                        text-anchor="middle"
+                        dominant-baseline="middle"
+                        fill=fill
+                        fill-opacity=MOVE_TEXT_OPACITY
+                        stroke="gray"
+                        stroke-width=(font_size / MOVE_TEXT_BORDER_RATIO) as f32
+                        stroke-opacity=MOVE_TEXT_OPACITY
+                    >
+                        {text}
+                    </text>
+                })
             }
-
-            // Draw the tentative stones.
-            for p in tentatives_pos
-                .get_untracked()
-                .into_iter()
-                .filter_map(|p| calc.board_to_view_pos(p))
-            {
-                set_fill_style_by_stone(stone);
-                draw_circle(p, stone_radius);
-
-                ctx.set_fill_style_str("grey");
-                let (x, y) = calc.view_to_canvas_pos(p);
-                ctx.fill_rect(
-                    x - dot_radius,
-                    y - dot_radius,
-                    dot_radius * 2.0,
-                    dot_radius * 2.0,
-                );
-            }
-        }
-
-        // Draw the win claim.
-        if let Some(claim) = win_claim.get_untracked() {
-            match claim {
-                WinClaim::PendingPoint => {}
-                WinClaim::PendingDirection(p) => {
-                    if let Some(p) = calc.board_to_view_pos(p) {
-                        ctx.set_stroke_style_str("grey");
-                        draw_win_ring(p);
-                    }
-                }
-                WinClaim::Ready(p, dir) => {
-                    ctx.set_stroke_style_str("grey");
-                    draw_win(p, dir);
-                }
-            }
-        }
-
-        // Draw the cursor.
-        if let Some(p) = cursor_pos.get().and_then(|p| calc.board_to_view_pos(p)) {
-            let (x, y) = calc.view_to_canvas_pos(p);
-
-            let line_width = grid_size / CURSOR_LINE_WIDTH_RATIO;
-            ctx.set_line_width(line_width);
-
-            let offset = grid_size / CURSOR_OFFSET_RATIO;
-            let side = grid_size / CURSOR_SIDE_RATIO;
-            let in_offset = offset - line_width / 2.0;
-            let out_offset = offset + side;
-
-            ctx.set_stroke_style_str(if our_turn() {
-                CURSOR_COLOR_ACTIVE
-            } else {
-                CURSOR_COLOR_INACTIVE
-            });
-            ctx.begin_path();
-            for (dx, dy) in [(1, 1), (1, -1), (-1, -1), (-1, 1)] {
-                let (dx, dy) = (dx as f64, dy as f64);
-                ctx.move_to(x + in_offset * dx, y + offset * dy);
-                ctx.line_to(x + out_offset * dx, y + offset * dy);
-                ctx.move_to(x + offset * dx, y + in_offset * dy);
-                ctx.line_to(x + offset * dx, y + out_offset * dy);
-            }
-            ctx.stroke();
         }
     };
 
-    let changed = Trigger::new();
+    let phantom_stone = move || {
+        let stone = stone.get()?;
+        let p = calc().board_to_view_pos(phantom_pos.get()?)?;
 
-    Effect::new(move || {
-        record.track();
-        stone.track();
-
-        // Clear phantom, tentatives and win claim if the record or the stone changed.
-        *phantom_pos.write_untracked() = None;
-        *tentatives_pos.write_untracked() = ArrayVec::new();
-        *win_claim.write_untracked() = None;
-
-        changed.notify();
-    });
-
-    Effect::new(move || {
-        phantom_pos.track();
-        tentatives_pos.track();
-        win_claim.track();
-
-        changed.notify();
-    });
-
-    // Resizes the canvas to fit its container.
-    let resize_canvas = move || {
-        let rect = container_ref
-            .get_untracked()
-            .unwrap()
-            .get_bounding_client_rect();
-        let size = rect.width().min(rect.height());
-
-        if canvas_size.get_untracked() == size {
-            return;
-        }
-        canvas_size.set(size);
-
-        let canvas = canvas_ref.get_untracked().unwrap();
-        let size_str = &format!("{size}px")[..];
-        canvas.style(("width", size_str));
-        canvas.style(("height", size_str));
-
-        let dpr = window().device_pixel_ratio();
-        let physical_size = (size * dpr) as u32;
-        canvas.set_width(physical_size);
-        canvas.set_height(physical_size);
-
-        // See: https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio
-        context_2d(canvas).scale(dpr, dpr).unwrap();
+        let circle = view! {
+            <circle
+                cx=p.x
+                cy=p.y
+                r=STONE_RADIUS
+                fill=stone_fill(stone)
+                fill-opacity=PHANTOM_MOVE_OPACITY
+            />
+        };
+        Some(circle)
     };
 
-    // We must put this outside `Effect::new` to make the `Closure`
-    // live as long as the view. Otherwise, the corresponding JS
-    // callback would be invalidated when the `Closure` is dropped.
-    let resize_callback = Closure::<dyn Fn()>::new(resize_canvas);
+    let tentative_stones = move || {
+        let Some(stone) = stone.get() else {
+            return vec![];
+        };
+        let calc = calc();
 
-    Effect::new(move || {
-        resize_canvas();
+        tentatives_pos
+            .get()
+            .iter()
+            .filter_map(|&p| calc.board_to_view_pos(p))
+            .map(|p| {
+                view! {
+                    <circle cx=p.x cy=p.y r=STONE_RADIUS fill=stone_fill(stone) />
+                    <rect
+                        x=p.x as f32 - DOT_RADIUS
+                        y=p.y as f32 - DOT_RADIUS
+                        width=DOT_RADIUS * 2.0
+                        height=DOT_RADIUS * 2.0
+                        fill="gray"
+                    />
+                }
+            })
+            .collect()
+    };
 
-        ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
-            .unwrap()
-            .observe(&container_ref.get_untracked().unwrap());
+    let cursor = move || {
+        let p = calc().board_to_view_pos(cursor_pos.get()?)?;
+        let mut d = String::new();
 
-        // We should only draw after resizing the canvas in case it breaks.
-        Effect::new(move || {
-            changed.track();
-            draw();
-        });
-    });
+        for (dx, dy) in [(1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0)] {
+            let x = p.x as f32 + (CURSOR_OFFSET + CURSOR_SIDE) * dx;
+            let y = p.y as f32 + CURSOR_OFFSET * dy;
+            let dx = -CURSOR_SIDE * dx;
+            let dy = CURSOR_SIDE * dy;
+            write!(d, "M{x} {y}h{dx}v{dy}").unwrap();
+        }
 
-    let handle = window_event_listener(ev::keydown, on_keydown);
-    on_cleanup(move || handle.remove());
+        let stroke = if our_turn() {
+            CURSOR_COLOR_ACTIVE
+        } else {
+            CURSOR_COLOR_INACTIVE
+        };
+        Some(view! { <path stroke=stroke stroke-width=CURSOR_LINE_WIDTH d=d /> })
+    };
 
     view! {
-        <div id="view-container" node_ref=container_ref>
-            <canvas
-                id="view"
-                node_ref=canvas_ref
-                on:wheel=on_wheel
-                on:pointerdown=on_pointerdown
-                on:pointerup=on_pointerup
-                on:pointerover=move |ev| on_hover(ev.into())
-                on:pointermove=move |ev| on_hover(ev.into())
-                on:mouseover=move |ev| on_hover(ev.into())
-                on:pointerleave=move |ev| on_leave(ev.into())
-                on:mouseleave=move |ev| on_leave(ev.into())
-                on:contextmenu=move |ev| {
-                    ev.prevent_default();
-                    state.write_value().abort_long_press();
-                    on_event(Event::Menu);
-                }
-            />
+        <div
+            class="view-container"
+            node_ref=container_ref
+            on:wheel=on_wheel
+            on:pointerdown=on_pointerdown
+            on:pointerup=on_pointerup
+            on:pointerover=move |ev| on_hover(ev.into())
+            on:pointermove=move |ev| on_hover(ev.into())
+            on:mouseover=move |ev| on_hover(ev.into())
+            on:pointerleave=move |ev| on_leave(ev.into())
+            on:mouseleave=move |ev| on_leave(ev.into())
+            on:keydown=on_keydown
+            on:contextmenu=move |ev| {
+                ev.prevent_default();
+                state.write_value().abort_long_press();
+                on_event(Event::Menu);
+            }
+        >
+            <svg
+                class="view"
+                viewBox=move || format!("-1 -1 {s} {s}", s = view_size.get() + 1)
+                fill="none"
+            >
+                // Draw the grids.
+                <g stroke="black" stroke-width=LINE_WIDTH>
+                    // Draw the solid lines inside the view.
+                    <path d=move || {
+                        let mut d = String::new();
+                        let s = view_size.get() - 1;
+                        for i in 0..=s {
+                            write!(d, "M0 {i}h{s}M{i} 0v{s}").unwrap();
+                        }
+                        d
+                    } />
+                    // Draw the dashed lines outside the view.
+                    <path
+                        stroke-dasharray=LINE_DASH
+                        d=move || {
+                            let mut d = String::new();
+                            let s = view_size.get() - 1;
+                            for i in 0..=s {
+                                write!(d, "M-1 {i}h1M{s} {i}h1M{i} -1v1M{i} {s}v1").unwrap();
+                            }
+                            d
+                        }
+                    />
+                </g>
+                // Draw the board origin.
+                {move || {
+                    let p = calc().board_to_view_pos(Point::ORIGIN)?;
+                    if record.read().stone_at(Point::ORIGIN).is_none() {
+                        Some(view! { <circle cx=p.x cy=p.y r=DOT_RADIUS fill="black" /> })
+                    } else {
+                        None
+                    }
+                }}
+                // Draw the stones.
+                {stones}
+                // Draw the previous move.
+                {previous_move}
+                // Draw the phantom stone.
+                {phantom_stone}
+                // Draw the tentative stones.
+                {tentative_stones}
+                // Draw the win claim.
+                {move || match win_claim.get()? {
+                    WinClaim::PendingPoint => None,
+                    WinClaim::PendingDirection(p) => Some(win_rings(p, None, "gray")),
+                    WinClaim::Ready(p, dir) => Some(win_rings(p, Some(dir), "gray")),
+                }}
+                // Draw the cursor.
+                {cursor}
+            </svg>
         </div>
     }
 }

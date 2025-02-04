@@ -123,6 +123,9 @@ pub struct Point {
 }
 
 impl Point {
+    /// The origin.
+    pub const ORIGIN: Self = Self { x: 0, y: 0 };
+
     /// Creates a point with the given coordinates.
     #[must_use]
     pub fn new(x: i16, y: i16) -> Self {
