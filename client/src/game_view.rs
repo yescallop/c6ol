@@ -152,19 +152,19 @@ struct Calc {
 impl Calc {
     /// Tests if a view position is out of view.
     fn view_pos_out_of_view(&self, x: i16, y: i16) -> bool {
-        x < 0 || x >= self.view_size || y < 0 || y >= self.view_size
+        x <= 0 || x > self.view_size || y <= 0 || y > self.view_size
     }
 
     /// Converts a view position to board position.
     fn view_to_board_pos(&self, p: Point) -> Point {
-        let x = p.x - self.view_size / 2 + self.view_center.x;
-        let y = p.y - self.view_size / 2 + self.view_center.y;
+        let x = p.x - 1 - self.view_size / 2 + self.view_center.x;
+        let y = p.y - 1 - self.view_size / 2 + self.view_center.y;
         Point { x, y }
     }
 
     fn board_to_view_pos_unclamped(&self, p: Point) -> (i16, i16) {
-        let x = p.x + self.view_size / 2 - self.view_center.x;
-        let y = p.y + self.view_size / 2 - self.view_center.y;
+        let x = p.x + 1 + self.view_size / 2 - self.view_center.x;
+        let y = p.y + 1 + self.view_size / 2 - self.view_center.y;
         (x, y)
     }
 
@@ -180,8 +180,8 @@ impl Calc {
         let out = self.view_pos_out_of_view(x, y);
 
         let (min, max) = match clamp_to {
-            ClampTo::Inside => (0, self.view_size - 1),
-            ClampTo::InsideAndBorder => (-1, self.view_size),
+            ClampTo::Inside => (1, self.view_size),
+            ClampTo::InsideAndBorder => (0, self.view_size + 1),
         };
         (Point::new(x.clamp(min, max), y.clamp(min, max)), out)
     }
@@ -197,8 +197,8 @@ struct SvgCalc {
 impl SvgCalc {
     /// Converts an SVG position to view position, testing if it is out of view.
     fn svg_to_view_pos(&self, x: i32, y: i32) -> (Point, bool) {
-        let x = ((x as f64 - self.view_x) / self.grid_size).round() as i16 - 1;
-        let y = ((y as f64 - self.view_y) / self.grid_size).round() as i16 - 1;
+        let x = ((x as f64 - self.view_x) / self.grid_size).round() as i16;
+        let y = ((y as f64 - self.view_y) / self.grid_size).round() as i16;
         (Point { x, y }, self.calc.view_pos_out_of_view(x, y))
     }
 
@@ -839,12 +839,12 @@ pub fn GameView(
                     Move::Resign(_) => "RESIGN",
                     _ => unreachable!(),
                 };
-                let view_size = view_size.get();
+                let size = view_size.get() + 1;
 
                 let ctx = canvas_context_2d();
                 ctx.set_font("10px sans-serif");
                 let actual_width = ctx.measure_text(text).unwrap().width();
-                let expected_width = (view_size + 1) as f64 / MOVE_TEXT_WIDTH_RATIO;
+                let expected_width = size as f64 / MOVE_TEXT_WIDTH_RATIO;
                 let font_size = expected_width / actual_width * 10.0;
 
                 let fill = if let Move::Draw = mov {
@@ -858,8 +858,8 @@ pub fn GameView(
 
                 EitherOf3::C(view! {
                     <text
-                        x=view_size / 2
-                        y=view_size / 2
+                        x=size / 2
+                        y=size / 2
                         font-size=font_size as f32
                         font-family="sans-serif"
                         text-anchor="middle"
@@ -959,7 +959,7 @@ pub fn GameView(
         >
             <svg
                 class="view"
-                viewBox=move || format!("-1 -1 {s} {s}", s = view_size.get() + 1)
+                viewBox=move || format!("0 0 {s} {s}", s = view_size.get() + 1)
                 fill="none"
             >
                 // Draw the grids.
@@ -967,9 +967,9 @@ pub fn GameView(
                     // Draw the solid lines inside the view.
                     <path d=move || {
                         let mut d = String::new();
-                        let s = view_size.get() - 1;
-                        for i in 0..=s {
-                            write!(d, "M0 {i}h{s}M{i} 0v{s}").unwrap();
+                        let s = view_size.get();
+                        for i in 1..=s {
+                            write!(d, "M1 {i}H{s}M{i} 1V{s}").unwrap();
                         }
                         d
                     } />
@@ -978,9 +978,9 @@ pub fn GameView(
                         stroke-dasharray=LINE_DASH
                         d=move || {
                             let mut d = String::new();
-                            let s = view_size.get() - 1;
-                            for i in 0..=s {
-                                write!(d, "M-1 {i}h1M{s} {i}h1M{i} -1v1M{i} {s}v1").unwrap();
+                            let s = view_size.get();
+                            for i in 1..=s {
+                                write!(d, "M0 {i}h1M{s} {i}h1M{i} 0v1M{i} {s}v1").unwrap();
                             }
                             d
                         }

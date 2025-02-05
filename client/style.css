@@ -125,7 +125,7 @@ button {
 }
 
 .view {
-  /* Center and maximize the SVG viewport. */
+  /* Make the viewport fit the container. */
   display: block;
   width: 100%;
   height: 100%;
