@@ -1,6 +1,6 @@
 //! WebSocket protocol.
 
-use crate::game::{Direction, Move, Point, Record, Stone};
+use crate::game::{Direction, Move, Point, Record, RecordEncodeMethod, Stone};
 use bytes::{Buf, BufMut};
 use std::{iter, mem};
 use strum::{EnumDiscriminants, FromRepr};
@@ -140,7 +140,7 @@ impl ServerMessage {
                     buf.put_slice(&id);
                 }
             }
-            Self::Record(record) => record.encode(&mut buf, false),
+            Self::Record(record) => record.encode(&mut buf, RecordEncodeMethod::Past),
             Self::Move(mov) => mov.encode(&mut buf, true),
             Self::Retract => {}
             Self::Request(stone, request) => {
@@ -166,7 +166,7 @@ impl ServerMessage {
                 };
                 Self::Started(stone, game_id)
             }
-            Kind::Record => Self::Record(Box::new(Record::decode(&mut buf, false)?)),
+            Kind::Record => Self::Record(Box::new(Record::decode(&mut buf)?)),
             Kind::Move => Self::Move(Move::decode(&mut buf, false)?),
             Kind::Retract => Self::Retract,
             Kind::Request => Self::Request(

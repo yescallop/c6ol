@@ -300,6 +300,27 @@ impl Move {
     }
 }
 
+/// Methods to encode a game record with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordEncodeMethod {
+    /// Include only past moves.
+    Past = 0,
+    /// Include all moves prefixed with the current move index.
+    All = 1,
+}
+
+impl RecordEncodeMethod {
+    /// Creates a `RecordEncodeMethod` from a `u8`.
+    #[must_use]
+    pub fn from_u8(n: u8) -> Option<Self> {
+        Some(match n {
+            0 => Self::Past,
+            1 => Self::All,
+            _ => return None,
+        })
+    }
+}
+
 /// A Connect6 game record.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Record {
@@ -533,13 +554,17 @@ impl Record {
     }
 
     /// Encodes the record to a buffer.
-    ///
-    /// If `all`, includes all moves prefixed with the current move index.
-    pub fn encode(&self, buf: &mut Vec<u8>, all: bool) {
-        if all {
-            buf.put_u64_varint(self.index as u64);
-        }
-        let end = if all { self.moves.len() } else { self.index };
+    pub fn encode(&self, buf: &mut Vec<u8>, method: RecordEncodeMethod) {
+        buf.put_u8(method as u8);
+
+        let end = match method {
+            RecordEncodeMethod::Past => self.index,
+            RecordEncodeMethod::All => {
+                buf.put_u64_varint(self.index as u64);
+                self.moves.len()
+            }
+        };
+
         for i in 0..end {
             self.moves[i].encode(buf, i == 0);
         }
@@ -547,11 +572,12 @@ impl Record {
 
     /// Decodes a record from a buffer.
     #[must_use]
-    pub fn decode(buf: &mut &[u8], all: bool) -> Option<Self> {
-        let index = if all {
-            Some(buf.try_get_usize_varint().ok()?)
-        } else {
-            None
+    pub fn decode(buf: &mut &[u8]) -> Option<Self> {
+        let method = RecordEncodeMethod::from_u8(buf.try_get_u8().ok()?)?;
+
+        let index = match method {
+            RecordEncodeMethod::Past => None,
+            RecordEncodeMethod::All => Some(buf.try_get_usize_varint().ok()?),
         };
 
         let mut record = Self::new();

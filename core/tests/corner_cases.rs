@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use c6ol_core::game::{Move, Point, Record};
+use c6ol_core::game::{Move, Point, Record, RecordEncodeMethod};
 
 #[test]
 fn place_in_corner() {
@@ -15,8 +15,8 @@ fn place_in_corner() {
 
             let mut record = Record::new();
             assert!(record.make_move(mov));
-            record.encode(&mut buf, false);
-            assert_eq!(Some(record), Record::decode(&mut &buf[..], false));
+            record.encode(&mut buf, RecordEncodeMethod::Past);
+            assert_eq!(Some(record), Record::decode(&mut &buf[..]));
             buf.clear();
         }
     }

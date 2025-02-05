@@ -1,7 +1,7 @@
 use crate::{Confirm, WinClaim, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
-    game::{Move, Record, Stone},
+    game::{Move, Record, RecordEncodeMethod, Stone},
     protocol::Request,
 };
 use leptos::{
@@ -328,7 +328,7 @@ impl DialogImpl for GameMenuDialog {
                 target="_blank"
                 href=move || {
                     let mut buf = vec![];
-                    record.read().encode(&mut buf, false);
+                    record.read().encode(&mut buf, RecordEncodeMethod::Past);
                     format!("#{ANALYZE_PREFIX}{}", BASE64_STANDARD.encode(buf))
                 }
             >

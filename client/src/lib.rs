@@ -5,7 +5,7 @@ mod game_view;
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 use c6ol_core::{
-    game::{Direction, Move, Point, Record, Stone},
+    game::{Direction, Move, Point, Record, RecordEncodeMethod, Stone},
     protocol::{ClientMessage, Request, ServerMessage},
 };
 use dialog::*;
@@ -125,7 +125,7 @@ pub fn App() -> impl IntoView {
         if *game_id.read() == "local" {
             // Save the record to local storage.
             let mut buf = vec![];
-            record.read().encode(&mut buf, true);
+            record.read().encode(&mut buf, RecordEncodeMethod::All);
             let buf = BASE64_STANDARD.encode(buf);
             local_storage().set_item(STORAGE_KEY_RECORD, &buf).unwrap();
         }
@@ -317,7 +317,7 @@ pub fn App() -> impl IntoView {
                 .get_item(STORAGE_KEY_RECORD)
                 .unwrap()
                 .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
-                .and_then(|buf| Record::decode(&mut &buf[..], true))
+                .and_then(|buf| Record::decode(&mut &buf[..]))
             {
                 record.set(decoded_record);
             } else {
@@ -331,7 +331,7 @@ pub fn App() -> impl IntoView {
             if let Some(decoded_record) = BASE64_STANDARD
                 .decode(buf)
                 .ok()
-                .and_then(|buf| Record::decode(&mut &buf[..], false))
+                .and_then(|buf| Record::decode(&mut &buf[..]))
             {
                 record.set(decoded_record);
                 stone.set(record.read().turn());
@@ -578,12 +578,12 @@ pub fn App() -> impl IntoView {
 
     let handle_storage = window_event_listener(ev::storage, move |ev| {
         if *game_id.read() == "local" && ev.key().as_deref() == Some(STORAGE_KEY_RECORD) {
-            if let Some(buf) = ev
+            if let Some(decoded_record) = ev
                 .new_value()
                 .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
-                .and_then(|buf| Record::decode(&mut &buf[..], true))
+                .and_then(|buf| Record::decode(&mut &buf[..]))
             {
-                record.set(buf);
+                record.set(decoded_record);
                 stone.set(record.read().turn());
             }
         }

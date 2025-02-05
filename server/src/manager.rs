@@ -217,7 +217,7 @@ impl GameState {
     fn subscribe(&self) -> GameSubscription {
         GameSubscription {
             init_msgs: iter::once(ServerMessage::Record(Box::new(self.record.clone())))
-                .chain(Request::VALUES.into_iter().filter_map(|req| {
+                .chain(Request::VALUES.iter().filter_map(|&req| {
                     self.requests[req as usize].map(|stone| ServerMessage::Request(stone, req))
                 }))
                 .collect(),
