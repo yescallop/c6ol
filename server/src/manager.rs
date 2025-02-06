@@ -1,11 +1,11 @@
 //! Game manager.
 
 use c6ol_core::{
-    game::{Move, Record, Stone},
-    protocol::{ClientMessage, GameId, Passcode, Request, ServerMessage},
+    game::{Move, Player, PlayerSlots, Record},
+    protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
 };
 use rand::{distributions::Alphanumeric, Rng};
-use std::{array, collections::HashMap, future::Future, iter};
+use std::{array, collections::HashMap, future::Future};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::JoinSet,
@@ -37,15 +37,15 @@ pub struct GameSubscription {
 
 enum GameCommand {
     Subscribe(oneshot::Sender<GameSubscription>),
-    Authenticate(oneshot::Sender<Option<Stone>>, Passcode),
-    Play(Stone, ClientMessage),
+    Authenticate(oneshot::Sender<Option<Player>>, Passcode),
+    Play(Player, ClientMessage),
 }
 
 /// A command handle to a game.
 pub struct Game {
     id: GameId,
     cmd_tx: mpsc::Sender<GameCommand>,
-    stone: Option<Stone>,
+    player: Option<Player>,
 }
 
 impl Game {
@@ -53,7 +53,7 @@ impl Game {
         Self {
             id,
             cmd_tx,
-            stone: None,
+            player: None,
         }
     }
 
@@ -69,20 +69,20 @@ impl Game {
 
     /// Attempts to authenticate with the given passcode.
     ///
-    /// Returns the assigned stone, or `None` if authentication failed.
+    /// Returns the assigned player, or `None` if authentication failed.
     ///
     /// # Panics
     ///
     /// Panics if the handle is already authenticated.
-    pub async fn authenticate(&mut self, passcode: Passcode) -> Option<Stone> {
-        assert!(self.stone.is_none(), "already authenticated");
-        self.stone = execute!(self.cmd_tx, GameCommand::Authenticate, passcode);
-        self.stone
+    pub async fn authenticate(&mut self, passcode: Passcode) -> Option<Player> {
+        assert!(self.player.is_none(), "already authenticated");
+        self.player = execute!(self.cmd_tx, GameCommand::Authenticate, passcode);
+        self.player
     }
 
-    /// Returns the assigned stone, or `None` if the handle is unauthenticated.
-    pub fn stone(&self) -> Option<Stone> {
-        self.stone
+    /// Returns the assigned player, or `None` if the handle is unauthenticated.
+    pub fn player(&self) -> Option<Player> {
+        self.player
     }
 
     /// Attempts to play the game by making the action described in the message.
@@ -91,13 +91,13 @@ impl Game {
     ///
     /// Panics if the handle is unauthenticated.
     pub async fn play(&self, msg: ClientMessage) {
-        let stone = self.stone.expect("unauthenticated");
-        execute!(self.cmd_tx, GameCommand::Play(stone, msg));
+        let player = self.player.expect("unauthenticated");
+        execute!(self.cmd_tx, GameCommand::Play(player, msg));
     }
 }
 
 enum ManageCommand {
-    New(oneshot::Sender<Game>),
+    New(oneshot::Sender<Game>, GameOptions),
     Find(oneshot::Sender<Option<Game>>, GameId),
 }
 
@@ -122,9 +122,9 @@ pub struct GameManager {
 }
 
 impl GameManager {
-    /// Creates a new game.
-    pub async fn new_game(&self) -> Game {
-        execute!(self.cmd_tx, ManageCommand::New,)
+    /// Creates a new game with the given options.
+    pub async fn new_game(&self, options: GameOptions) -> Game {
+        execute!(self.cmd_tx, ManageCommand::New, options)
     }
 
     /// Searches for a game with the given ID.
@@ -148,7 +148,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                     break;
                 };
                 match cmd {
-                    ManageCommand::New(resp_tx) => loop {
+                    ManageCommand::New(resp_tx, options) => loop {
                         let id = rand_game_id();
                         if game_cmd_txs.contains_key(&id) {
                             continue;
@@ -157,7 +157,7 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                        let task_id = game_tasks.spawn(host_game(id, game_cmd_rx)).id();
+                        let task_id = game_tasks.spawn(start_game(id, options, game_cmd_rx)).id();
                         game_ids_by_task_id.insert(task_id, id);
 
                         _ = resp_tx.send(Game::new(id, game_cmd_tx));
@@ -198,9 +198,9 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
 struct GameState {
     msg_tx: broadcast::Sender<ServerMessage>,
     record: Record,
-    passcode_black: Option<Passcode>,
-    passcode_white: Option<Passcode>,
-    requests: [Option<Stone>; Request::VALUES.len()],
+    options: GameOptions,
+    passcodes: PlayerSlots<Option<Passcode>>,
+    requests: PlayerSlots<Option<Request>>,
 }
 
 impl GameState {
@@ -208,54 +208,61 @@ impl GameState {
         Self {
             msg_tx: broadcast::channel(CHANNEL_CAPACITY_GAME_MSG).0,
             record: Record::new(),
-            passcode_black: None,
-            passcode_white: None,
-            requests: [None; Request::VALUES.len()],
+            options: Default::default(),
+            passcodes: Default::default(),
+            requests: Default::default(),
         }
     }
 
     fn subscribe(&self) -> GameSubscription {
         GameSubscription {
-            init_msgs: iter::once(ServerMessage::Record(Box::new(self.record.clone())))
-                .chain(Request::VALUES.iter().filter_map(|&req| {
-                    self.requests[req as usize].map(|stone| ServerMessage::Request(stone, req))
-                }))
-                .collect(),
+            init_msgs: [
+                ServerMessage::Options(self.options),
+                ServerMessage::Record(Box::new(self.record.clone())),
+            ]
+            .into_iter()
+            .chain([Player::Host, Player::Guest].iter().filter_map(|&player| {
+                self.requests[player].map(|req| ServerMessage::Request(player, req))
+            }))
+            .collect(),
             msg_rx: self.msg_tx.subscribe(),
         }
     }
 
-    fn authenticate(&mut self, passcode: Passcode) -> Option<Stone> {
-        if let Some(passcode_black) = &self.passcode_black {
-            if passcode == *passcode_black {
-                Some(Stone::Black)
-            } else if let Some(passcode_white) = &self.passcode_white {
-                if passcode == *passcode_white {
-                    Some(Stone::White)
+    fn authenticate(&mut self, passcode: Passcode) -> Option<Player> {
+        if let Some(passcode_host) = &self.passcodes[Player::Host] {
+            if passcode == *passcode_host {
+                Some(Player::Host)
+            } else if let Some(passcode_guest) = &self.passcodes[Player::Guest] {
+                if passcode == *passcode_guest {
+                    Some(Player::Guest)
                 } else {
+                    // Wrong passcode.
                     None
                 }
             } else {
-                self.passcode_white = Some(passcode);
-                Some(Stone::White)
+                self.passcodes[Player::Guest] = Some(passcode);
+                Some(Player::Guest)
             }
         } else {
-            self.passcode_black = Some(passcode);
-            Some(Stone::Black)
+            self.passcodes[Player::Host] = Some(passcode);
+            Some(Player::Host)
         }
     }
 
-    fn play(&mut self, stone: Stone, msg: ClientMessage) {
+    fn play(&mut self, player: Player, msg: ClientMessage) {
         use ClientMessage as Msg;
 
         enum Action {
             Move(Move),
             Retract,
-            Reset,
+            Reset(GameOptions),
         }
 
+        let stone = self.options.stone_of(player);
+
         let action = match msg {
-            Msg::Start(_) | Msg::Join(_) => return,
+            Msg::Start(..) | Msg::Join(_) | Msg::Authenticate(_) => return,
             Msg::Place(p1, p2) => {
                 if self.record.turn() != Some(stone) {
                     // Not their turn.
@@ -272,63 +279,89 @@ impl GameState {
             }
             Msg::ClaimWin(p, dir) => Action::Move(Move::Win(p, dir)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
-            Msg::Request(req) => {
-                let req_stone = &mut self.requests[req as usize];
-                if *req_stone == Some(stone) {
+            Msg::Request(req) => 'a: {
+                match req {
+                    Request::Accept => {
+                        let Some(req) = self.requests[player.opposite()] else {
+                            // The opponent hasn't made a request.
+                            return;
+                        };
+
+                        break 'a match req {
+                            Request::Accept | Request::Decline => unreachable!(),
+                            Request::Draw => Action::Move(Move::Draw),
+                            Request::Retract => Action::Retract,
+                            Request::Reset(options) => Action::Reset(options),
+                        };
+                    }
+                    Request::Decline => {
+                        if self.requests[player.opposite()].take().is_some() {
+                            // Inform the opponent of the decline.
+                            _ = self.msg_tx.send(ServerMessage::Request(player, req));
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+
+                let player_req = &mut self.requests[player];
+                if player_req.is_some() {
                     // Duplicate request.
                     return;
                 }
 
-                if matches!(req, Request::Retract | Request::Reset) && !self.record.has_past() {
+                if req == Request::Retract && !self.record.has_past() {
                     // No moves in the past.
                     return;
                 }
 
-                if req_stone.is_none() {
-                    // No request present, make one.
-                    *req_stone = Some(stone);
-                    _ = self.msg_tx.send(ServerMessage::Request(stone, req));
-                    return;
-                }
-
-                match req {
-                    Request::Draw => Action::Move(Move::Draw),
-                    Request::Retract => Action::Retract,
-                    Request::Reset => Action::Reset,
-                }
+                *player_req = Some(req);
+                _ = self.msg_tx.send(ServerMessage::Request(player, req));
+                return;
             }
         };
 
-        let msg = match action {
+        match action {
             Action::Move(mov) => {
                 if !self.record.make_move(mov) {
                     // The move failed.
                     return;
                 }
-                ServerMessage::Move(mov)
+                _ = self.msg_tx.send(ServerMessage::Move(mov));
             }
             Action::Retract => {
                 // We have checked that there is a previous move.
                 self.record.undo_move();
-                ServerMessage::Retract
+                _ = self.msg_tx.send(ServerMessage::Retract);
             }
-            Action::Reset => {
-                // We have checked that there is a previous move.
+            Action::Reset(options) => {
+                self.options = options;
                 self.record.jump(0);
-                ServerMessage::Record(Box::new(Record::new()))
+
+                _ = self.msg_tx.send(ServerMessage::Options(options));
+                _ = self.msg_tx.send(ServerMessage::Record(Default::default()));
             }
-        };
+        }
 
         // Clear the requests.
         self.requests.fill(None);
-        _ = self.msg_tx.send(msg);
+
+        if let ClientMessage::Request(_) = msg {
+            // Inform the opponent of the acceptance.
+            // This has to be the last message in order for the dialog not to be closed.
+            _ = self
+                .msg_tx
+                .send(ServerMessage::Request(player, Request::Accept));
+        }
     }
 }
 
-async fn host_game(id: GameId, mut cmd_rx: mpsc::Receiver<GameCommand>) {
+async fn start_game(id: GameId, options: GameOptions, mut cmd_rx: mpsc::Receiver<GameCommand>) {
     tracing::debug!("game started: {}", id.escape_ascii());
 
     let mut state = GameState::new();
+    state.options = options;
+
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             GameCommand::Subscribe(resp_tx) => {

@@ -1,11 +1,11 @@
 use crate::{Confirm, WinClaim, ANALYZE_PREFIX};
 use base64::prelude::*;
 use c6ol_core::{
-    game::{Move, Record, RecordEncodeMethod, Stone},
-    protocol::Request,
+    game::{Move, Player, PlayerSlots, Record, RecordEncodeMethod, Stone},
+    protocol::{GameOptions, Request},
 };
 use leptos::{
-    either::{Either, EitherOf5},
+    either::{Either, EitherOf6},
     html,
     prelude::*,
 };
@@ -91,12 +91,13 @@ macro_rules! dialogs {
 }
 
 dialogs! {
-    EitherType = EitherOf5,
+    EitherType = EitherOf6,
     MainMenu => A,
     OnlineMenu => B,
     Join => C,
     GameMenu => D,
     Confirm => E,
+    Reset => F,
 }
 
 #[derive(Clone)]
@@ -133,7 +134,10 @@ pub struct OnlineMenuDialog;
 pub enum OnlineMenuRetVal {
     #[default]
     Cancel,
-    Start(String),
+    Start {
+        options: GameOptions,
+        passcode: String,
+    },
     Join(String),
 }
 
@@ -142,8 +146,82 @@ impl DialogImpl for OnlineMenuDialog {
 
     fn inner_view(self) -> impl IntoView {
         let start_checked = RwSignal::new(true);
-        let passcode = RwSignal::new(String::new());
-        let game_id = RwSignal::new(String::new());
+
+        let start_or_join = move || {
+            if start_checked.get() {
+                let stone = RwSignal::new(Stone::Black);
+                let passcode = RwSignal::new(String::new());
+
+                let view = view! {
+                    <table>
+                        <tr>
+                            <td style="text-align: right;">"To Play: "</td>
+                            <td>
+                                <input
+                                    type="radio"
+                                    id="black"
+                                    name="stone"
+                                    checked
+                                    on:input=move |_| stone.set(Stone::Black)
+                                />
+                                <label for="black">"Black"</label>
+                                <input
+                                    type="radio"
+                                    id="white"
+                                    name="stone"
+                                    on:input=move |_| stone.set(Stone::White)
+                                />
+                                <label for="white">"White"</label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <label for="passcode">"Passcode: "</label>
+                            </td>
+                            <td>
+                                <input
+                                    type="password"
+                                    id="passcode"
+                                    required
+                                    placeholder="Yours, not shared"
+                                    bind:value=passcode
+                                />
+                            </td>
+                        </tr>
+
+                    </table>
+                    <div class="btn-group reversed">
+                        <button value=move || {
+                            let options = GameOptions {
+                                swapped: stone.get() == Stone::White,
+                            };
+                            ret!(Start { options, passcode: passcode.get() })
+                        }>"Start"</button>
+                        <button formnovalidate>"Cancel"</button>
+                    </div>
+                };
+                Either::Left(view)
+            } else {
+                let game_id = RwSignal::new(String::new());
+
+                let view = view! {
+                    <label for="game-id">"Game ID: "</label>
+                    <input
+                        type="text"
+                        id="game-id"
+                        required
+                        pattern="[0-9A-Za-z]{10}"
+                        placeholder="10 alphanumerics"
+                        bind:value=game_id
+                    />
+                    <div class="btn-group reversed">
+                        <button value=move || ret!(Join(game_id.get()))>"Join"</button>
+                        <button formnovalidate>"Cancel"</button>
+                    </div>
+                };
+                Either::Right(view)
+            }
+        };
 
         view! {
             <p class="title">"Play Online"</p>
@@ -164,48 +242,7 @@ impl DialogImpl for OnlineMenuDialog {
                 />
                 <label for="join">"Join"</label>
             </div>
-            {move || {
-                if start_checked.get() {
-                    Either::Left(
-                        view! {
-                            <label for="passcode">"Passcode: "</label>
-                            <input
-                                type="text"
-                                id="passcode"
-                                required
-                                autocomplete="on"
-                                placeholder="Yours, not shared"
-                                bind:value=passcode
-                            />
-                        },
-                    )
-                } else {
-                    Either::Right(
-                        view! {
-                            <label for="game-id">"Game ID: "</label>
-                            <input
-                                type="text"
-                                id="game-id"
-                                required
-                                pattern="[0-9A-Za-z]{10}"
-                                autocomplete="on"
-                                placeholder="10 alphanumerics"
-                                bind:value=game_id
-                            />
-                        },
-                    )
-                }
-            }}
-            <div class="btn-group reversed">
-                <button value=move || {
-                    if start_checked.get() {
-                        ret!(Start(passcode.get()))
-                    } else {
-                        ret!(Join(game_id.get()))
-                    }
-                }>{move || if start_checked.get() { "Start" } else { "Join" }}</button>
-                <button formnovalidate>"Cancel"</button>
-            </div>
+            {start_or_join}
         }
     }
 }
@@ -230,9 +267,8 @@ impl DialogImpl for JoinDialog {
             <p class="title">"Join Game"</p>
             <label for="passcode">"Passcode: "</label>
             <input
-                type="text"
+                type="password"
                 id="passcode"
-                autocomplete="on"
                 required
                 placeholder="Yours, not shared"
                 bind:value=passcode
@@ -248,11 +284,12 @@ impl DialogImpl for JoinDialog {
 #[derive(Clone)]
 pub struct GameMenuDialog {
     pub game_id: String,
-    pub stone: Option<Stone>,
+    pub stone: ReadSignal<Option<Stone>>,
     pub online: bool,
+    pub player: Option<Player>,
     pub record: ReadSignal<Record>,
     pub win_claim: ReadSignal<Option<WinClaim>>,
-    pub requests: ReadSignal<[Option<Stone>; Request::VALUES.len()]>,
+    pub requests: ReadSignal<PlayerSlots<Option<Request>>>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -283,6 +320,7 @@ impl DialogImpl for GameMenuDialog {
             game_id,
             stone,
             online,
+            player,
             record,
             win_claim,
             requests,
@@ -299,10 +337,9 @@ impl DialogImpl for GameMenuDialog {
                     view! {
                         <a href=href>{game_id}</a>
                         <br />
-                        {if let Some(stone) = stone {
-                            format!("Playing {stone:?}")
-                        } else {
-                            "View Only".into()
+                        {move || match stone.get() {
+                            Some(stone) => format!("Playing {stone:?}"),
+                            None => "View Only".into(),
                         }}
                     },
                 )
@@ -336,7 +373,7 @@ impl DialogImpl for GameMenuDialog {
             </a>
         };
 
-        let join_btn_or_ctrl_view = if online && stone.is_none() {
+        let join_btn_or_ctrl_view = if online && player.is_none() {
             Either::Left(view! { <button value=ret!(Join)>"Join"</button> })
         } else {
             let alt_pushed = RwSignal::new(false);
@@ -360,20 +397,32 @@ impl DialogImpl for GameMenuDialog {
             let ended = move || record.read().is_ended();
 
             #[derive(Eq, PartialEq)]
-            enum Side {
-                Neither,
-                User,
-                Opponent,
+            enum RequestState {
+                Acceptable,
+                Makeable,
+                Disabled,
+                Irrelevant,
             }
 
             use Request::*;
-            use Side::*;
+            use RequestState::*;
 
-            let who_requested = move |req| match (stone, requests.read()[req as usize]) {
-                (None, _) | (_, None) => Neither,
-                (Some(a), Some(b)) if a == b => User,
-                _ => Opponent,
-            };
+            macro_rules! req_state {
+                ($pat:pat) => {
+                    if let Some(player) = player {
+                        let requests = requests.read();
+                        if matches!(requests[player.opposite()], Some($pat)) {
+                            Acceptable
+                        } else if requests[player].is_none() {
+                            Makeable
+                        } else {
+                            Disabled
+                        }
+                    } else {
+                        Irrelevant
+                    }
+                };
+            }
 
             let ctrl_view = move || {
                 view! {
@@ -381,8 +430,8 @@ impl DialogImpl for GameMenuDialog {
                         {alt_btn(false)}
                         <button
                             value=ret!(Undo)
-                            disabled=move || no_past() || who_requested(Retract) == User
-                            class:prominent=move || who_requested(Retract) == Opponent
+                            disabled=move || no_past() || req_state!(Retract) == Disabled
+                            class:prominent=move || req_state!(Retract) == Acceptable
                         >
                             {if online { "Retract" } else { "Undo" }}
                         </button>
@@ -407,7 +456,7 @@ impl DialogImpl for GameMenuDialog {
                             value=ret!(Submit)
                             disabled=move || {
                                 ended()
-                                    || (record.read().turn() != stone
+                                    || (record.read().turn() != stone.get()
                                         && !matches!(win_claim.get(), Some(WinClaim::Ready(..))))
                             }
                         >
@@ -423,8 +472,10 @@ impl DialogImpl for GameMenuDialog {
                         {alt_btn(true)}
                         <button
                             value=ret!(Home)
-                            disabled=move || no_past() || who_requested(Reset) == User
-                            class:prominent=move || who_requested(Reset) == Opponent
+                            disabled=move || {
+                                (!online && no_past()) || req_state!(Reset { .. }) == Disabled
+                            }
+                            class:prominent=move || req_state!(Reset { .. }) == Acceptable
                         >
                             {if online { "Reset" } else { "Home" }}
                         </button>
@@ -440,8 +491,8 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         <button
                             value=ret!(Draw)
-                            disabled=move || ended() || who_requested(Draw) == User
-                            class:prominent=move || who_requested(Draw) == Opponent
+                            disabled=move || ended() || req_state!(Draw) == Disabled
+                            class:prominent=move || req_state!(Draw) == Acceptable
                         >
                             "Draw"
                         </button>
@@ -481,6 +532,7 @@ pub enum ConfirmRetVal {
     #[default]
     Cancel,
     Confirm,
+    AltConfirm,
 }
 
 impl DialogImpl for ConfirmDialog {
@@ -488,8 +540,8 @@ impl DialogImpl for ConfirmDialog {
 
     fn class(&self) -> Option<&'static str> {
         match self.0 {
-            Confirm::ConnClosed(_) | Confirm::Error(_) => None,
-            _ => Some("transparent"),
+            Confirm::Submit(..) | Confirm::Pass(_) | Confirm::Claim(..) => Some("transparent"),
+            _ => None,
         }
     }
 
@@ -497,8 +549,9 @@ impl DialogImpl for ConfirmDialog {
         let mut title = None;
         let mut confirm = "Confirm";
         let mut cancel = Some("Cancel");
+        let mut alt_confirm = None;
 
-        let message = match &self.0 {
+        let message = match self.0 {
             Confirm::MainMenu => "Back to main menu?",
             Confirm::Submit(_, None) => "Place one stone?",
             Confirm::Submit(_, Some(_)) => "Place two stones?",
@@ -514,26 +567,39 @@ impl DialogImpl for ConfirmDialog {
                 1 => "Place one stone and claim a win?",
                 _ => "Place two stones and claim a win?",
             },
-            Confirm::Request(req) => match req {
-                Request::Draw => "Offer a draw?",
-                Request::Retract => "Request to retract the previous move?",
-                Request::Reset => "Request to reset the game?",
-            },
-            Confirm::Accept(req) => {
+            Confirm::RequestDraw => "Offer a draw?",
+            Confirm::RequestRetract => "Request to retract the previous move?",
+            Confirm::Accept(player, req) => {
                 (confirm, cancel) = ("Accept", Some("Ignore"));
+                if req.is_normal() {
+                    alt_confirm = Some("Decline");
+                }
+
                 match req {
+                    Request::Accept => {
+                        (confirm, cancel) = ("Noted", None);
+                        "The opponent accepted your request."
+                    }
+                    Request::Decline => {
+                        (confirm, cancel) = ("Noted", None);
+                        "The opponent declined your request."
+                    }
                     Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
-                    Request::Reset => "The opponent requests to reset the game.",
+                    Request::Reset(options) => &format!(
+                        "The opponent requests to reset the game. \
+                         After the reset, you're to play {:?}.",
+                        options.stone_of(player)
+                    ),
                 }
             }
             Confirm::Resign => "Resign the game?",
-            Confirm::ConnClosed(reason) => {
+            Confirm::ConnClosed(ref reason) => {
                 title = Some("Connection Closed");
                 (confirm, cancel) = ("Retry", Some("Menu"));
                 reason
             }
-            Confirm::Error(message) => {
+            Confirm::Error(ref message) => {
                 title = Some("Error");
                 (confirm, cancel) = ("Main Menu", None);
                 message
@@ -545,7 +611,61 @@ impl DialogImpl for ConfirmDialog {
             <p>{message.to_owned()}</p>
             <div class="btn-group">
                 {cancel.map(|s| view! { <button>{s}</button> })}
+                {alt_confirm.map(|s| view! { <button value=ret!(AltConfirm)>{s}</button> })}
                 <button value=ret!(Confirm)>{confirm}</button>
+            </div>
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ResetDialog {
+    pub player: Player,
+    pub old_options: GameOptions,
+}
+
+#[derive(Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ResetRetVal {
+    #[default]
+    Cancel,
+    Confirm(GameOptions),
+}
+
+impl DialogImpl for ResetDialog {
+    type RetVal = ResetRetVal;
+
+    fn class(&self) -> Option<&'static str> {
+        None
+    }
+
+    fn inner_view(self) -> impl IntoView {
+        let old_stone = self.old_options.stone_of(self.player);
+        let new_stone = RwSignal::new(old_stone);
+
+        view! {
+            <p>
+                "Request to reset the game?"<br />"To play: "
+                <input
+                    type="radio"
+                    id="black"
+                    name="stone"
+                    checked=old_stone == Stone::Black
+                    on:input=move |_| new_stone.set(Stone::Black)
+                /> <label for="black">"Black"</label>
+                <input
+                    type="radio"
+                    id="white"
+                    name="stone"
+                    checked=old_stone == Stone::White
+                    on:input=move |_| new_stone.set(Stone::White)
+                /> <label for="white">"White"</label>
+            </p>
+            <div class="btn-group">
+                <button>"Cancel"</button>
+                <button value=move || {
+                    let swapped = self.old_options.swapped ^ (old_stone != new_stone.get());
+                    ret!(Confirm(GameOptions { swapped }))
+                }>"Confirm"</button>
             </div>
         }
     }

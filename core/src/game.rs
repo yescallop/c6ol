@@ -2,27 +2,31 @@
 
 use bytes::{Buf, BufMut};
 use bytes_varint::{VarIntSupport, VarIntSupportMut};
-use std::{collections::HashMap, iter};
+use std::{
+    collections::HashMap,
+    iter,
+    ops::{Index, IndexMut},
+};
 
 /// A direction on the board.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Direction {
     /// North, with a unit vector of `(0, -1)`.
-    North,
+    North = 0,
     /// Northeast, with a unit vector of `(1, -1)`.
-    Northeast,
+    Northeast = 1,
     /// East, with a unit vector of `(1, 0)`.
-    East,
+    East = 2,
     /// Southeast, with a unit vector of `(1, 1)`.
-    Southeast,
+    Southeast = 3,
     /// South, with a unit vector of `(0, 1)`.
-    South,
+    South = 4,
     /// Southwest, with a unit vector of `(-1, 1)`.
-    Southwest,
+    Southwest = 5,
     /// West, with a unit vector of `(-1, 0)`.
-    West,
+    West = 6,
     /// Northwest, with a unit vector of `(-1, -1)`.
-    Northwest,
+    Northwest = 7,
 }
 
 impl Direction {
@@ -181,9 +185,9 @@ impl Point {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Stone {
     /// The black stone.
-    Black = 1,
+    Black = 0,
     /// The white stone.
-    White = 2,
+    White = 1,
 }
 
 impl Stone {
@@ -191,8 +195,8 @@ impl Stone {
     #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
         match n {
-            1 => Some(Self::Black),
-            2 => Some(Self::White),
+            0 => Some(Self::Black),
+            1 => Some(Self::White),
             _ => None,
         }
     }
@@ -231,7 +235,7 @@ pub enum Move {
 }
 
 impl Move {
-    /// Tests if the move is an ending move.
+    /// Tests if the move is an ending one.
     #[must_use]
     pub fn is_ending(self) -> bool {
         matches!(self, Self::Win(..) | Self::Draw | Self::Resign(_))
@@ -595,5 +599,65 @@ impl Record {
             }
         }
         Some(record)
+    }
+}
+
+/// Players.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Player {
+    /// One who starts the game.
+    Host = 0,
+    /// The other who joins the game.
+    Guest = 1,
+}
+
+impl Player {
+    /// Creates a player from a `u8`.
+    #[must_use]
+    pub fn from_u8(n: u8) -> Option<Self> {
+        match n {
+            0 => Some(Self::Host),
+            1 => Some(Self::Guest),
+            _ => None,
+        }
+    }
+
+    /// Returns the opposite player.
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Host => Self::Guest,
+            Self::Guest => Self::Host,
+        }
+    }
+}
+
+/// A struct to store data for both players.
+#[derive(Debug, Default)]
+pub struct PlayerSlots<T> {
+    slots: [T; 2],
+}
+
+impl<T> PlayerSlots<T> {
+    /// Fills both slots with the value.
+    pub fn fill(&mut self, value: T)
+    where
+        T: Clone,
+    {
+        self.slots.fill(value);
+    }
+}
+
+impl<T> Index<Player> for PlayerSlots<T> {
+    type Output = T;
+
+    fn index(&self, player: Player) -> &T {
+        &self.slots[player as usize]
+    }
+}
+
+impl<T> IndexMut<Player> for PlayerSlots<T> {
+    fn index_mut(&mut self, player: Player) -> &mut T {
+        &mut self.slots[player as usize]
     }
 }

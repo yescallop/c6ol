@@ -97,16 +97,14 @@ async fn handle_websocket(
     let mut game;
 
     match socket.next().await.ok_or(Error::Closed)?? {
-        ClientMessage::Start(passcode) => {
-            game = manager.new_game().await;
-            game.authenticate(passcode)
+        ClientMessage::Start(options, passcode) => {
+            game = manager.new_game(options).await;
+            let player = game
+                .authenticate(passcode)
                 .await
                 .expect("should be able to authenticate");
 
-            let msg = ServerMessage::Started(
-                game.stone().expect("should be authenticated"),
-                Some(game.id()),
-            );
+            let msg = ServerMessage::Started(player, Some(game.id()));
             socket.send(msg).await?;
         }
         ClientMessage::Join(id) => {
@@ -132,17 +130,15 @@ async fn handle_websocket(
             opt = socket.next() => {
                 let msg = opt.ok_or(Error::Closed)??;
                 match msg {
-                    ClientMessage::Start(passcode) if game.stone().is_none() => {
-                        game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
+                    ClientMessage::Authenticate(passcode) if game.player().is_none() => {
+                        let player =
+                            game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
 
-                        let msg = ServerMessage::Started(
-                            game.stone().expect("should be authenticated"),
-                            None,
-                        );
+                        let msg = ServerMessage::Started(player, None);
                         socket.send(msg).await?;
                         continue;
                     }
-                    ClientMessage::Start(_) | ClientMessage::Join(_) => {
+                    ClientMessage::Start(..) | ClientMessage::Join(_) | ClientMessage::Authenticate(_) => {
                         return Err(Error::UnexpectedMessage);
                     }
                     _ => {}

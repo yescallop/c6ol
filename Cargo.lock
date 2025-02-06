@@ -301,6 +301,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "bytes-varint",
+ "serde",
  "strum",
 ]
 

@@ -52,7 +52,8 @@ a {
   color: blue;
 }
 
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   text-align: center;
   /* More consistent than the `size` attribute. */
   width: 9em;
@@ -91,7 +92,7 @@ button {
   justify-content: center;
 }
 
-.radio-group>*:not(:last-child) {
+.radio-group>label:not(:last-child) {
   margin-right: 10px;
 }
 
