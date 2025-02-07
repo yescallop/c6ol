@@ -2,6 +2,7 @@
 
 use crate::{manager::GameManager, server::AppState};
 use axum::{
+    body::Bytes,
     extract::{
         ws::{close_code, CloseFrame, Message, WebSocket},
         State, WebSocketUpgrade,
@@ -10,8 +11,8 @@ use axum::{
 };
 use c6ol_core::protocol::{ClientMessage, ServerMessage};
 use futures_util::{future, SinkExt, StreamExt};
-use std::convert::Infallible;
-use tokio::sync::broadcast::error::RecvError;
+use std::{convert::Infallible, time::Duration};
+use tokio::{sync::broadcast::error::RecvError, time};
 
 /// Handles a WebSocket upgrade.
 #[remain::check]
@@ -73,26 +74,28 @@ enum Error {
     WrongPasscode,
 }
 
+fn encode(msg: ServerMessage) -> Message {
+    Message::Binary(msg.encode().into())
+}
+
+const HEARTBEAT_PERIOD: Duration = Duration::from_secs(30);
+
 // Handles a WebSocket connection.
 async fn handle_websocket(
     socket: &mut WebSocket,
     manager: GameManager,
 ) -> Result<Infallible, Error> {
-    let mut socket = socket
-        .filter_map(|res| {
-            future::ready(match res {
-                Ok(Message::Binary(data)) => match ClientMessage::decode(&data) {
-                    Some(msg) => Some(Ok(msg)),
-                    None => Some(Err(Error::MalformedMessage)),
-                },
-                Ok(Message::Text(_)) => Some(Err(Error::TextMessage)),
-                Ok(_) => None,
-                Err(err) => Some(Err(err.into())),
-            })
+    let mut socket = socket.filter_map(|res| {
+        future::ready(match res {
+            Ok(Message::Binary(data)) => match ClientMessage::decode(&data) {
+                Some(msg) => Some(Ok(msg)),
+                None => Some(Err(Error::MalformedMessage)),
+            },
+            Ok(Message::Text(_)) => Some(Err(Error::TextMessage)),
+            Ok(_) => None,
+            Err(err) => Some(Err(err.into())),
         })
-        .with(|msg: ServerMessage| {
-            future::ok::<_, axum::Error>(Message::Binary(msg.encode().into()))
-        });
+    });
 
     let mut game;
 
@@ -105,7 +108,7 @@ async fn handle_websocket(
                 .expect("should be able to authenticate");
 
             let msg = ServerMessage::Started(player, Some(game.id()));
-            socket.send(msg).await?;
+            socket.send(encode(msg)).await?;
         }
         ClientMessage::Join(id) => {
             game = manager.find_game(id).await.ok_or(Error::GameNotFound)?;
@@ -115,8 +118,10 @@ async fn handle_websocket(
 
     let mut sub = game.subscribe().await;
     for msg in sub.init_msgs {
-        socket.send(msg).await?;
+        socket.send(encode(msg)).await?;
     }
+
+    let mut heartbeat_interval = time::interval(HEARTBEAT_PERIOD);
 
     loop {
         tokio::select! {
@@ -125,7 +130,7 @@ async fn handle_websocket(
                     RecvError::Closed => panic!("sender should be alive"),
                     RecvError::Lagged(_) => Error::Lagged,
                 })?;
-                socket.send(msg).await?;
+                socket.send(encode(msg)).await?;
             }
             opt = socket.next() => {
                 let msg = opt.ok_or(Error::Closed)??;
@@ -135,7 +140,7 @@ async fn handle_websocket(
                             game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
 
                         let msg = ServerMessage::Started(player, None);
-                        socket.send(msg).await?;
+                        socket.send(encode(msg)).await?;
                         continue;
                     }
                     ClientMessage::Start(..) | ClientMessage::Join(_) | ClientMessage::Authenticate(_) => {
@@ -144,6 +149,9 @@ async fn handle_websocket(
                     _ => {}
                 }
                 game.play(msg).await;
+            }
+            _ = heartbeat_interval.tick() => {
+                socket.send(Message::Pong(Bytes::new())).await?;
             }
         }
     }
