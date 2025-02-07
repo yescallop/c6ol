@@ -18,7 +18,7 @@ trait DialogImpl {
         None
     }
 
-    fn inner_view(self) -> impl IntoView;
+    fn contents(self) -> impl IntoView;
 }
 
 macro_rules! ret {
@@ -69,7 +69,7 @@ macro_rules! dialogs {
                                 (|s| RetVal::$name(ron::from_str(s).unwrap_or_default()))
                                     as fn(&str) -> RetVal,
                                 dialog.class(),
-                                $either_type::$either_variant(dialog.inner_view()),
+                                $either_type::$either_variant(dialog.contents()),
                             ),
                         )+
                     };
@@ -113,7 +113,7 @@ pub enum MainMenuRetVal {
 impl DialogImpl for MainMenuDialog {
     type RetVal = MainMenuRetVal;
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         view! {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
@@ -144,7 +144,7 @@ pub enum OnlineMenuRetVal {
 impl DialogImpl for OnlineMenuDialog {
     type RetVal = OnlineMenuRetVal;
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         let start_checked = RwSignal::new(true);
 
         let start_or_join = move || {
@@ -260,7 +260,7 @@ pub enum JoinRetVal {
 impl DialogImpl for JoinDialog {
     type RetVal = JoinRetVal;
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         let passcode = RwSignal::new(String::new());
 
         view! {
@@ -315,7 +315,7 @@ impl DialogImpl for GameMenuDialog {
         Some("game-menu")
     }
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         let Self {
             game_id,
             stone,
@@ -545,7 +545,7 @@ impl DialogImpl for ConfirmDialog {
         }
     }
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         let mut title = None;
         let mut confirm = "Confirm";
         let mut cancel = Some("Cancel");
@@ -638,7 +638,7 @@ impl DialogImpl for ResetDialog {
         None
     }
 
-    fn inner_view(self) -> impl IntoView {
+    fn contents(self) -> impl IntoView {
         let old_stone = self.old_options.stone_of(self.player);
         let new_stone = RwSignal::new(old_stone);
 
