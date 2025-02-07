@@ -190,6 +190,7 @@ pub fn App() -> impl IntoView {
                 player.set(Some(new_player));
                 if let Some(options) = options.get() {
                     stone.set(Some(options.stone_of(new_player)));
+                    show_game_menu_dialog();
                 }
 
                 if let Some(id) = new_game_id {
