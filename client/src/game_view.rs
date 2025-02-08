@@ -950,6 +950,8 @@ pub fn GameView(
             on:mouseover=move |ev| on_hover(ev.into())
             on:pointerleave=move |ev| on_leave(ev.into())
             on:mouseleave=move |ev| on_leave(ev.into())
+            // Avoid touching a dialog opened by the same touch.
+            on:touchend=move |ev| ev.prevent_default()
             on:keydown=on_keydown
             on:contextmenu=move |ev| {
                 ev.prevent_default();
