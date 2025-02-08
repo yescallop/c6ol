@@ -4,7 +4,7 @@ use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
     protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use std::{array, collections::HashMap, future::Future};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
@@ -103,7 +103,7 @@ enum ManageCommand {
 
 /// Generates a random alphanumeric game ID.
 fn rand_game_id() -> GameId {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     array::from_fn(|_| rng.sample(Alphanumeric))
 }
 

@@ -12,7 +12,7 @@ clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
-rand = "0.8"
+rand = "0.9"
 remain = "0.2"
 socket2 = "0.5"
 thiserror = "2"
