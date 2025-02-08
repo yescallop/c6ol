@@ -156,7 +156,7 @@ impl DialogImpl for OnlineMenuDialog {
                     <table>
                         <tr>
                             <td style="text-align: right;">"To Play: "</td>
-                            <td>
+                            <td style="text-align: center;">
                                 <input
                                     type="radio"
                                     id="black"
@@ -175,10 +175,10 @@ impl DialogImpl for OnlineMenuDialog {
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td style="text-align: right;">
                                 <label for="passcode">"Passcode: "</label>
                             </td>
-                            <td>
+                            <td style="text-align: center;">
                                 <input
                                     type="password"
                                     id="passcode"
