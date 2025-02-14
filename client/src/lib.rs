@@ -557,9 +557,10 @@ pub fn App() -> impl IntoView {
                     unreachable!();
                 };
 
-                if !matches!(confirm, Confirm::ConnClosed(_) | Confirm::Error(_))
-                    && ret_val == ConfirmRetVal::Cancel
-                {
+                if ret_val == ConfirmRetVal::Cancel {
+                    if let Confirm::ConnClosed(_) | Confirm::Error(_) = confirm {
+                        set_game_id("");
+                    }
                     return;
                 }
 
@@ -580,17 +581,16 @@ pub fn App() -> impl IntoView {
                     }
                     Confirm::RequestDraw => send(ClientMessage::Request(Request::Draw)),
                     Confirm::RequestRetract => send(ClientMessage::Request(Request::Retract)),
-                    Confirm::Accept(..) => send(ClientMessage::Request(match ret_val {
-                        ConfirmRetVal::Confirm => Request::Accept,
-                        ConfirmRetVal::AltConfirm => Request::Decline,
-                        _ => unreachable!(),
-                    })),
+                    Confirm::Accept(_, req) if req.is_normal() => {
+                        send(ClientMessage::Request(match ret_val {
+                            ConfirmRetVal::Confirm => Request::Accept,
+                            ConfirmRetVal::AltConfirm => Request::Decline,
+                            ConfirmRetVal::Cancel => unreachable!(),
+                        }));
+                    }
+                    Confirm::Accept(..) => {}
                     Confirm::Resign => send(ClientMessage::Resign),
-                    Confirm::ConnClosed(_) => match ret_val {
-                        ConfirmRetVal::Cancel => set_game_id(""),
-                        ConfirmRetVal::Confirm => set_game_id(&game_id.get()),
-                        _ => unreachable!(),
-                    },
+                    Confirm::ConnClosed(_) => set_game_id(&game_id.get()),
                     Confirm::Error(_) => set_game_id(""),
                 }
             }
