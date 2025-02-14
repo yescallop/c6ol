@@ -122,9 +122,9 @@ pub fn App() -> impl IntoView {
 
     let confirm = move |confirm: Confirm| show_dialog(Dialog::from(ConfirmDialog(confirm)));
 
-    let ws_state = StoredValue::new_local(None::<WebSocketState>);
+    let ws_state = RwSignal::new_local(None::<WebSocketState>);
 
-    let online = move || ws_state.read_value().is_some();
+    let online = move || ws_state.read().is_some();
 
     Effect::new(move || {
         if *game_id.read() == "local" {
@@ -138,7 +138,7 @@ pub fn App() -> impl IntoView {
 
     // Sends the message on the WebSocket connection.
     let send = move |msg: ClientMessage| {
-        if let Some(ws_state) = &*ws_state.read_value() {
+        if let Some(ws_state) = &*ws_state.read_untracked() {
             if ws_state.ws.ready_state() == WebSocket::OPEN {
                 ws_state.ws.send_with_u8_array(&msg.encode()).unwrap();
                 return;
@@ -189,7 +189,7 @@ pub fn App() -> impl IntoView {
             .map(|buf| Uint8Array::new(buf).to_vec())
             .and_then(|buf| ServerMessage::decode(&buf))
         else {
-            let ws_state = ws_state.read_value();
+            let ws_state = ws_state.read();
             let ws = &ws_state.as_ref().unwrap().ws;
             ws.close_with_code_and_reason(CLOSE_CODE_POLICY, "Malformed server message.")
                 .unwrap();
@@ -304,7 +304,7 @@ pub fn App() -> impl IntoView {
         let onmessage = Closure::<dyn Fn(MessageEvent)>::new(move |ev| untrack(|| on_message(ev)));
         ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
 
-        ws_state.set_value(Some(WebSocketState {
+        ws_state.set(Some(WebSocketState {
             ws,
             onopen,
             onclose,
@@ -313,8 +313,8 @@ pub fn App() -> impl IntoView {
     };
 
     let set_game_id = move |id: &str| {
-        if let Some(ws_state) = ws_state.write_value().take() {
-            let ws = ws_state.ws;
+        if ws_state.read_untracked().is_some() {
+            let ws = ws_state.write().take().unwrap().ws;
             ws.set_onopen(None);
             ws.set_onclose(None);
             ws.set_onmessage(None);
@@ -655,6 +655,7 @@ pub fn App() -> impl IntoView {
             record=record
             stone=stone.read_only()
             disabled=move || !dialog_entries.read().is_empty()
+            pending=move || online() && options.get().is_none()
             on_event=on_event
             tentatives_pos=tentatives_pos
             win_claim=win_claim

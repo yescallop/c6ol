@@ -241,6 +241,7 @@ pub fn GameView(
     record: RwSignal<Record>,
     stone: ReadSignal<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
+    pending: impl Fn() -> bool + Send + Sync + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
     /// Size of the view.
     ///
@@ -257,6 +258,7 @@ pub fn GameView(
     #[prop(optional)] win_claim: RwSignal<Option<WinClaim>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
+    let pending = Memo::new(move |_| pending());
 
     let container_ref = NodeRef::<html::Div>::new();
 
@@ -812,6 +814,34 @@ pub fn GameView(
         }
     };
 
+    let centered_text = move |text: &'static str, fill: &'static str| {
+        let size = view_size.get() + 1;
+
+        let ctx = canvas_context_2d();
+        ctx.set_font("10px sans-serif");
+        let actual_width = ctx.measure_text(text).unwrap().width();
+        let expected_width = size as f64 / MOVE_TEXT_WIDTH_RATIO;
+        let font_size = expected_width / actual_width * 10.0;
+
+        view! {
+            <text
+                x=size / 2
+                y=size / 2
+                font-size=font_size as f32
+                font-family="sans-serif"
+                text-anchor="middle"
+                dominant-baseline="middle"
+                fill=fill
+                fill-opacity=MOVE_TEXT_OPACITY
+                stroke="gray"
+                stroke-width=(font_size / MOVE_TEXT_BORDER_RATIO) as f32
+                stroke-opacity=MOVE_TEXT_OPACITY
+            >
+                {text}
+            </text>
+        }
+    };
+
     let previous_move = move || {
         let record = record.read();
         let Some(mov) = record.prev_move() else {
@@ -839,13 +869,6 @@ pub fn GameView(
                     Move::Resign(_) => "RESIGN",
                     _ => unreachable!(),
                 };
-                let size = view_size.get() + 1;
-
-                let ctx = canvas_context_2d();
-                ctx.set_font("10px sans-serif");
-                let actual_width = ctx.measure_text(text).unwrap().width();
-                let expected_width = size as f64 / MOVE_TEXT_WIDTH_RATIO;
-                let font_size = expected_width / actual_width * 10.0;
 
                 let fill = if let Move::Draw = mov {
                     "gray"
@@ -856,23 +879,7 @@ pub fn GameView(
                     })
                 };
 
-                EitherOf3::C(view! {
-                    <text
-                        x=size / 2
-                        y=size / 2
-                        font-size=font_size as f32
-                        font-family="sans-serif"
-                        text-anchor="middle"
-                        dominant-baseline="middle"
-                        fill=fill
-                        fill-opacity=MOVE_TEXT_OPACITY
-                        stroke="gray"
-                        stroke-width=(font_size / MOVE_TEXT_BORDER_RATIO) as f32
-                        stroke-opacity=MOVE_TEXT_OPACITY
-                    >
-                        {text}
-                    </text>
-                })
+                EitherOf3::C(centered_text(text, fill))
             }
         }
     };
@@ -1001,6 +1008,8 @@ pub fn GameView(
                 {stones}
                 // Draw the previous move.
                 {previous_move}
+                // Draw the pending text.
+                {move || { pending.get().then(|| centered_text("PENDING", "gray")) }}
                 // Draw the phantom stone.
                 {phantom_stone}
                 // Draw the tentative stones.
