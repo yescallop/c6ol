@@ -67,8 +67,8 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
         "CREATE TABLE IF NOT EXISTS game (
             id BLOB NOT NULL PRIMARY KEY,
             options BLOB NOT NULL,
-            passcode_host BLOB,
-            passcode_guest BLOB,
+            passcode_host INT,
+            passcode_guest INT,
             request_host BLOB,
             request_guest BLOB,
             record BLOB NOT NULL,
@@ -120,8 +120,8 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                         record = ?6, updated_at = ?7 WHERE id = ?8",
                     (
                         state.options.encode_to_vec(),
-                        &state.passcodes[Player::Host],
-                        &state.passcodes[Player::Guest],
+                        state.passcodes[Player::Host],
+                        state.passcodes[Player::Guest],
                         state.requests[Player::Host].map(Request::encode_to_vec),
                         state.requests[Player::Guest].map(Request::encode_to_vec),
                         state.record.encode_to_vec(RecordEncodeMethod::Past),

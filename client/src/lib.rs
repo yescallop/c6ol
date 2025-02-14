@@ -1,5 +1,6 @@
 //! The client library for [Connect6 Online](https://github.com/yescallop/c6ol).
 
+mod blake2b_nz64;
 mod dialog;
 mod game_view;
 
@@ -554,14 +555,16 @@ pub fn App() -> impl IntoView {
                     show_dialog(Dialog::from(MainMenuDialog));
                 }
                 OnlineMenuRetVal::Start { options, passcode } => {
-                    connect(ClientMessage::Start(options, passcode.into_bytes().into()));
+                    let passcode = blake2b_nz64::hash(passcode.as_bytes());
+                    connect(ClientMessage::Start(options, passcode));
                 }
                 OnlineMenuRetVal::Join(game_id) => set_game_id(&game_id),
             },
             RetVal::Join(ret_val) => match ret_val {
                 JoinRetVal::ViewOnly => {}
                 JoinRetVal::Join(passcode) => {
-                    send(ClientMessage::Authenticate(passcode.into_bytes().into()));
+                    let passcode = blake2b_nz64::hash(passcode.as_bytes());
+                    send(ClientMessage::Authenticate(passcode));
                 }
             },
             RetVal::GameMenu(ret_val) => on_game_menu_return(ret_val),

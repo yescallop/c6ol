@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 base64 = "0.22"
+blake2 = "0.10"
 c6ol-core = { path = "../core" }
 console_error_panic_hook = "0.1.7"
 leptos = { version = "0.7", features = ["csr"] }

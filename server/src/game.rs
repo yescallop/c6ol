@@ -228,11 +228,11 @@ impl GameState {
     }
 
     fn authenticate(&mut self, passcode: Passcode) -> Option<Player> {
-        if let Some(passcode_host) = &self.passcodes[Player::Host] {
-            if passcode == *passcode_host {
+        if let Some(passcode_host) = self.passcodes[Player::Host] {
+            if passcode == passcode_host {
                 Some(Player::Host)
-            } else if let Some(passcode_guest) = &self.passcodes[Player::Guest] {
-                if passcode == *passcode_guest {
+            } else if let Some(passcode_guest) = self.passcodes[Player::Guest] {
+                if passcode == passcode_guest {
                     Some(Player::Guest)
                 } else {
                     // Wrong passcode.
