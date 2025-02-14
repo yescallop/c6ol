@@ -5,7 +5,7 @@ use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
     protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
 };
-use std::{collections::HashMap, future::Future, str};
+use std::{collections::HashMap, future::Future};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::JoinSet,
@@ -141,7 +141,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
 
                         _ = resp_tx.send(Game::new(id, game_cmd_tx));
 
-                        tracing::info!("game started: {}", str::from_utf8(&id).unwrap());
+                        tracing::info!("game started: {id}");
                     },
                     GameManageCommand::Find(resp_tx, id) => {
                         if let Some(tx) = game_cmd_txs.get(&id) {
@@ -162,7 +162,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
 
                             _ = resp_tx.send(Some(Game::new(id, game_cmd_tx)));
 
-                            tracing::info!("game loaded: {}", str::from_utf8(&id).unwrap());
+                            tracing::info!("game loaded: {id}");
                         } else {
                             _ = resp_tx.send(None);
                         }
@@ -191,7 +191,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
 
                 if let Some(state) = state {
                     db_manager.save(id, state).await;
-                    tracing::info!("game saved: {}", str::from_utf8(&id).unwrap());
+                    tracing::info!("game saved: {id}");
                 }
             }
         }

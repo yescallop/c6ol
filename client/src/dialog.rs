@@ -210,8 +210,8 @@ impl DialogImpl for OnlineMenuDialog {
                         type="text"
                         id="game-id"
                         required
-                        pattern="[0-9A-Za-z]{10}"
-                        placeholder="10 alphanumerics"
+                        pattern="[0-9A-Za-z]{11}"
+                        placeholder="11 alphanumerics"
                         bind:value=game_id
                     />
                     <div class="btn-group reversed">

@@ -197,9 +197,8 @@ pub fn App() -> impl IntoView {
                 }
 
                 if let Some(id) = new_game_id {
-                    let id = String::from_utf8_lossy(&id).into_owned();
-                    game_id.set(id.clone());
                     history_push_state(&format!("#{id}"));
+                    game_id.set(id.to_string());
                 }
                 if let Some(req) = requests.read()[assigned_player.opposite()] {
                     confirm(Confirm::Requested(assigned_player, req));
@@ -363,11 +362,9 @@ pub fn App() -> impl IntoView {
         }
 
         #[cfg(feature = "online")]
-        if let Ok(id) = c6ol_core::protocol::GameId::try_from(id.as_bytes()) {
-            if id.iter().all(u8::is_ascii_alphanumeric) {
-                connect(ClientMessage::Join(id));
-                return;
-            }
+        if let Some(id) = c6ol_core::protocol::GameId::from_base62(id.as_bytes()) {
+            connect(ClientMessage::Join(id));
+            return;
         }
 
         confirm(Confirm::Error("Invalid game ID.".into()));

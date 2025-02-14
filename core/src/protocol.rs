@@ -3,14 +3,63 @@
 use crate::game::{Direction, Move, Player, Point, Record, RecordEncodeMethod, Stone};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
-use std::{iter, mem, num::NonZero};
+use std::{fmt, iter, num::NonZero, str};
 use strum::{EnumDiscriminants, FromRepr};
 
 /// A passcode.
 pub type Passcode = NonZero<i64>;
 
 /// A game ID.
-pub type GameId = [u8; 10];
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct GameId(pub NonZero<i64>);
+
+const BASE62_ALPHABET: &[u8] = b"0123456789\
+    ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+    abcdefghijklmnopqrstuvwxyz";
+
+const BASE62_LUT: &[u8] = &{
+    let mut out = [0xff; 256];
+    let mut i = 0;
+    while i < 62 {
+        out[BASE62_ALPHABET[i] as usize] = i as u8;
+        i += 1;
+    }
+    out
+};
+
+impl GameId {
+    /// Decodes a Base62-encoded game ID.
+    #[must_use]
+    pub fn from_base62(buf: &[u8]) -> Option<Self> {
+        if buf.len() != 11 {
+            return None;
+        }
+
+        let mut n = 0u64;
+        for &x in buf.iter().rev() {
+            let x = BASE62_LUT[x as usize];
+            if x > 127 {
+                return None;
+            }
+            n = n.checked_mul(62)?.checked_add(x as u64)?;
+        }
+        NonZero::new(n as i64).map(Self)
+    }
+}
+
+impl fmt::Display for GameId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut n = self.0.get() as u64;
+        let mut buf = [b'0'; 11];
+        let mut i = 0;
+        while n != 0 {
+            buf[i] = BASE62_ALPHABET[(n % 62) as usize];
+            n /= 62;
+            i += 1;
+        }
+        f.write_str(str::from_utf8(&buf).unwrap())
+    }
+}
 
 /// Game options.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -140,7 +189,7 @@ impl ClientMessage {
                 options.encode(&mut buf);
                 buf.put_i64(passcode.get());
             }
-            Self::Join(game_id) => buf.put_slice(&game_id),
+            Self::Join(game_id) => buf.put_i64(game_id.0.get()),
             Self::Authenticate(passcode) => buf.put_i64(passcode.get()),
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
@@ -169,7 +218,7 @@ impl ClientMessage {
                 GameOptions::decode(&mut buf)?,
                 NonZero::new(buf.try_get_i64().ok()?)?,
             ),
-            Kind::Join => Self::Join(mem::take(&mut buf).try_into().ok()?),
+            Kind::Join => Self::Join(GameId(NonZero::new(buf.try_get_i64().ok()?)?)),
             Kind::Authenticate => Self::Authenticate(NonZero::new(buf.try_get_i64().ok()?)?),
             Kind::Place => {
                 let p1 = Point::decode(&mut buf)?;
@@ -226,7 +275,7 @@ impl ServerMessage {
             Self::Started(player, game_id) => {
                 buf.put_u8(player as u8);
                 if let Some(id) = game_id {
-                    buf.put_slice(&id);
+                    buf.put_i64(id.0.get());
                 }
             }
             Self::Options(options) => options.encode(&mut buf),
@@ -251,7 +300,7 @@ impl ServerMessage {
             Kind::Started => {
                 let player = Player::from_u8(buf.try_get_u8().ok()?)?;
                 let game_id = if buf.has_remaining() {
-                    Some(mem::take(&mut buf).try_into().ok()?)
+                    Some(GameId(NonZero::new(buf.try_get_i64().ok()?)?))
                 } else {
                     None
                 };

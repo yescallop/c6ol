@@ -5,9 +5,8 @@ use c6ol_core::{
     protocol::{GameId, GameOptions, Request},
 };
 use chrono::Utc;
-use rand::{distr::Alphanumeric, Rng};
 use rusqlite::{Connection, Row};
-use std::{array, path::PathBuf};
+use std::path::PathBuf;
 use tokio::{
     sync::{mpsc, oneshot},
     task,
@@ -51,12 +50,6 @@ pub fn manager(path: Option<PathBuf>) -> (DbManager, task::JoinHandle<()>) {
     (DbManager { cmd_tx }, handle)
 }
 
-/// Generates a random alphanumeric game ID.
-fn rand_game_id() -> GameId {
-    let mut rng = rand::rng();
-    array::from_fn(|_| rng.sample(Alphanumeric))
-}
-
 fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyhow::Result<()> {
     let conn = match path {
         Some(path) => Connection::open(path)?,
@@ -65,7 +58,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS game (
-            id BLOB NOT NULL PRIMARY KEY,
+            id INT NOT NULL PRIMARY KEY,
             options BLOB NOT NULL,
             passcode_host INT,
             passcode_guest INT,
@@ -96,8 +89,8 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                         VALUES (?1, ?2, ?3, ?4, ?4)",
                 )?;
                 let id = loop {
-                    let id = rand_game_id();
-                    let rows = stmt.execute((id, &options, &record, timestamp))?;
+                    let id = GameId(rand::random());
+                    let rows = stmt.execute((id.0, &options, &record, timestamp))?;
                     if rows > 0 {
                         break id;
                     }
@@ -109,7 +102,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                     "SELECT options, passcode_host, passcode_guest,
                         request_host, request_guest, record FROM game WHERE id = ?1",
                 )?;
-                let resp = stmt.query([id])?.next()?.map(parse_row).transpose()?;
+                let resp = stmt.query([id.0])?.next()?.map(parse_row).transpose()?;
                 _ = resp_tx.send(resp);
             }
             Command::Save(id, state) => {
@@ -126,7 +119,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                         state.requests[Player::Guest].map(Request::encode_to_vec),
                         state.record.encode_to_vec(RecordEncodeMethod::Past),
                         Utc::now().timestamp_millis(),
-                        id,
+                        id.0,
                     ),
                 )?;
             }
