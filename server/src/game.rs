@@ -1,6 +1,6 @@
 //! Game manager.
 
-use crate::{db::DbManager, macros::execute};
+use crate::{db::DbManager, macros::exec};
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
     protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
@@ -52,7 +52,7 @@ impl Game {
 
     /// Subscribes to the game.
     pub async fn subscribe(&self) -> GameSubscription {
-        execute!(self.cmd_tx, GameCommand::Subscribe,)
+        exec!(self.cmd_tx, GameCommand::Subscribe,)
     }
 
     /// Attempts to authenticate with the given passcode.
@@ -64,7 +64,7 @@ impl Game {
     /// Panics if the handle is already authenticated.
     pub async fn authenticate(&mut self, passcode: Passcode) -> Option<Player> {
         assert!(self.player.is_none(), "already authenticated");
-        self.player = execute!(self.cmd_tx, GameCommand::Authenticate, passcode);
+        self.player = exec!(self.cmd_tx, GameCommand::Authenticate, passcode);
         self.player
     }
 
@@ -80,7 +80,7 @@ impl Game {
     /// Panics if the handle is unauthenticated.
     pub async fn play(&self, msg: ClientMessage) {
         let player = self.player.expect("unauthenticated");
-        execute!(self.cmd_tx, GameCommand::Play(player, msg));
+        exec!(self.cmd_tx, GameCommand::Play(player, msg));
     }
 }
 
@@ -106,12 +106,12 @@ pub struct GameManager {
 impl GameManager {
     /// Creates a new game with the given options.
     pub async fn create(&self, options: GameOptions) -> Game {
-        execute!(self.cmd_tx, GameManageCommand::Create, options)
+        exec!(self.cmd_tx, GameManageCommand::Create, options)
     }
 
     /// Searches for a game with the given ID.
     pub async fn find(&self, id: GameId) -> Option<Game> {
-        execute!(self.cmd_tx, GameManageCommand::Find, id)
+        exec!(self.cmd_tx, GameManageCommand::Find, id)
     }
 }
 

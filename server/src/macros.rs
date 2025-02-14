@@ -1,5 +1,5 @@
 /// Convenience macro for command execution.
-macro_rules! execute {
+macro_rules! exec {
     ($cmd_tx:expr, $variant:path, $($args:expr),*) => {{
         let (tx, rx) = oneshot::channel();
         $cmd_tx.send($variant(tx, $($args),*)).await.expect("receiver should be alive");
@@ -10,4 +10,4 @@ macro_rules! execute {
     };
 }
 
-pub(crate) use execute;
+pub(crate) use exec;

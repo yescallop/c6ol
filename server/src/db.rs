@@ -1,4 +1,4 @@
-use crate::{game::GameState, macros::execute};
+use crate::{game::GameState, macros::exec};
 use anyhow::Context;
 use c6ol_core::{
     game::{Player, Record, RecordEncodeMethod},
@@ -27,15 +27,15 @@ pub struct DbManager {
 
 impl DbManager {
     pub async fn create(&self, options: GameOptions) -> (GameId, Box<GameState>) {
-        execute!(self.cmd_tx, Command::Create, options)
+        exec!(self.cmd_tx, Command::Create, options)
     }
 
     pub async fn load(&self, id: GameId) -> Option<Box<GameState>> {
-        execute!(self.cmd_tx, Command::Load, id)
+        exec!(self.cmd_tx, Command::Load, id)
     }
 
     pub async fn save(&self, id: GameId, state: Box<GameState>) {
-        execute!(self.cmd_tx, Command::Save(id, state));
+        exec!(self.cmd_tx, Command::Save(id, state));
     }
 }
 
