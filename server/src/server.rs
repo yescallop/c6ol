@@ -1,9 +1,9 @@
-use crate::{manager, shutdown, ws};
+use crate::{db, game, shutdown, ws};
 use axum::{routing::get, Router};
 use std::{
     future::{Future, IntoFuture},
     iter,
-    path::Path,
+    path::PathBuf,
 };
 use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::services::ServeDir;
@@ -12,13 +12,14 @@ use tower_http::services::ServeDir;
 #[derive(Clone)]
 pub struct AppState {
     pub shutdown_rx: shutdown::Receiver,
-    pub manager: manager::GameManager,
+    pub game_manager: game::GameManager,
 }
 
 /// Runs the server.
 pub async fn run(
     listeners: Vec<TcpListener>,
-    serve_dir: Option<&Path>,
+    serve_dir: Option<PathBuf>,
+    db_file: Option<PathBuf>,
     shutdown_signal: impl Future<Output = ()> + Send + 'static,
 ) {
     // Set up graceful shutdown, on which the following events happen:
@@ -36,12 +37,13 @@ pub async fn run(
         shutdown_tx.request();
     });
 
-    let (manager, manager_fut) = manager::create();
-    let manager_task = tokio::spawn(manager_fut);
+    let (db_manager, db_manager_task) = db::manager(db_file);
+    let (game_manager, game_manager_fut) = game::manager(db_manager);
+    let game_manager_task = tokio::spawn(game_manager_fut);
 
     let app_state = AppState {
         shutdown_rx: shutdown_rx.clone(),
-        manager,
+        game_manager,
     };
 
     let mut app = Router::new()
@@ -70,7 +72,11 @@ pub async fn run(
         }
     }
 
-    if let Err(err) = manager_task.await {
-        tracing::error!("manager task panicked: {err}");
+    if let Err(err) = game_manager_task.await {
+        tracing::error!("game manager task panicked: {err}");
+    }
+
+    if let Err(err) = db_manager_task.await {
+        tracing::error!("database manager task panicked: {err}");
     }
 }

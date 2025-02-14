@@ -1,6 +1,8 @@
 //! The server library for [Connect6 Online](https://github.com/yescallop/c6ol).
 
-mod manager;
+mod db;
+mod game;
+mod macros;
 mod server;
 mod shutdown;
 mod ws;

@@ -30,8 +30,12 @@ struct Args {
     listen: Vec<SocketAddr>,
 
     /// Serve files from the given directory
-    #[arg(long, name = "PATH")]
+    #[arg(long, name = "DIR")]
     serve_dir: Option<PathBuf>,
+
+    /// Open the given database file
+    #[arg(long, name = "FILE")]
+    db_file: Option<PathBuf>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -55,19 +59,17 @@ async fn main() -> anyhow::Result<()> {
 
     let shutdown_signal = shutdown_signal().context("failed to listen for shutdown signals")?;
 
-    let serve_dir = if let Some(path) = &args.serve_dir {
-        let path = path
-            .canonicalize()
-            .ok()
-            .filter(|path| path.is_dir())
-            .context("argument to --serve-dir is not pointing to a valid directory")?;
+    if let Some(path) = &args.serve_dir {
         tracing::info!("serving files from {}", path.display());
-        Some(path)
+    }
+
+    if let Some(path) = &args.db_file {
+        tracing::info!("opening database at {}", path.display());
     } else {
-        None
+        tracing::info!("opening in-memory database");
     };
 
-    c6ol_server::run(listeners, serve_dir.as_deref(), shutdown_signal).await;
+    c6ol_server::run(listeners, args.serve_dir, args.db_file, shutdown_signal).await;
     Ok(())
 }
 

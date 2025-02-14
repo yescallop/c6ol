@@ -1,6 +1,6 @@
 //! WebSocket handling.
 
-use crate::{manager::GameManager, server::AppState};
+use crate::{game::GameManager, server::AppState};
 use axum::{
     body::Bytes,
     extract::{
@@ -22,7 +22,7 @@ pub async fn handle_websocket_upgrade(
 ) -> Response {
     upgrade.on_upgrade(|mut socket| async move {
         let err = tokio::select! {
-            res = handle_websocket(&mut socket, state.manager) => {
+            res = handle_websocket(&mut socket, state.game_manager) => {
                 let Err(err) = res;
                 err
             }
@@ -101,7 +101,7 @@ async fn handle_websocket(
 
     match socket.next().await.ok_or(Error::Closed)?? {
         ClientMessage::Start(options, passcode) => {
-            game = manager.new_game(options).await;
+            game = manager.create(options).await;
             let player = game
                 .authenticate(passcode)
                 .await
@@ -111,7 +111,7 @@ async fn handle_websocket(
             socket.send(encode(msg)).await?;
         }
         ClientMessage::Join(id) => {
-            game = manager.find_game(id).await.ok_or(Error::GameNotFound)?;
+            game = manager.find(id).await.ok_or(Error::GameNotFound)?;
         }
         _ => return Err(Error::UnexpectedMessage),
     }

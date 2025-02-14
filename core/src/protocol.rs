@@ -38,6 +38,14 @@ impl GameOptions {
         buf.put_u8(self.swapped as u8);
     }
 
+    /// Encodes the options to a new buffer.
+    #[must_use]
+    pub fn encode_to_vec(self) -> Vec<u8> {
+        let mut buf = vec![];
+        self.encode(&mut buf);
+        buf
+    }
+
     /// Decodes options from a buffer.
     #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
@@ -53,18 +61,19 @@ impl GameOptions {
 
 /// A player's request.
 #[derive(Clone, Copy, Debug, EnumDiscriminants, Eq, PartialEq)]
-#[strum_discriminants(derive(FromRepr), name(RequestKind), repr(u8), vis(pub(self)))]
+#[repr(u8)]
+#[strum_discriminants(derive(FromRepr), name(RequestKind), vis(pub(self)))]
 pub enum Request {
     /// Accepts the opponent's request.
-    Accept,
+    Accept = 0,
     /// Declines the opponent's request.
-    Decline,
+    Decline = 1,
     /// Ends the game in a draw.
-    Draw,
+    Draw = 2,
     /// Retracts the previous move.
-    Retract,
+    Retract = 3,
     /// Resets the game.
-    Reset(GameOptions),
+    Reset(GameOptions) = 4,
 }
 
 impl Request {
@@ -81,6 +90,14 @@ impl Request {
             Self::Accept | Self::Decline | Self::Draw | Self::Retract => {}
             Self::Reset(options) => options.encode(buf),
         }
+    }
+
+    /// Encodes the request to a new buffer.
+    #[must_use]
+    pub fn encode_to_vec(self) -> Vec<u8> {
+        let mut buf = vec![];
+        self.encode(&mut buf);
+        buf
     }
 
     /// Decodes a request from a buffer.

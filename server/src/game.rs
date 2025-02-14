@@ -1,11 +1,11 @@
 //! Game manager.
 
+use crate::{db::DbManager, macros::execute};
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
     protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
 };
-use rand::{distr::Alphanumeric, Rng};
-use std::{array, collections::HashMap, future::Future};
+use std::{collections::HashMap, future::Future, str};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::JoinSet,
@@ -14,18 +14,6 @@ use tokio::{
 const CHANNEL_CAPACITY_MANAGE_CMD: usize = 64;
 const CHANNEL_CAPACITY_GAME_CMD: usize = 8;
 const CHANNEL_CAPACITY_GAME_MSG: usize = 8;
-
-/// Convenience macro for command execution.
-macro_rules! execute {
-    ($cmd_tx:expr, $variant:path, $($args:expr),*) => {{
-        let (tx, rx) = oneshot::channel();
-        $cmd_tx.send($variant(tx, $($args),*)).await.expect("receiver should be alive");
-        rx.await.expect("command should return")
-    }};
-    ($cmd_tx:expr, $cmd:expr) => {
-        $cmd_tx.send($cmd).await.expect("receiver should be alive")
-    };
-}
 
 /// A subscription to a game.
 pub struct GameSubscription {
@@ -96,44 +84,38 @@ impl Game {
     }
 }
 
-enum ManageCommand {
-    New(oneshot::Sender<Game>, GameOptions),
+enum GameManageCommand {
+    Create(oneshot::Sender<Game>, GameOptions),
     Find(oneshot::Sender<Option<Game>>, GameId),
-}
-
-/// Generates a random alphanumeric game ID.
-fn rand_game_id() -> GameId {
-    let mut rng = rand::rng();
-    array::from_fn(|_| rng.sample(Alphanumeric))
 }
 
 /// Creates a game manager.
 ///
 /// Returns a command handle to it and a future to run it.
-pub fn create() -> (GameManager, impl Future<Output = ()>) {
+pub fn manager(db_manager: DbManager) -> (GameManager, impl Future<Output = ()>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_MANAGE_CMD);
-    (GameManager { cmd_tx }, manage_games(cmd_rx))
+    (GameManager { cmd_tx }, manage_games(db_manager, cmd_rx))
 }
 
 /// A command handle to a game manager.
 #[derive(Clone)]
 pub struct GameManager {
-    cmd_tx: mpsc::Sender<ManageCommand>,
+    cmd_tx: mpsc::Sender<GameManageCommand>,
 }
 
 impl GameManager {
     /// Creates a new game with the given options.
-    pub async fn new_game(&self, options: GameOptions) -> Game {
-        execute!(self.cmd_tx, ManageCommand::New, options)
+    pub async fn create(&self, options: GameOptions) -> Game {
+        execute!(self.cmd_tx, GameManageCommand::Create, options)
     }
 
     /// Searches for a game with the given ID.
-    pub async fn find_game(&self, id: GameId) -> Option<Game> {
-        execute!(self.cmd_tx, ManageCommand::Find, id)
+    pub async fn find(&self, id: GameId) -> Option<Game> {
+        execute!(self.cmd_tx, GameManageCommand::Find, id)
     }
 }
 
-async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
+async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameManageCommand>) {
     tracing::info!("game manager started");
 
     let mut game_cmd_txs = HashMap::new();
@@ -148,43 +130,69 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
                     break;
                 };
                 match cmd {
-                    ManageCommand::New(resp_tx, options) => loop {
-                        let id = rand_game_id();
-                        if game_cmd_txs.contains_key(&id) {
-                            continue;
-                        }
+                    GameManageCommand::Create(resp_tx, options) => {
+                        let (id, state) = db_manager.create(options).await;
 
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                        let task_id = game_tasks.spawn(start_game(id, options, game_cmd_rx)).id();
+                        let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
                         game_ids_by_task_id.insert(task_id, id);
 
                         _ = resp_tx.send(Game::new(id, game_cmd_tx));
-                        break;
+
+                        tracing::info!("game started: {}", str::from_utf8(&id).unwrap());
                     },
-                    ManageCommand::Find(resp_tx, id) => {
-                        // There is a chance that all senders have been dropped
-                        // but the game task has not finished yet.
-                        let resp = game_cmd_txs
-                            .get(&id)
-                            .and_then(|tx| tx.upgrade().map(|tx| Game::new(id, tx)));
-                        _ = resp_tx.send(resp);
+                    GameManageCommand::Find(resp_tx, id) => {
+                        if let Some(tx) = game_cmd_txs.get(&id) {
+                            // There is a chance that all senders have been dropped
+                            // but the game task has not finished yet.
+                            if let Some(tx) = tx.upgrade() {
+                                _ = resp_tx.send(Some(Game::new(id, tx)));
+                                continue;
+                            }
+                        }
+
+                        if let Some(state) = db_manager.load(id).await {
+                            let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
+                            game_cmd_txs.insert(id, game_cmd_tx.downgrade());
+
+                            let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
+                            game_ids_by_task_id.insert(task_id, id);
+
+                            _ = resp_tx.send(Some(Game::new(id, game_cmd_tx)));
+
+                            tracing::info!("game loaded: {}", str::from_utf8(&id).unwrap());
+                        } else {
+                            _ = resp_tx.send(None);
+                        }
                     }
                 }
             }
             // When `join_next` returns `None`, `select!` will disable
             // this branch and still wait on the other branch.
             Some(res) = game_tasks.join_next_with_id() => {
-                let task_id = match res {
-                    Ok((id, ())) => id,
+                let (task_id, state) = match res {
+                    Ok((id, state)) => (id, Some(state)),
                     Err(err) => {
                         tracing::error!("game task panicked: {err}");
-                        err.id()
+                        (err.id(), None)
                     },
                 };
-                let game_id = game_ids_by_task_id.remove(&task_id).unwrap();
-                game_cmd_txs.remove(&game_id);
+
+                let id = game_ids_by_task_id.remove(&task_id).unwrap();
+                if let Some(tx) = game_cmd_txs.get(&id) {
+                    // There is a chance that the same game is loaded again
+                    // before we even remove the weak sender.
+                    if tx.strong_count() == 0 {
+                        game_cmd_txs.remove(&id);
+                    }
+                }
+
+                if let Some(state) = state {
+                    db_manager.save(id, state).await;
+                    tracing::info!("game saved: {}", str::from_utf8(&id).unwrap());
+                }
             }
         }
     }
@@ -195,26 +203,16 @@ async fn manage_games(mut cmd_rx: mpsc::Receiver<ManageCommand>) {
     tracing::info!("game manager stopped");
 }
 
-struct GameState {
-    msg_tx: broadcast::Sender<ServerMessage>,
-    record: Record,
-    options: GameOptions,
-    passcodes: PlayerSlots<Option<Passcode>>,
-    requests: PlayerSlots<Option<Request>>,
+#[derive(Default)]
+pub struct GameState {
+    pub options: GameOptions,
+    pub passcodes: PlayerSlots<Option<Passcode>>,
+    pub requests: PlayerSlots<Option<Request>>,
+    pub record: Record,
 }
 
 impl GameState {
-    fn new() -> Self {
-        Self {
-            msg_tx: broadcast::channel(CHANNEL_CAPACITY_GAME_MSG).0,
-            record: Record::new(),
-            options: Default::default(),
-            passcodes: Default::default(),
-            requests: Default::default(),
-        }
-    }
-
-    fn subscribe(&self) -> GameSubscription {
+    fn subscribe(&self, msg_tx: &broadcast::Sender<ServerMessage>) -> GameSubscription {
         GameSubscription {
             init_msgs: [
                 ServerMessage::Options(self.options),
@@ -225,7 +223,7 @@ impl GameState {
                 self.requests[player].map(|req| ServerMessage::Request(player, req))
             }))
             .collect(),
-            msg_rx: self.msg_tx.subscribe(),
+            msg_rx: msg_tx.subscribe(),
         }
     }
 
@@ -250,7 +248,12 @@ impl GameState {
         }
     }
 
-    fn play(&mut self, player: Player, msg: ClientMessage) {
+    fn play(
+        &mut self,
+        player: Player,
+        msg: ClientMessage,
+        msg_tx: &broadcast::Sender<ServerMessage>,
+    ) {
         use ClientMessage as Msg;
 
         enum Action {
@@ -297,7 +300,7 @@ impl GameState {
                     Request::Decline => {
                         if self.requests[player.opposite()].take().is_some() {
                             // Inform the opponent of the decline.
-                            _ = self.msg_tx.send(ServerMessage::Request(player, req));
+                            _ = msg_tx.send(ServerMessage::Request(player, req));
                         }
                         return;
                     }
@@ -316,7 +319,7 @@ impl GameState {
                 }
 
                 *player_req = Some(req);
-                _ = self.msg_tx.send(ServerMessage::Request(player, req));
+                _ = msg_tx.send(ServerMessage::Request(player, req));
                 return;
             }
         };
@@ -327,19 +330,19 @@ impl GameState {
                     // The move failed.
                     return;
                 }
-                _ = self.msg_tx.send(ServerMessage::Move(mov));
+                _ = msg_tx.send(ServerMessage::Move(mov));
             }
             Action::Retract => {
                 // We have checked that there is a previous move.
                 self.record.undo_move();
-                _ = self.msg_tx.send(ServerMessage::Retract);
+                _ = msg_tx.send(ServerMessage::Retract);
             }
             Action::Reset(options) => {
                 self.options = options;
                 self.record.jump(0);
 
-                _ = self.msg_tx.send(ServerMessage::Options(options));
-                _ = self.msg_tx.send(ServerMessage::Record(Default::default()));
+                _ = msg_tx.send(ServerMessage::Options(options));
+                _ = msg_tx.send(ServerMessage::Record(Default::default()));
             }
         }
 
@@ -349,31 +352,29 @@ impl GameState {
         if let ClientMessage::Request(_) = msg {
             // Inform the opponent of the acceptance.
             // This has to be the last message in order for the dialog not to be closed.
-            _ = self
-                .msg_tx
-                .send(ServerMessage::Request(player, Request::Accept));
+            _ = msg_tx.send(ServerMessage::Request(player, Request::Accept));
         }
     }
 }
 
-async fn start_game(id: GameId, options: GameOptions, mut cmd_rx: mpsc::Receiver<GameCommand>) {
-    tracing::debug!("game started: {}", id.escape_ascii());
-
-    let mut state = GameState::new();
-    state.options = options;
+async fn manage_game(
+    mut state: Box<GameState>,
+    mut cmd_rx: mpsc::Receiver<GameCommand>,
+) -> Box<GameState> {
+    let (msg_tx, _) = broadcast::channel(CHANNEL_CAPACITY_GAME_MSG);
 
     while let Some(cmd) = cmd_rx.recv().await {
         match cmd {
             GameCommand::Subscribe(resp_tx) => {
-                _ = resp_tx.send(state.subscribe());
+                _ = resp_tx.send(state.subscribe(&msg_tx));
             }
             GameCommand::Authenticate(resp_tx, pass) => {
                 _ = resp_tx.send(state.authenticate(pass));
             }
-            GameCommand::Play(stone, msg) => state.play(stone, msg),
+            GameCommand::Play(player, msg) => state.play(player, msg, &msg_tx),
         }
     }
 
     // All command senders are dropped.
-    tracing::debug!("game ended: {}", id.escape_ascii());
+    state
 }

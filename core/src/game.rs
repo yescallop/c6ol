@@ -574,6 +574,14 @@ impl Record {
         }
     }
 
+    /// Encodes the record to a new buffer.
+    #[must_use]
+    pub fn encode_to_vec(&self, method: RecordEncodeMethod) -> Vec<u8> {
+        let mut buf = vec![];
+        self.encode(&mut buf, method);
+        buf
+    }
+
     /// Decodes a record from a buffer.
     #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
