@@ -162,11 +162,20 @@ pub fn App() -> impl IntoView {
     };
 
     let show_game_menu_dialog = move || {
+        if dialog_entries
+            .read()
+            .iter()
+            .any(|entry| matches!(entry.dialog, Dialog::GameMenu(_)))
+        {
+            // Skip if game menu is already open.
+            return;
+        }
+
         show_dialog(Dialog::from(GameMenuDialog {
-            game_id: game_id.get(),
+            game_id: game_id.read_only(),
             stone: stone.read_only(),
             online: online(),
-            player: player.get(),
+            player: player.read_only(),
             record: record.read_only(),
             win_claim: win_claim.read_only(),
             requests: requests.read_only(),

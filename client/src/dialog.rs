@@ -5,7 +5,7 @@ use c6ol_core::{
     protocol::{GameOptions, Request},
 };
 use leptos::{
-    either::{Either, EitherOf6},
+    either::{Either, EitherOf3, EitherOf6},
     html,
     prelude::*,
 };
@@ -283,10 +283,10 @@ impl DialogImpl for JoinDialog {
 
 #[derive(Clone)]
 pub struct GameMenuDialog {
-    pub game_id: String,
+    pub game_id: ReadSignal<String>,
     pub stone: ReadSignal<Option<Stone>>,
     pub online: bool,
-    pub player: Option<Player>,
+    pub player: ReadSignal<Option<Player>>,
     pub record: ReadSignal<Record>,
     pub win_claim: ReadSignal<Option<WinClaim>>,
     pub requests: ReadSignal<PlayerSlots<Option<Request>>>,
@@ -327,22 +327,27 @@ impl DialogImpl for GameMenuDialog {
         } = self;
 
         let info_view = view! {
-            {if game_id == "local" {
-                Either::Left("Offline")
-            } else if game_id.starts_with(ANALYZE_PREFIX) {
-                Either::Left("Analyzing")
-            } else {
-                let href = format!("#{game_id}");
-                Either::Right(
-                    view! {
-                        <a href=href>{game_id}</a>
-                        <br />
-                        {move || match stone.get() {
-                            Some(stone) => format!("Playing {stone:?}"),
-                            None => "View Only".into(),
-                        }}
-                    },
-                )
+            {move || {
+                let id = game_id.read();
+                if id.is_empty() {
+                    Either::Left("Pending")
+                } else if *id == "local" {
+                    Either::Left("Offline")
+                } else if id.starts_with(ANALYZE_PREFIX) {
+                    Either::Left("Analyzing")
+                } else {
+                    let href = format!("#{id}");
+                    Either::Right(
+                        view! {
+                            <a href=href>{id.clone()}</a>
+                            <br />
+                            {move || match stone.get() {
+                                Some(stone) => format!("Playing {stone:?}"),
+                                None => "View Only".into(),
+                            }}
+                        },
+                    )
+                }
             }}
             <br />
             {move || {
@@ -373,9 +378,7 @@ impl DialogImpl for GameMenuDialog {
             </a>
         };
 
-        let join_btn_or_ctrl_view = if online && player.is_none() {
-            Either::Left(view! { <button value=ret!(Join)>"Join"</button> })
-        } else {
+        let ctrl_view = move || {
             let alt_pushed = RwSignal::new(false);
 
             let alt_btn = move |pushed: bool| {
@@ -414,7 +417,7 @@ impl DialogImpl for GameMenuDialog {
 
             macro_rules! req_state {
                 ($pat:pat) => {
-                    if let Some(player) = player {
+                    if let Some(player) = player.get() {
                         let requests = requests.read();
                         if matches!(requests[player.opposite()], Some($pat)) {
                             CanAccept
@@ -431,7 +434,7 @@ impl DialogImpl for GameMenuDialog {
                 };
             }
 
-            let ctrl_view = move || {
+            let main_ctrl_view = move || {
                 view! {
                     <div class="btn-group">
                         {alt_btn(false)}
@@ -513,13 +516,23 @@ impl DialogImpl for GameMenuDialog {
                 }
             };
 
-            Either::Right(move || {
+            move || {
                 if !alt_pushed.get() {
-                    Either::Left(ctrl_view())
+                    Either::Left(main_ctrl_view())
                 } else {
                     Either::Right(alt_ctrl_view())
                 }
-            })
+            }
+        };
+
+        let maybe_join_btn_or_ctrl_view = move || {
+            if game_id.read().is_empty() {
+                EitherOf3::A(())
+            } else if online && player.get().is_none() {
+                EitherOf3::B(view! { <button value=ret!(Join)>"Join"</button> })
+            } else {
+                EitherOf3::C(ctrl_view())
+            }
         };
 
         view! {
@@ -527,7 +540,7 @@ impl DialogImpl for GameMenuDialog {
             <p style="font-family: monospace;">{info_view}</p>
             <div class="menu-btn-group">
                 <button value=ret!(MainMenu)>"Main Menu"</button>
-                {join_btn_or_ctrl_view}
+                {maybe_join_btn_or_ctrl_view}
                 <button autofocus>"Resume"</button>
             </div>
         }
