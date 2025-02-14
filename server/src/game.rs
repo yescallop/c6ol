@@ -282,31 +282,7 @@ impl GameState {
             }
             Msg::ClaimWin(p, dir) => Action::Move(Move::Win(p, dir)),
             Msg::Resign => Action::Move(Move::Resign(stone)),
-            Msg::Request(req) => 'a: {
-                match req {
-                    Request::Accept => {
-                        let Some(req) = self.requests[player.opposite()] else {
-                            // The opponent hasn't made a request.
-                            return;
-                        };
-
-                        break 'a match req {
-                            Request::Accept | Request::Decline => unreachable!(),
-                            Request::Draw => Action::Move(Move::Draw),
-                            Request::Retract => Action::Retract,
-                            Request::Reset(options) => Action::Reset(options),
-                        };
-                    }
-                    Request::Decline => {
-                        if self.requests[player.opposite()].take().is_some() {
-                            // Inform the opponent of the decline.
-                            _ = msg_tx.send(ServerMessage::Request(player, req));
-                        }
-                        return;
-                    }
-                    _ => {}
-                }
-
+            Msg::Request(req) => {
                 let player_req = &mut self.requests[player];
                 if player_req.is_some() {
                     // Duplicate request.
@@ -320,6 +296,25 @@ impl GameState {
 
                 *player_req = Some(req);
                 _ = msg_tx.send(ServerMessage::Request(player, req));
+                return;
+            }
+            Msg::AcceptRequest => {
+                let Some(req) = self.requests[player.opposite()] else {
+                    // The opponent hasn't made a request.
+                    return;
+                };
+
+                match req {
+                    Request::Draw => Action::Move(Move::Draw),
+                    Request::Retract => Action::Retract,
+                    Request::Reset(options) => Action::Reset(options),
+                }
+            }
+            Msg::DeclineRequest => {
+                if self.requests[player.opposite()].take().is_some() {
+                    // Inform the opponent of the decline.
+                    _ = msg_tx.send(ServerMessage::DeclineRequest(player));
+                }
                 return;
             }
         };
@@ -349,10 +344,10 @@ impl GameState {
         // Clear the requests.
         self.requests.fill(None);
 
-        if let ClientMessage::Request(_) = msg {
+        if let ClientMessage::AcceptRequest = msg {
             // Inform the opponent of the acceptance.
             // This has to be the last message in order for the dialog not to be closed.
-            _ = msg_tx.send(ServerMessage::Request(player, Request::Accept));
+            _ = msg_tx.send(ServerMessage::AcceptRequest(player));
         }
     }
 }

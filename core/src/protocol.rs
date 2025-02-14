@@ -64,30 +64,20 @@ impl GameOptions {
 #[repr(u8)]
 #[strum_discriminants(derive(FromRepr), name(RequestKind), vis(pub(self)))]
 pub enum Request {
-    /// Accepts the opponent's request.
-    Accept = 0,
-    /// Declines the opponent's request.
-    Decline = 1,
     /// Ends the game in a draw.
-    Draw = 2,
+    Draw = 1,
     /// Retracts the previous move.
-    Retract = 3,
+    Retract = 2,
     /// Resets the game.
-    Reset(GameOptions) = 4,
+    Reset(GameOptions) = 3,
 }
 
 impl Request {
-    /// Tests if this request is a normal one.
-    #[must_use]
-    pub fn is_normal(self) -> bool {
-        !matches!(self, Self::Accept | Self::Decline)
-    }
-
     /// Encodes the request to a buffer.
     pub fn encode(self, buf: &mut Vec<u8>) {
         buf.put_u8(RequestKind::from(self) as u8);
         match self {
-            Self::Accept | Self::Decline | Self::Draw | Self::Retract => {}
+            Self::Draw | Self::Retract => {}
             Self::Reset(options) => options.encode(buf),
         }
     }
@@ -106,8 +96,6 @@ impl Request {
         use RequestKind as Kind;
 
         Some(match Kind::from_repr(buf.try_get_u8().ok()?)? {
-            Kind::Accept => Self::Accept,
-            Kind::Decline => Self::Decline,
             Kind::Draw => Self::Draw,
             Kind::Retract => Self::Retract,
             Kind::Reset => Self::Reset(GameOptions::decode(buf)?),
@@ -135,6 +123,10 @@ pub enum ClientMessage {
     Resign,
     /// Makes a request.
     Request(Request),
+    /// Accepts the opponent's request.
+    AcceptRequest,
+    /// Declines the opponent's request.
+    DeclineRequest,
 }
 
 impl ClientMessage {
@@ -161,6 +153,7 @@ impl ClientMessage {
             }
             Self::Resign => {}
             Self::Request(req) => req.encode(&mut buf),
+            Self::AcceptRequest | Self::DeclineRequest => {}
         }
         buf
     }
@@ -193,6 +186,8 @@ impl ClientMessage {
             ),
             Kind::Resign => Self::Resign,
             Kind::Request => Self::Request(Request::decode(&mut buf)?),
+            Kind::AcceptRequest => Self::AcceptRequest,
+            Kind::DeclineRequest => Self::DeclineRequest,
         };
         (!buf.has_remaining()).then_some(msg)
     }
@@ -215,6 +210,10 @@ pub enum ServerMessage {
     Retract,
     /// A player made a request.
     Request(Player, Request),
+    /// A player accepted the opponent's request.
+    AcceptRequest(Player),
+    /// A player declined the opponent's request.
+    DeclineRequest(Player),
 }
 
 impl ServerMessage {
@@ -237,6 +236,7 @@ impl ServerMessage {
                 buf.put_u8(player as u8);
                 req.encode(&mut buf);
             }
+            Self::AcceptRequest(player) | Self::DeclineRequest(player) => buf.put_u8(player as u8),
         }
         buf
     }
@@ -264,6 +264,8 @@ impl ServerMessage {
                 Player::from_u8(buf.try_get_u8().ok()?)?,
                 Request::decode(&mut buf)?,
             ),
+            Kind::AcceptRequest => Self::AcceptRequest(Player::from_u8(buf.try_get_u8().ok()?)?),
+            Kind::DeclineRequest => Self::DeclineRequest(Player::from_u8(buf.try_get_u8().ok()?)?),
         };
         (!buf.has_remaining()).then_some(msg)
     }

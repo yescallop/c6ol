@@ -38,7 +38,9 @@ enum Confirm {
     Claim(ArrayVec<[Point; 2]>, Point, Direction),
     RequestDraw,
     RequestRetract,
-    Accept(Player, Request),
+    Requested(Player, Request),
+    RequestAccepted,
+    RequestDeclined,
     Resign,
     ConnClosed(String),
     Error(String),
@@ -186,10 +188,10 @@ pub fn App() -> impl IntoView {
 
         let mut record_changed = false;
         match msg {
-            ServerMessage::Started(new_player, new_game_id) => {
-                player.set(Some(new_player));
+            ServerMessage::Started(assigned_player, new_game_id) => {
+                player.set(Some(assigned_player));
                 if let Some(options) = options.get() {
-                    stone.set(Some(options.stone_of(new_player)));
+                    stone.set(Some(options.stone_of(assigned_player)));
                     show_game_menu_dialog();
                 }
 
@@ -198,8 +200,8 @@ pub fn App() -> impl IntoView {
                     game_id.set(id.clone());
                     history_push_state(&format!("#{id}"));
                 }
-                if let Some(req) = requests.read()[new_player.opposite()] {
-                    confirm(Confirm::Accept(new_player, req));
+                if let Some(req) = requests.read()[assigned_player.opposite()] {
+                    confirm(Confirm::Requested(assigned_player, req));
                 }
             }
             ServerMessage::Options(new_options) => {
@@ -225,17 +227,28 @@ pub fn App() -> impl IntoView {
                 record.write().undo_move();
                 record_changed = true;
             }
-            ServerMessage::Request(req_player, req) => {
-                if req.is_normal() {
-                    requests.write()[req_player] = Some(req);
-                }
-                if req == Request::Decline {
-                    requests.write()[req_player.opposite()] = None;
-                }
+            ServerMessage::Request(initiator, req) => {
+                requests.write()[initiator] = Some(req);
+
                 if let Some(player) = player.get() {
-                    if player != req_player {
-                        confirm(Confirm::Accept(player, req));
+                    if player != initiator {
+                        confirm(Confirm::Requested(player, req));
                     }
+                }
+            }
+            ServerMessage::AcceptRequest(initiator) => {
+                // This is no-op for now, but might be useful later.
+                requests.write()[initiator.opposite()] = None;
+
+                if player.get() == Some(initiator.opposite()) {
+                    confirm(Confirm::RequestAccepted);
+                }
+            }
+            ServerMessage::DeclineRequest(initiator) => {
+                requests.write()[initiator.opposite()] = None;
+
+                if player.get() == Some(initiator.opposite()) {
+                    confirm(Confirm::RequestDeclined);
                 }
             }
         }
@@ -409,7 +422,7 @@ pub fn App() -> impl IntoView {
                 } else if let Some(player) = player.get() {
                     let requests = requests.read();
                     if let Some(req @ Request::Retract) = requests[player.opposite()] {
-                        confirm(Confirm::Accept(player, req));
+                        confirm(Confirm::Requested(player, req));
                     } else if requests[player].is_none() {
                         confirm(Confirm::RequestRetract);
                     }
@@ -428,7 +441,7 @@ pub fn App() -> impl IntoView {
                 if let Some(player) = player.get() {
                     let requests = requests.read();
                     if let Some(req @ Request::Reset { .. }) = requests[player.opposite()] {
-                        confirm(Confirm::Accept(player, req));
+                        confirm(Confirm::Requested(player, req));
                     } else if requests[player].is_none() {
                         if let Some(options) = options.get() {
                             show_dialog(Dialog::from(ResetDialog {
@@ -471,7 +484,7 @@ pub fn App() -> impl IntoView {
                 if let Some(player) = player.get() {
                     let requests = requests.read();
                     if let Some(req @ Request::Draw) = requests[player.opposite()] {
-                        confirm(Confirm::Accept(player, req));
+                        confirm(Confirm::Requested(player, req));
                     } else if requests[player].is_none() {
                         confirm(Confirm::RequestDraw);
                     }
@@ -581,14 +594,14 @@ pub fn App() -> impl IntoView {
                     }
                     Confirm::RequestDraw => send(ClientMessage::Request(Request::Draw)),
                     Confirm::RequestRetract => send(ClientMessage::Request(Request::Retract)),
-                    Confirm::Accept(_, req) if req.is_normal() => {
-                        send(ClientMessage::Request(match ret_val {
-                            ConfirmRetVal::Confirm => Request::Accept,
-                            ConfirmRetVal::AltConfirm => Request::Decline,
+                    Confirm::Requested(..) => {
+                        send(match ret_val {
+                            ConfirmRetVal::Confirm => ClientMessage::AcceptRequest,
+                            ConfirmRetVal::AltConfirm => ClientMessage::DeclineRequest,
                             ConfirmRetVal::Cancel => unreachable!(),
-                        }));
+                        });
                     }
-                    Confirm::Accept(..) => {}
+                    Confirm::RequestAccepted | Confirm::RequestDeclined => {}
                     Confirm::Resign => send(ClientMessage::Resign),
                     Confirm::ConnClosed(_) => set_game_id(&game_id.get()),
                     Confirm::Error(_) => set_game_id(""),

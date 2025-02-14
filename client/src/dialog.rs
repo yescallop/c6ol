@@ -396,11 +396,16 @@ impl DialogImpl for GameMenuDialog {
             let no_future = move || !record.read().has_future();
             let ended = move || record.read().is_ended();
 
-            #[derive(Eq, PartialEq)]
+            #[derive(Eq, Ord, PartialEq, PartialOrd)]
             enum RequestState {
-                Acceptable,
-                Makeable,
-                Disabled,
+                /// The opponent has made this request.
+                CanAccept,
+                /// The user can make this request.
+                CanMake,
+                /// The user has made this request.
+                Made,
+                /// The user has made another request.
+                MadeAnother,
                 Irrelevant,
             }
 
@@ -412,11 +417,13 @@ impl DialogImpl for GameMenuDialog {
                     if let Some(player) = player {
                         let requests = requests.read();
                         if matches!(requests[player.opposite()], Some($pat)) {
-                            Acceptable
+                            CanAccept
                         } else if requests[player].is_none() {
-                            Makeable
+                            CanMake
+                        } else if matches!(requests[player], Some($pat)) {
+                            Made
                         } else {
-                            Disabled
+                            MadeAnother
                         }
                     } else {
                         Irrelevant
@@ -430,8 +437,9 @@ impl DialogImpl for GameMenuDialog {
                         {alt_btn(false)}
                         <button
                             value=ret!(Undo)
-                            disabled=move || no_past() || req_state!(Retract) == Disabled
-                            class:prominent=move || req_state!(Retract) == Acceptable
+                            disabled=move || { no_past() || req_state!(Retract) >= Made }
+                            class:prominent=move || req_state!(Retract) == CanAccept
+                            class:pushed=move || req_state!(Retract) == Made
                         >
                             {if online { "Retract" } else { "Undo" }}
                         </button>
@@ -473,9 +481,10 @@ impl DialogImpl for GameMenuDialog {
                         <button
                             value=ret!(Home)
                             disabled=move || {
-                                (!online && no_past()) || req_state!(Reset { .. }) == Disabled
+                                (!online && no_past()) || req_state!(Reset { .. }) >= Made
                             }
-                            class:prominent=move || req_state!(Reset { .. }) == Acceptable
+                            class:prominent=move || req_state!(Reset { .. }) == CanAccept
+                            class:pushed=move || req_state!(Reset { .. }) == Made
                         >
                             {if online { "Reset" } else { "Home" }}
                         </button>
@@ -491,8 +500,9 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         <button
                             value=ret!(Draw)
-                            disabled=move || ended() || req_state!(Draw) == Disabled
-                            class:prominent=move || req_state!(Draw) == Acceptable
+                            disabled=move || { ended() || req_state!(Draw) >= Made }
+                            class:prominent=move || req_state!(Draw) == CanAccept
+                            class:pushed=move || req_state!(Draw) == Made
                         >
                             "Draw"
                         </button>
@@ -569,21 +579,10 @@ impl DialogImpl for ConfirmDialog {
             },
             Confirm::RequestDraw => "Offer a draw?",
             Confirm::RequestRetract => "Request to retract the previous move?",
-            Confirm::Accept(player, req) => {
-                (confirm, cancel) = ("Accept", Some("Ignore"));
-                if req.is_normal() {
-                    alt_confirm = Some("Decline");
-                }
+            Confirm::Requested(player, req) => {
+                (confirm, cancel, alt_confirm) = ("Accept", Some("Ignore"), Some("Decline"));
 
                 match req {
-                    Request::Accept => {
-                        (confirm, cancel) = ("Noted", None);
-                        "The opponent accepted your request."
-                    }
-                    Request::Decline => {
-                        (confirm, cancel) = ("Noted", None);
-                        "The opponent declined your request."
-                    }
                     Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
                     Request::Reset(options) => &format!(
@@ -592,6 +591,14 @@ impl DialogImpl for ConfirmDialog {
                         options.stone_of(player)
                     ),
                 }
+            }
+            Confirm::RequestAccepted => {
+                (confirm, cancel) = ("Noted", None);
+                "The opponent accepted your request."
+            }
+            Confirm::RequestDeclined => {
+                (confirm, cancel) = ("Noted", None);
+                "The opponent declined your request."
             }
             Confirm::Resign => "Resign the game?",
             Confirm::ConnClosed(ref reason) => {
