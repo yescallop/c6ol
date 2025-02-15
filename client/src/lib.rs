@@ -7,7 +7,7 @@ mod game_view;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use c6ol_core::{
     game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodeMethod, Stone},
-    protocol::{ClientMessage, GameOptions, Request, ServerMessage},
+    protocol::{ClientMessage, GameId, GameOptions, Request, ServerMessage},
 };
 use dialog::*;
 use leptos::{ev, prelude::*};
@@ -74,12 +74,15 @@ struct DialogEntry {
     dialog: Dialog,
 }
 
-#[expect(dead_code)]
 struct WebSocketState {
     ws: WebSocket,
+    #[expect(dead_code)]
     onopen: Closure<dyn FnMut()>,
+    #[expect(dead_code)]
     onclose: Closure<dyn Fn(CloseEvent)>,
+    #[expect(dead_code)]
     onmessage: Closure<dyn Fn(MessageEvent)>,
+    was_open: bool,
 }
 
 const CLOSE_CODE_ABNORMAL: u16 = 1006;
@@ -107,8 +110,8 @@ pub fn App() -> impl IntoView {
 
     let game_id = RwSignal::new(String::new());
 
-    let requests = RwSignal::new(PlayerSlots::<Option<Request>>::default());
     let player = RwSignal::new(None::<Player>);
+    let requests = RwSignal::new(PlayerSlots::<Option<Request>>::default());
     let options = RwSignal::new(None::<GameOptions>);
 
     let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
@@ -145,20 +148,6 @@ pub fn App() -> impl IntoView {
             }
         }
         confirm(Confirm::Error("Connection is not open.".into()));
-    };
-
-    let on_close = move |ev: CloseEvent| {
-        let code = ev.code();
-        let mut reason = ev.reason();
-
-        if reason.is_empty() {
-            if code == CLOSE_CODE_ABNORMAL {
-                reason = "Closed abnormally.".into();
-            } else {
-                reason = format!("Closed with code {code}.");
-            }
-        }
-        confirm(Confirm::ConnClosed(reason));
     };
 
     let show_game_menu_dialog = move || {
@@ -284,6 +273,17 @@ pub fn App() -> impl IntoView {
         }
     };
 
+    let clear_all = move || {
+        record.write().clear();
+        stone.set(None);
+
+        player.set(None);
+        requests.write().fill(None);
+        options.set(None);
+
+        dialog_entries.write().clear();
+    };
+
     let connect = move |init_msg: ClientMessage| {
         let proto = if location().protocol().unwrap() == "https:" {
             "wss:"
@@ -295,10 +295,35 @@ pub fn App() -> impl IntoView {
         let ws = WebSocket::new(&format!("{proto}//{host}/ws")).unwrap();
         ws.set_binary_type(BinaryType::Arraybuffer);
 
-        let onopen = Closure::once(move || send(init_msg));
+        let onopen = Closure::once(move || {
+            send(init_msg);
+            ws_state.write_untracked().as_mut().unwrap().was_open = true;
+        });
         ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
 
-        let onclose = Closure::<dyn Fn(CloseEvent)>::new(on_close);
+        let onclose = Closure::new(move |ev: CloseEvent| {
+            // If the socket was open, attempt to reconnect.
+            // if ws_state.read_untracked().as_ref().unwrap().was_open {
+            //     clear_all();
+
+            //     if let Some(id) = GameId::from_base62(game_id.get().as_bytes()) {
+            //         connect(ClientMessage::Join(id));
+            //     }
+            //     return;
+            // }
+
+            let code = ev.code();
+            let mut reason = ev.reason();
+
+            if reason.is_empty() {
+                if code == CLOSE_CODE_ABNORMAL {
+                    reason = "Connection failed or lost.".into();
+                } else {
+                    reason = format!("Connection closed with code {code}.");
+                }
+            }
+            confirm(Confirm::ConnClosed(reason));
+        });
         ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
 
         let onmessage = Closure::<dyn Fn(MessageEvent)>::new(move |ev| untrack(|| on_message(ev)));
@@ -309,6 +334,7 @@ pub fn App() -> impl IntoView {
             onopen,
             onclose,
             onmessage,
+            was_open: false,
         }));
     };
 
@@ -321,20 +347,13 @@ pub fn App() -> impl IntoView {
             ws.close().unwrap();
         }
 
-        requests.write().fill(None);
-        player.set(None);
-        options.set(None);
-
-        dialog_entries.write().clear();
+        clear_all();
 
         if location_hash().as_deref() != Some(id) {
             history_push_state(&format!("#{id}"));
         }
 
         game_id.set(id.into());
-
-        stone.set(None);
-        record.write().clear();
 
         if id.is_empty() {
             show_dialog(Dialog::from(MainMenuDialog));
@@ -371,7 +390,7 @@ pub fn App() -> impl IntoView {
         }
 
         #[cfg(feature = "online")]
-        if let Some(id) = c6ol_core::protocol::GameId::from_base62(id.as_bytes()) {
+        if let Some(id) = GameId::from_base62(id.as_bytes()) {
             connect(ClientMessage::Join(id));
             return;
         }
