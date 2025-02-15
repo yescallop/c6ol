@@ -6,12 +6,19 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 [Leptos]: https://github.com/leptos-rs/leptos
 [axum]: https://github.com/tokio-rs/axum
 
+## Play Now
+
+An official instance is hosted at [c6.zhixia.dev](https://c6.zhixia.dev/). Please refrain from sending automatic requests without prior notice. Games idle for more than 30 days are subject to removal.
+
 ## Features
 
-- **Easy Setup of Games:** Submit a passcode to start as Black. Then send a link to your opponent, who submits a different passcode to join as White.
-- **Nearly Infinite Board:** The board is $2^{16}$ by $2^{16}$ in size, with drag & zoom support. In a game started near the center, you never worry about hitting the border.[^1]
-- **Compact Record Format:** Based on zigzag encoding, a pairing function, and varints, the format encodes any stone placed within the central 11-by-11 area to a single byte.
-- **Keyboard Control:** You can control the app with keyboard only.
+- **Easy Setup:** Submit a passcode to start a game. Then send a link to your friend, who submits a different passcode to join the game.
+- **Infinite Board:** The board is $2^{16}$ by $2^{16}$ in size, with drag & zoom support. Generally[^1], you never worry about hitting the border.
+- **Analysis (Permanent Link):** Click *Analyze* in the game menu to open a copy of the game in a new tab for analysis. Right click or long press to copy a permanent link. Feel free to share it with others or save it for your collection!
+- **Requests:** Request your opponent to retract the previous move or reset the game (clear the stones and optionally swap colors), or offer a draw (why do this when you have infinite space and time?).
+- **Manual Claim of Win:** Watch your friend not notice their six-in-a-row and win before them!
+- **Offline Play:** You can choose to play offline. An offline game is saved in the browser's local storage.
+- **Keyboard Control:** It's possible to control the app with keyboard only.
 
 [^1]: It is good sportsmanship to start near the center and to place stones near existing ones.
 
@@ -28,7 +35,7 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
   </tr>
 </table>
 
-## Setup
+## Setup (Linux)
 
 Install Rust 1.84+ and [Trunk](https://trunkrs.dev/). To develop, run:
 
@@ -43,20 +50,20 @@ cd client
 trunk serve --open
 ```
 
-To deploy, run:
+To build for deployment, run:
 
 ```sh
 cd client
 trunk build --release
 cd ../server
-# To deploy in place:
-cargo run --release -- --listen [::]:8086 --serve-dir ../client/dist
-# Or you can copy the outputs elsewhere and run:
-/path/to/c6ol-server --listen [::]:8086 --serve-dir /path/to/dist
+cargo build --release
+cd ..
 ```
 
-## Play
+To deploy, copy `target/release/c6ol-server` and `client/dist` to a directory on the server, `cd` into it and run:
 
-You can choose to play offline or online.
-An offline game is saved in the browser's local storage.
-For now, an online game will end unsaved if no one is connected to it.
+```sh
+./c6ol-server --listen [::]:8086 --serve-dir dist --db-file c6ol.db
+```
+
+A Connect6 Online server will be listening at port 8086 on all available interfaces, serving static files under `dist`, loading games from and saving games to `c6ol.db`.

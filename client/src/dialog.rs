@@ -122,6 +122,9 @@ impl DialogImpl for MainMenuDialog {
                     #[cfg(feature = "online")]
                     view! { <button value=ret!(Online)>"Play Online"</button> }
                 }
+                <a target="_blank" href="https://github.com/yescallop/c6ol">
+                    <button type="button">"Source Code"</button>
+                </a>
             </div>
         }
     }
