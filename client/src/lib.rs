@@ -334,9 +334,9 @@ pub fn App() -> impl IntoView {
         game_id.set(id.into());
 
         stone.set(None);
+        record.write().clear();
 
         if id.is_empty() {
-            record.write().clear();
             show_dialog(Dialog::from(MainMenuDialog));
             return;
         }
