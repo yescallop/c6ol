@@ -401,6 +401,8 @@ impl DialogImpl for GameMenuDialog {
 
             #[derive(Eq, Ord, PartialEq, PartialOrd)]
             enum RequestState {
+                /// The user is offline or unauthenticated.
+                Irrelevant,
                 /// The opponent has made this request.
                 CanAccept,
                 /// The user can make this request.
@@ -409,7 +411,6 @@ impl DialogImpl for GameMenuDialog {
                 Made,
                 /// The user has made another request.
                 MadeAnother,
-                Irrelevant,
             }
 
             use Request::*;
