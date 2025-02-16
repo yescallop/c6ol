@@ -11,13 +11,15 @@ c6ol-core = { path = "../core" }
 chrono = "0.4"
 clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
-tokio = { version = "1", features = ["macros", "rt", "signal"] }
-tower-http = { version = "0.6", features = ["fs"] }
+pbkdf2 = "0.12"
 rand = "0.9"
 remain = "0.2"
 rusqlite = { version = "0.33", features = ["bundled"] }
+sha2 = "0.10"
 socket2 = "0.5"
 thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "signal"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

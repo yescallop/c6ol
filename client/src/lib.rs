@@ -1,6 +1,5 @@
 //! The client library for [Connect6 Online](https://github.com/yescallop/c6ol).
 
-mod blake2b_nz64;
 mod dialog;
 mod game_view;
 
@@ -187,16 +186,15 @@ pub fn App() -> impl IntoView {
 
         let mut record_changed = false;
         match msg {
-            ServerMessage::Started(assigned_player, new_game_id) => {
+            ServerMessage::Started(id) => {
+                history_push_state(&format!("#{id}"));
+                game_id.set(id.to_string());
+            }
+            ServerMessage::Authenticated(assigned_player) => {
                 player.set(Some(assigned_player));
                 if let Some(options) = options.get() {
                     stone.set(Some(options.stone_of(assigned_player)));
                     show_game_menu_dialog();
-                }
-
-                if let Some(id) = new_game_id {
-                    history_push_state(&format!("#{id}"));
-                    game_id.set(id.to_string());
                 }
                 if let Some(req) = requests.read()[assigned_player.opposite()] {
                     confirm(Confirm::Requested(assigned_player, req));
@@ -580,16 +578,14 @@ pub fn App() -> impl IntoView {
                     show_dialog(Dialog::from(MainMenuDialog));
                 }
                 OnlineMenuRetVal::Start { options, passcode } => {
-                    let passcode = blake2b_nz64::hash(passcode.as_bytes());
-                    connect(ClientMessage::Start(options, passcode));
+                    connect(ClientMessage::Start(options, passcode.into_bytes().into()));
                 }
                 OnlineMenuRetVal::Join(game_id) => set_game_id(&game_id),
             },
             RetVal::Join(ret_val) => match ret_val {
                 JoinRetVal::ViewOnly => {}
                 JoinRetVal::Join(passcode) => {
-                    let passcode = blake2b_nz64::hash(passcode.as_bytes());
-                    send(ClientMessage::Authenticate(passcode));
+                    send(ClientMessage::Authenticate(passcode.into_bytes().into()));
                 }
             },
             RetVal::GameMenu(ret_val) => on_game_menu_return(ret_val),

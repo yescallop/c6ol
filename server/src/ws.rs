@@ -107,7 +107,10 @@ async fn handle_websocket(
                 .await
                 .expect("should be able to authenticate");
 
-            let msg = ServerMessage::Started(player, Some(game.id()));
+            let msg = ServerMessage::Started(game.id());
+            socket.send(encode(msg)).await?;
+
+            let msg = ServerMessage::Authenticated(player);
             socket.send(encode(msg)).await?;
         }
         ClientMessage::Join(id) => {
@@ -139,7 +142,7 @@ async fn handle_websocket(
                         let player =
                             game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
 
-                        let msg = ServerMessage::Started(player, None);
+                        let msg = ServerMessage::Authenticated(player);
                         socket.send(encode(msg)).await?;
                         continue;
                     }

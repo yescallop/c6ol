@@ -3,15 +3,18 @@
 use crate::game::{Direction, Move, Player, Point, Record, RecordEncodeMethod, Stone};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
-use std::{fmt, iter, num::NonZero, str};
+use std::{fmt, iter, mem, str};
 use strum::{EnumDiscriminants, FromRepr};
 
 /// A passcode.
-pub type Passcode = NonZero<i64>;
+pub type Passcode = Box<[u8]>;
+
+/// A passcode hash.
+pub type PasscodeHash = i64;
 
 /// A game ID.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct GameId(pub NonZero<i64>);
+pub struct GameId(pub i64);
 
 const BASE62_ALPHABET: &[u8] = b"0123456789\
     ABCDEFGHIJKLMNOPQRSTUVWXYZ\
@@ -43,13 +46,13 @@ impl GameId {
             }
             n = n.checked_mul(62)?.checked_add(x as u64)?;
         }
-        NonZero::new(n as i64).map(Self)
+        Some(Self(n as i64))
     }
 }
 
 impl fmt::Display for GameId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut n = self.0.get() as u64;
+        let mut n = self.0 as u64;
         let mut buf = [b'0'; 11];
         let mut i = 0;
         while n != 0 {
@@ -187,10 +190,10 @@ impl ClientMessage {
         match self {
             Self::Start(options, passcode) => {
                 options.encode(&mut buf);
-                buf.put_i64(passcode.get());
+                buf.put_slice(&passcode);
             }
-            Self::Join(game_id) => buf.put_i64(game_id.0.get()),
-            Self::Authenticate(passcode) => buf.put_i64(passcode.get()),
+            Self::Join(game_id) => buf.put_i64(game_id.0),
+            Self::Authenticate(passcode) => buf.put_slice(&passcode),
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
                     p.encode(&mut buf);
@@ -216,10 +219,10 @@ impl ClientMessage {
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
             Kind::Start => Self::Start(
                 GameOptions::decode(&mut buf)?,
-                NonZero::new(buf.try_get_i64().ok()?)?,
+                Box::from(mem::take(&mut buf)),
             ),
-            Kind::Join => Self::Join(GameId(NonZero::new(buf.try_get_i64().ok()?)?)),
-            Kind::Authenticate => Self::Authenticate(NonZero::new(buf.try_get_i64().ok()?)?),
+            Kind::Join => Self::Join(GameId(buf.try_get_i64().ok()?)),
+            Kind::Authenticate => Self::Authenticate(Box::from(mem::take(&mut buf))),
             Kind::Place => {
                 let p1 = Point::decode(&mut buf)?;
                 let p2 = if buf.has_remaining() {
@@ -247,9 +250,10 @@ impl ClientMessage {
 #[derive(Clone, EnumDiscriminants)]
 #[strum_discriminants(derive(FromRepr), name(ServerMessageKind), repr(u8), vis(pub(self)))]
 pub enum ServerMessage {
+    /// A new game was started.
+    Started(GameId),
     /// The user was authenticated.
-    /// Sent before `Record` with the game ID if a new game was started.
-    Started(Player, Option<GameId>),
+    Authenticated(Player),
     /// The game options were updated.
     Options(GameOptions),
     /// The entire record was updated.
@@ -272,12 +276,8 @@ impl ServerMessage {
     pub fn encode(self) -> Vec<u8> {
         let mut buf = vec![ServerMessageKind::from(&self) as u8];
         match self {
-            Self::Started(player, game_id) => {
-                buf.put_u8(player as u8);
-                if let Some(id) = game_id {
-                    buf.put_i64(id.0.get());
-                }
-            }
+            Self::Started(id) => buf.put_i64(id.0),
+            Self::Authenticated(player) => buf.put_u8(player as u8),
             Self::Options(options) => options.encode(&mut buf),
             Self::Record(record) => record.encode(&mut buf, RecordEncodeMethod::Past),
             Self::Move(mov) => mov.encode(&mut buf, true),
@@ -297,15 +297,8 @@ impl ServerMessage {
         use ServerMessageKind as Kind;
 
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
-            Kind::Started => {
-                let player = Player::from_u8(buf.try_get_u8().ok()?)?;
-                let game_id = if buf.has_remaining() {
-                    Some(GameId(NonZero::new(buf.try_get_i64().ok()?)?))
-                } else {
-                    None
-                };
-                Self::Started(player, game_id)
-            }
+            Kind::Started => Self::Started(GameId(buf.try_get_i64().ok()?)),
+            Kind::Authenticated => Self::Authenticated(Player::from_u8(buf.try_get_u8().ok()?)?),
             Kind::Options => Self::Options(GameOptions::decode(&mut buf)?),
             Kind::Record => Self::Record(Box::new(Record::decode(&mut buf)?)),
             Kind::Move => Self::Move(Move::decode(&mut buf, false)?),

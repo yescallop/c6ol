@@ -1,14 +1,16 @@
 //! Game manager.
 
-use crate::{db::DbManager, macros::exec};
+use crate::{db::DbManager, macros::exec, pbkdf2_hmac_sha256};
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
-    protocol::{ClientMessage, GameId, GameOptions, Passcode, Request, ServerMessage},
+    protocol::{
+        ClientMessage, GameId, GameOptions, Passcode, PasscodeHash, Request, ServerMessage,
+    },
 };
 use std::{collections::HashMap, future::Future};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
-    task::JoinSet,
+    task::{self, JoinSet},
 };
 
 const CHANNEL_CAPACITY_MANAGE_CMD: usize = 64;
@@ -136,7 +138,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                        let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
+                        let task_id = game_tasks.spawn(manage_game(id, state, game_cmd_rx)).id();
                         game_ids_by_task_id.insert(task_id, id);
 
                         _ = resp_tx.send(Game::new(id, game_cmd_tx));
@@ -157,7 +159,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                             let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                             game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                            let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
+                            let task_id = game_tasks.spawn(manage_game(id, state, game_cmd_rx)).id();
                             game_ids_by_task_id.insert(task_id, id);
 
                             _ = resp_tx.send(Some(Game::new(id, game_cmd_tx)));
@@ -206,7 +208,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
 #[derive(Default)]
 pub struct GameState {
     pub options: GameOptions,
-    pub passcodes: PlayerSlots<Option<Passcode>>,
+    pub passcode_hashes: PlayerSlots<Option<PasscodeHash>>,
     pub requests: PlayerSlots<Option<Request>>,
     pub record: Record,
 }
@@ -227,23 +229,23 @@ impl GameState {
         }
     }
 
-    fn authenticate(&mut self, passcode: Passcode) -> Option<Player> {
-        if let Some(passcode_host) = self.passcodes[Player::Host] {
-            if passcode == passcode_host {
+    fn authenticate(&mut self, hash: PasscodeHash) -> Option<Player> {
+        if let Some(hash_host) = self.passcode_hashes[Player::Host] {
+            if hash == hash_host {
                 Some(Player::Host)
-            } else if let Some(passcode_guest) = self.passcodes[Player::Guest] {
-                if passcode == passcode_guest {
+            } else if let Some(hash_guest) = self.passcode_hashes[Player::Guest] {
+                if hash == hash_guest {
                     Some(Player::Guest)
                 } else {
                     // Wrong passcode.
                     None
                 }
             } else {
-                self.passcodes[Player::Guest] = Some(passcode);
+                self.passcode_hashes[Player::Guest] = Some(hash);
                 Some(Player::Guest)
             }
         } else {
-            self.passcodes[Player::Host] = Some(passcode);
+            self.passcode_hashes[Player::Host] = Some(hash);
             Some(Player::Host)
         }
     }
@@ -353,6 +355,7 @@ impl GameState {
 }
 
 async fn manage_game(
+    id: GameId,
     mut state: Box<GameState>,
     mut cmd_rx: mpsc::Receiver<GameCommand>,
 ) -> Box<GameState> {
@@ -363,8 +366,11 @@ async fn manage_game(
             GameCommand::Subscribe(resp_tx) => {
                 _ = resp_tx.send(state.subscribe(&msg_tx));
             }
-            GameCommand::Authenticate(resp_tx, pass) => {
-                _ = resp_tx.send(state.authenticate(pass));
+            GameCommand::Authenticate(resp_tx, passcode) => {
+                let hash = task::spawn_blocking(move || pbkdf2_hmac_sha256::hash(&passcode, id.0))
+                    .await
+                    .expect("hashing should not panic");
+                _ = resp_tx.send(state.authenticate(hash));
             }
             GameCommand::Play(player, msg) => state.play(player, msg, &msg_tx),
         }

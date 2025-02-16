@@ -3,6 +3,7 @@
 mod db;
 mod game;
 mod macros;
+mod pbkdf2_hmac_sha256;
 mod server;
 mod shutdown;
 mod ws;

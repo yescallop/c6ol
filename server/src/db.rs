@@ -113,8 +113,8 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                         record = ?6, updated_at = ?7 WHERE id = ?8",
                     (
                         state.options.encode_to_vec(),
-                        state.passcodes[Player::Host],
-                        state.passcodes[Player::Guest],
+                        state.passcode_hashes[Player::Host],
+                        state.passcode_hashes[Player::Guest],
                         state.requests[Player::Host].map(Request::encode_to_vec),
                         state.requests[Player::Guest].map(Request::encode_to_vec),
                         state.record.encode_to_vec(RecordEncodeMethod::Past),
@@ -139,7 +139,7 @@ fn parse_row(row: &Row<'_>) -> anyhow::Result<Box<GameState>> {
         (Player::Host, "passcode_host", "request_host"),
         (Player::Guest, "passcode_guest", "request_guest"),
     ] {
-        state.passcodes[player] = row.get(pass_idx)?;
+        state.passcode_hashes[player] = row.get(pass_idx)?;
         state.requests[player] = row
             .get_ref(req_idx)?
             .as_blob_or_null()?
