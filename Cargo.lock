@@ -351,9 +351,9 @@ checksum = "8b96ec4966b5813e2c0507c1f86115c8c5abaadc3980879c3424042a02fd1ad3"
 
 [[package]]
 name = "cc"
-version = "1.2.13"
+version = "1.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7777341816418c02e033934a09f20dc0ccaf65a5201ef8a450ae0105a573fda"
+checksum = "0c3d1b2e905a3a7b00a6141adb0e4c0bb941d11caf55349d863942a1cc44e3c9"
 dependencies = [
  "shlex",
 ]
@@ -622,9 +622,9 @@ dependencies = [
 
 [[package]]
 name = "equivalent"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "event-listener"
@@ -1777,7 +1777,7 @@ checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.0",
- "zerocopy 0.8.17",
+ "zerocopy 0.8.18",
 ]
 
 [[package]]
@@ -1816,7 +1816,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08f3c9802962f7e1b25113931d94f43ed9725bebc59db9d0c3e9a23b67e15ff"
 dependencies = [
  "getrandom 0.3.1",
- "zerocopy 0.8.17",
+ "zerocopy 0.8.18",
 ]
 
 [[package]]
@@ -2215,9 +2215,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.13.2"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
 
 [[package]]
 name = "socket2"
@@ -2243,18 +2243,18 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
-version = "0.26.3"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+checksum = "ce1475c515a4f03a8a7129bb5228b81a781a86cb0b3fbbc19e1c556d491a401f"
 dependencies = [
  "strum_macros",
 ]
 
 [[package]]
 name = "strum_macros"
-version = "0.26.4"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+checksum = "9688894b43459159c82bfa5a5fa0435c19cbe3c9b427fa1dd7b1ce0c279b18a7"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -3075,11 +3075,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.17"
+version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa91407dacce3a68c56de03abe2760159582b846c6a4acd2f456618087f12713"
+checksum = "79386d31a42a4996e3336b0919ddb90f81112af416270cff95b5f5af22b839c2"
 dependencies = [
- "zerocopy-derive 0.8.17",
+ "zerocopy-derive 0.8.18",
 ]
 
 [[package]]
@@ -3095,9 +3095,9 @@ dependencies = [
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.17"
+version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06718a168365cad3d5ff0bb133aad346959a2074bd4a85c121255a11304a8626"
+checksum = "76331675d372f91bf8d17e13afbd5fe639200b73d01f0fc748bb059f9cca2db7"
 dependencies = [
  "proc-macro2",
  "quote",

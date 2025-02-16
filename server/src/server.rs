@@ -31,6 +31,7 @@ pub async fn run(
     // - All game tasks finish after no `Game`s are alive.
     // - The game manager task finishes after no `GameManager`s are alive
     //   and all game tasks finish.
+    // - The database manager task finishes after the game manager task.
     let (shutdown_tx, shutdown_rx) = shutdown::channel();
     tokio::spawn(async move {
         shutdown_signal.await;
