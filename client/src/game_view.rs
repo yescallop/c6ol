@@ -3,7 +3,7 @@ use c6ol_core::game::{Direction, Move, Point, Record, Stone};
 use leptos::{either::EitherOf3, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
-    f64,
+    f64::consts::FRAC_PI_4,
     fmt::Write as _,
     iter,
     time::Duration,
@@ -38,7 +38,7 @@ const MOVE_TEXT_BORDER_RATIO: f64 = 100.0;
 const MOVE_TEXT_OPACITY: f64 = 0.5;
 
 const DIST_FOR_PINCH_ZOOM: f64 = 2.0 * 96.0 / 2.54; // 2cm
-const DIST_FOR_SWIPE_RETRACT: f64 = 4.0 * 96.0 / 2.54; // 4cm
+const DIST_FOR_SWIPE_GESTURE: f64 = 4.0 * 96.0 / 2.54; // 4cm
 
 const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
@@ -58,6 +58,11 @@ impl PointerOffsets {
     /// Returns the Euclidean distance between the positions of two pointers.
     fn dist(self, other: Self) -> f64 {
         f64::from(self.x - other.x).hypot(f64::from(self.y - other.y))
+    }
+
+    /// Returns the angle from the other pointer to this one.
+    fn angle_from(self, other: Self) -> f64 {
+        f64::from(self.y - other.y).atan2(f64::from(self.x - other.x))
     }
 }
 
@@ -106,10 +111,10 @@ enum PointerState {
     /// Entered when exactly one pointer is active,
     /// and a second pointer becomes active.
     Pinched,
-    /// Entered when a swipe retract is triggered.
+    /// Entered when a swipe gesture is triggered.
     ///
-    /// A swipe retract may only be triggered when the state is not `Retracted`.
-    Retracted,
+    /// A swipe gesture may only be triggered when the state is not `Swiped`.
+    Swiped,
 }
 
 #[derive(Default)]
@@ -712,6 +717,27 @@ pub fn GameView(
                     cursor_pos.set(None);
                 }
             }
+
+            if kind == "touch" {
+                if state.pointer_state == PointerState::Swiped {
+                    return;
+                }
+
+                let p = state.down_pointers.values().next().unwrap();
+                if p.last.dist(p.down) < DIST_FOR_SWIPE_GESTURE {
+                    return;
+                }
+
+                let angle = p.last.angle_from(p.down);
+
+                state.pointer_state = PointerState::Swiped;
+
+                if !(-3.0 * FRAC_PI_4..3.0 * FRAC_PI_4).contains(&angle) {
+                    on_event(Event::Undo);
+                } else if (-FRAC_PI_4..FRAC_PI_4).contains(&angle) {
+                    on_event(Event::Redo);
+                }
+            }
         } else if state.down_pointers.len() == 2 {
             if state.pointer_state > PointerState::Pinched {
                 return;
@@ -735,21 +761,6 @@ pub fn GameView(
 
             if kind == "touch" {
                 follow_board_pos_on_down(&state, false);
-            }
-        } else if state.down_pointers.len() == 3 {
-            if state.pointer_state == PointerState::Retracted {
-                return;
-            }
-
-            for p in state.down_pointers.values() {
-                if p.last.dist(p.down) < DIST_FOR_SWIPE_RETRACT {
-                    return;
-                }
-            }
-
-            state.pointer_state = PointerState::Retracted;
-            if record.read().has_past() {
-                on_event(Event::Undo);
             }
         }
     };
