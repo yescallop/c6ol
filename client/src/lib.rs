@@ -694,6 +694,7 @@ pub fn App() -> impl IntoView {
             stone=stone.read_only()
             disabled=move || !dialog_entries.read().is_empty()
             pending=move || online() && options.get().is_none()
+            phantom_disabled=move || game_id.read().starts_with(ANALYZE_PREFIX)
             on_event=on_event
             tentatives_pos=tentatives_pos
             win_claim=win_claim

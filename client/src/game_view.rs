@@ -242,6 +242,7 @@ pub fn GameView(
     stone: ReadSignal<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     pending: impl Fn() -> bool + Send + Sync + 'static,
+    phantom_disabled: impl Fn() -> bool + Copy + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
     /// Size of the view.
     ///
@@ -352,7 +353,19 @@ pub fn GameView(
             return;
         }
 
-        if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
+        if phantom_disabled() {
+            if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
+                tentatives.remove(i);
+                tentatives_pos.set(tentatives);
+            } else if tentatives.len() < record.read().max_stones_to_play() {
+                tentatives.push(cursor);
+                tentatives_pos.set(tentatives);
+
+                if tentatives.len() == record.read().max_stones_to_play() {
+                    on_event(Event::Submit);
+                }
+            }
+        } else if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
             phantom_pos.set(Some(tentatives.remove(i)));
             tentatives_pos.set(tentatives);
         } else if phantom == Some(cursor) {
@@ -455,15 +468,15 @@ pub fn GameView(
 
     // Handles `keydown` events.
     //
-    // - Moves the cursor on W/A/S/D key.
-    // - Moves the view center on Arrow Up/Left/Down/Right key.
-    // - Zooms out on Minus key.
-    // - Zooms in on Plus (Equal) key.
-    // - Hits the cursor on Space/Enter key.
-    // - Undoes the previous move (if any) on Backspace key.
-    // - Redoes the next move (if any) on Shift+Backspace keys.
-    // - Jumps to the state before the first move on Home key.
-    // - Jumps to the state after the last move on End key.
+    // - Moves the cursor on W/A/S/D.
+    // - Moves the view center on Arrow Up/Left/Down/Right.
+    // - Zooms out on Minus.
+    // - Zooms in on Plus (Equal).
+    // - Hits the cursor on Space/Enter.
+    // - Undoes the previous move (if any) on Backspace or Ctrl+Z.
+    // - Redoes the next move (if any) on Shift+Backspace or Ctrl+Shift+Z.
+    // - Jumps to the state before the first move on Home.
+    // - Jumps to the state after the last move on End.
     let on_keydown = move |ev: KeyboardEvent| {
         if disabled.get() {
             return;
@@ -488,7 +501,10 @@ pub fn GameView(
             "KeyD" | "ArrowRight" => 3,
             "Minus" => return zoom(Zoom::Out, None),
             "Equal" => return zoom(Zoom::In, None),
-            "Backspace" => {
+            "Backspace" | "KeyZ" => {
+                if code == "KeyZ" && !ev.ctrl_key() {
+                    return;
+                }
                 return on_event(if ev.shift_key() {
                     Event::Redo
                 } else {
