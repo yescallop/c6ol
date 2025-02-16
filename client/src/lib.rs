@@ -282,7 +282,15 @@ pub fn App() -> impl IntoView {
         dialog_entries.write().clear();
     };
 
-    let connect = move |init_msg: ClientMessage| {
+    fn connect(
+        init_msg: ClientMessage,
+        ws_state: RwSignal<Option<WebSocketState>, LocalStorage>,
+        game_id: RwSignal<String>,
+        send: impl Fn(ClientMessage) + Copy + 'static,
+        clear_all: impl Fn() + Copy + 'static,
+        on_message: impl Fn(MessageEvent) + Copy + 'static,
+        confirm: impl Fn(Confirm) + Copy + 'static,
+    ) {
         let proto = if location().protocol().unwrap() == "https:" {
             "wss:"
         } else {
@@ -300,22 +308,31 @@ pub fn App() -> impl IntoView {
         ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
 
         let onclose = Closure::new(move |ev: CloseEvent| {
-            // If the socket was open, attempt to reconnect.
-            // if ws_state.read_untracked().as_ref().unwrap().was_open {
-            //     clear_all();
-
-            //     if let Some(id) = GameId::from_base62(game_id.get().as_bytes()) {
-            //         connect(ClientMessage::Join(id));
-            //     }
-            //     return;
-            // }
+            clear_all();
 
             let code = ev.code();
             let mut reason = ev.reason();
 
             if reason.is_empty() {
+                // The reason being empty means it's not the server closing the connection.
+                // If the socket was open and the game has started, attempt to reconnect.
+                if ws_state.read_untracked().as_ref().unwrap().was_open {
+                    if let Some(id) = GameId::from_base62(game_id.get().as_bytes()) {
+                        connect(
+                            ClientMessage::Join(id),
+                            ws_state,
+                            game_id,
+                            send,
+                            clear_all,
+                            on_message,
+                            confirm,
+                        );
+                        return;
+                    }
+                }
+
                 if code == CLOSE_CODE_ABNORMAL {
-                    reason = "Connection failed or lost.".into();
+                    reason = "Connection failed.".into();
                 } else {
                     reason = format!("Connection closed with code {code}.");
                 }
@@ -334,6 +351,12 @@ pub fn App() -> impl IntoView {
             onmessage,
             was_open: false,
         }));
+    }
+
+    let connect = move |init_msg| {
+        connect(
+            init_msg, ws_state, game_id, send, clear_all, on_message, confirm,
+        );
     };
 
     let set_game_id = move |id: &str| {
