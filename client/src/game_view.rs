@@ -61,8 +61,8 @@ impl PointerOffsets {
     }
 }
 
-impl From<PointerEvent> for PointerOffsets {
-    fn from(e: PointerEvent) -> Self {
+impl From<&PointerEvent> for PointerOffsets {
+    fn from(e: &PointerEvent) -> Self {
         Self {
             id: Some(e.pointer_id()),
             x: e.offset_x(),
@@ -71,8 +71,8 @@ impl From<PointerEvent> for PointerOffsets {
     }
 }
 
-impl From<MouseEvent> for PointerOffsets {
-    fn from(e: MouseEvent) -> Self {
+impl From<&MouseEvent> for PointerOffsets {
+    fn from(e: &MouseEvent) -> Self {
         Self {
             id: None,
             x: e.offset_x(),
@@ -87,8 +87,6 @@ struct Pointer {
     /// Last event fired about the pointer.
     /// Can be `pointerover`, `pointermove`, or `pointerdown`.
     last: PointerOffsets,
-    /// Board position the pointer was at when it became active.
-    board_pos_on_down: Point,
 }
 
 #[derive(Clone, Copy, Default, Eq, Ord, PartialEq, PartialOrd)]
@@ -121,6 +119,8 @@ struct State {
     /// A pointer is added to this map on a `pointerdown` event,
     /// and removed on a `pointerup` or `pointerleave` event.
     down_pointers: HashMap<i32, Pointer>,
+    /// Average board position the pointers were at when the last one became active.
+    board_pos_on_down: Point,
     /// Set as the current `viewSize` when a 2-pointer gesture begins.
     prev_view_size: i16,
     // See comments at `on_hover`.
@@ -136,6 +136,15 @@ impl State {
         if let Some(handle) = self.long_press_handle.take() {
             handle.clear();
         }
+    }
+
+    fn average_pointer_offsets(&self, f: impl Fn(&Pointer) -> PointerOffsets) -> (i32, i32) {
+        let (sum_x, sum_y) = self
+            .down_pointers
+            .values()
+            .fold((0, 0), |(x, y), p| (x + f(p).x, y + f(p).y));
+        let len = self.down_pointers.len();
+        (sum_x / len as i32, sum_y / len as i32)
     }
 }
 
@@ -396,17 +405,19 @@ pub fn GameView(
     // at the same board position as when it became active.
     //
     // Returns whether the view center is changed.
-    let follow_board_pos_on_down = move |down_pointers: &HashMap<i32, Pointer>| {
-        let pointer = down_pointers.values().next().unwrap();
-        let p0 = pointer.board_pos_on_down;
-        let (p, _) = svg_calc().svg_to_board_pos(pointer.last.x, pointer.last.y);
+    let follow_board_pos_on_down = move |state: &State, dry_run: bool| {
+        let p0 = state.board_pos_on_down;
+        let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.last);
+        let (p, _) = svg_calc().svg_to_board_pos(avg_x, avg_y);
 
         let (dx, dy) = (p.x - p0.x, p.y - p0.y);
         if dx != 0 || dy != 0 {
-            view_center.update(|p| {
-                p.x -= dx;
-                p.y -= dy;
-            });
+            if !dry_run {
+                view_center.update(|p| {
+                    p.x -= dx;
+                    p.y -= dy;
+                });
+            }
             true
         } else {
             false
@@ -461,7 +472,7 @@ pub fn GameView(
             if state.pointer_state > PointerState::Moved {
                 return;
             }
-            follow_board_pos_on_down(&state.down_pointers);
+            follow_board_pos_on_down(&state, false);
             state.pointer_state = PointerState::Moved;
         }
     };
@@ -578,25 +589,25 @@ pub fn GameView(
             } else {
                 Zoom::In
             },
-            Some(MouseEvent::from(ev).into()),
+            Some((&MouseEvent::from(ev)).into()),
         );
         state.write_value().abort_long_press();
     };
 
     // Handles `pointerdown` events.
     let on_pointerdown = move |ev: PointerEvent| {
-        let po: PointerOffsets = ev.clone().into();
+        let po: PointerOffsets = (&ev).into();
 
         let mut state = state.write_value();
-        let (p, _) = svg_calc().svg_to_board_pos(po.x, po.y);
-        state.down_pointers.insert(
-            po.id.unwrap(),
-            Pointer {
-                down: po,
-                last: po,
-                board_pos_on_down: p,
-            },
-        );
+
+        state
+            .down_pointers
+            .insert(po.id.unwrap(), Pointer { down: po, last: po });
+
+        if state.down_pointers.len() <= 2 {
+            let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.down);
+            (state.board_pos_on_down, _) = svg_calc().svg_to_board_pos(avg_x, avg_y);
+        }
 
         if state.down_pointers.len() == 1 {
             if ev.pointer_type() != "touch" {
@@ -639,7 +650,7 @@ pub fn GameView(
             return;
         }
 
-        if let Some(cursor) = update_cursor(ev.into()) {
+        if let Some(cursor) = update_cursor((&ev).into()) {
             hit_cursor(cursor);
         }
         state.abort_long_press();
@@ -655,7 +666,7 @@ pub fn GameView(
     //      by `DIST_FOR_PINCH_ZOOM`, `viewSize` will be decreased (increased) by 2.
     // - 3: Retracts the previous move if all pointers have moved for at least
     //      a distance of `DIST_FOR_SWIPE_RETRACT`.
-    let on_hover = move |po: PointerOffsets| {
+    let on_hover = move |po: PointerOffsets, kind: &str| {
         let mut state = state.write_value();
         if disabled.get() {
             // We can reach here for either of the following reasons:
@@ -691,9 +702,15 @@ pub fn GameView(
                 return;
             }
 
-            if follow_board_pos_on_down(&state.down_pointers) {
+            // Avoid accidental dragging on touchscreen devices.
+            // Only allow dragging with two pointers, following the midpoint instead.
+            if follow_board_pos_on_down(&state, kind == "touch") {
                 state.pointer_state = PointerState::Moved;
                 state.abort_long_press();
+
+                if kind == "touch" && cursor_pos.get().is_some() {
+                    cursor_pos.set(None);
+                }
             }
         } else if state.down_pointers.len() == 2 {
             if state.pointer_state > PointerState::Pinched {
@@ -714,6 +731,10 @@ pub fn GameView(
 
             if new_view_size != view_size.get() {
                 view_size.set(new_view_size);
+            }
+
+            if kind == "touch" {
+                follow_board_pos_on_down(&state, false);
             }
         } else if state.down_pointers.len() == 3 {
             if state.pointer_state == PointerState::Retracted {
@@ -968,11 +989,11 @@ pub fn GameView(
             on:wheel=on_wheel
             on:pointerdown=on_pointerdown
             on:pointerup=on_pointerup
-            on:pointerover=move |ev| on_hover(ev.into())
-            on:pointermove=move |ev| on_hover(ev.into())
-            on:mouseover=move |ev| on_hover(ev.into())
-            on:pointerleave=move |ev| on_leave(ev.into())
-            on:mouseleave=move |ev| on_leave(ev.into())
+            on:pointerover=move |ev| on_hover((&ev).into(), &ev.pointer_type())
+            on:pointermove=move |ev| on_hover((&ev).into(), &ev.pointer_type())
+            on:mouseover=move |ev| on_hover((&ev).into(), "mouse")
+            on:pointerleave=move |ev| on_leave((&ev).into())
+            on:mouseleave=move |ev| on_leave((&ev).into())
             // Avoid touching a dialog opened by the same touch.
             on:touchend=move |ev| ev.prevent_default()
             on:keydown=on_keydown
