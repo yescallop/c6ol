@@ -1,6 +1,6 @@
 //! Game manager.
 
-use crate::{db::DbManager, macros::exec, pbkdf2_hmac_sha256};
+use crate::{argon2id, db::DbManager, macros::exec};
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record},
     protocol::{
@@ -367,10 +367,10 @@ async fn manage_game(
                 _ = resp_tx.send(state.subscribe(&msg_tx));
             }
             GameCommand::Authenticate(resp_tx, passcode) => {
-                let hash = task::spawn_blocking(move || pbkdf2_hmac_sha256::hash(&passcode, id.0))
+                let hash = task::spawn_blocking(move || argon2id::hash(&passcode, id.0))
                     .await
                     .expect("hashing should not panic");
-                _ = resp_tx.send(state.authenticate(hash));
+                _ = resp_tx.send(hash.and_then(|hash| state.authenticate(hash)));
             }
             GameCommand::Play(player, msg) => state.play(player, msg, &msg_tx),
         }

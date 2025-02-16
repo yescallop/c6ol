@@ -6,16 +6,15 @@ publish = false
 
 [dependencies]
 anyhow = "1"
+argon2 = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 c6ol-core = { path = "../core" }
 chrono = "0.4"
 clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
-pbkdf2 = "0.12"
 rand = "0.9"
 remain = "0.2"
 rusqlite = { version = "0.33", features = ["bundled"] }
-sha2 = "0.10"
 socket2 = "0.5"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
