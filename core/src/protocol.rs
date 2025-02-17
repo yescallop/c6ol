@@ -39,7 +39,7 @@ impl GameId {
         }
 
         let mut n = 0u64;
-        for &x in buf.iter().rev() {
+        for &x in buf {
             let x = BASE62_LUT[x as usize];
             if x > 127 {
                 return None;
@@ -54,11 +54,11 @@ impl fmt::Display for GameId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut n = self.0 as u64;
         let mut buf = [b'0'; 11];
-        let mut i = 0;
+        let mut i = 10;
         while n != 0 {
             buf[i] = BASE62_ALPHABET[(n % 62) as usize];
             n /= 62;
-            i += 1;
+            i -= 1;
         }
         f.write_str(str::from_utf8(&buf).unwrap())
     }
