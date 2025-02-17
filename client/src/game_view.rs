@@ -37,8 +37,8 @@ const MOVE_TEXT_WIDTH_RATIO: f64 = 2.0;
 const MOVE_TEXT_BORDER_RATIO: f64 = 100.0;
 const MOVE_TEXT_OPACITY: f64 = 0.5;
 
-const DIST_FOR_PINCH_ZOOM: f64 = 2.0 * 96.0 / 2.54; // 2cm
-const DIST_FOR_SWIPE_GESTURE: f64 = 4.0 * 96.0 / 2.54; // 4cm
+const DIST_FOR_PINCH_ZOOM: f64 = 100.0; // ~2.65cm
+const DIST_FOR_SWIPE_GESTURE: f64 = 100.0; // ~2.65cm
 
 const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
@@ -432,11 +432,11 @@ pub fn GameView(
     // Moves the cursor to the pointer position, or removes it when out of view.
     //
     // Returns the new cursor position.
-    let update_cursor = move |po: PointerOffsets| {
+    let update_cursor = move |po: PointerOffsets, dry_run: bool| {
         let (p, out) = svg_calc().svg_to_board_pos(po.x, po.y);
         let new_cursor = (!out).then_some(p);
 
-        if new_cursor != cursor_pos.get() {
+        if !dry_run && new_cursor != cursor_pos.get() {
             cursor_pos.set(new_cursor);
         }
         new_cursor
@@ -467,7 +467,7 @@ pub fn GameView(
         if state.down_pointers.is_empty() {
             if let Some(po) = wheel_event {
                 // Zooming by wheel. Try to keep the cursor at mouse position.
-                update_cursor(po);
+                update_cursor(po, false);
             } else {
                 // Zooming by keyboard. Restrict the cursor so that it doesn't go out of view.
                 clamp_cursor();
@@ -655,7 +655,7 @@ pub fn GameView(
             return;
         }
 
-        if let Some(cursor) = update_cursor((&ev).into()) {
+        if let Some(cursor) = update_cursor((&ev).into(), ev.pointer_type() == "touch") {
             hit_cursor(cursor);
         }
         state.abort_long_press();
@@ -701,7 +701,7 @@ pub fn GameView(
         }
 
         if state.down_pointers.is_empty() {
-            update_cursor(po);
+            update_cursor(po, false);
         } else if state.down_pointers.len() == 1 {
             if state.pointer_state > PointerState::Moved {
                 return;
@@ -788,7 +788,7 @@ pub fn GameView(
     Effect::new(move || {
         if !disabled.get() {
             if let Some(po) = state.write_value().last_hover_before_enabled.take() {
-                update_cursor(po);
+                update_cursor(po, false);
             }
         }
     });
@@ -1000,13 +1000,20 @@ pub fn GameView(
             on:wheel=on_wheel
             on:pointerdown=on_pointerdown
             on:pointerup=on_pointerup
-            on:pointerover=move |ev| on_hover((&ev).into(), &ev.pointer_type())
             on:pointermove=move |ev| on_hover((&ev).into(), &ev.pointer_type())
             on:mouseover=move |ev| on_hover((&ev).into(), "mouse")
             on:pointerleave=move |ev| on_leave((&ev).into())
             on:mouseleave=move |ev| on_leave((&ev).into())
             // Avoid touching a dialog opened by the same touch.
-            on:touchend=move |ev| ev.prevent_default()
+            on:touchend=move |ev| {
+                // To avoid the error after pinching:
+                // [Intervention] Ignored attempt to cancel a touchend event with
+                // cancelable=false, for example because scrolling is in progress
+                // and cannot be interrupted.
+                if ev.cancelable() {
+                    ev.prevent_default();
+                }
+            }
             on:keydown=on_keydown
             on:contextmenu=move |ev| {
                 ev.prevent_default();
