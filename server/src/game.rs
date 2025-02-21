@@ -7,7 +7,7 @@ use c6ol_core::{
         ClientMessage, GameId, GameOptions, Passcode, PasscodeHash, Request, ServerMessage,
     },
 };
-use std::{collections::HashMap, future::Future};
+use std::collections::HashMap;
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     task::{self, JoinSet},

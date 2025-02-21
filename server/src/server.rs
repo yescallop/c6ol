@@ -1,10 +1,6 @@
 use crate::{db, game, shutdown, ws};
-use axum::{routing::get, Router};
-use std::{
-    future::{Future, IntoFuture},
-    iter,
-    path::PathBuf,
-};
+use axum::{Router, routing::get};
+use std::{iter, path::PathBuf};
 use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::services::ServeDir;
 

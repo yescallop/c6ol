@@ -99,11 +99,7 @@ fn zigzag_decode(n: u16) -> i16 {
 /// Maps two natural numbers to one.
 fn elegant_pair(x: u16, y: u16) -> u32 {
     let (x, y) = (x as u32, y as u32);
-    if x < y {
-        y * y + x
-    } else {
-        x * x + x + y
-    }
+    if x < y { y * y + x } else { x * x + x + y }
 }
 
 /// Maps one natural number to two (undoes `elegant_pair`).
@@ -508,7 +504,7 @@ impl Record {
 
     /// Returns an iterator of adjacent positions occupied by `stone`
     /// in the direction `dir`, starting from `p` (exclusive).
-    fn scan(&self, p: Point, dir: Direction, stone: Stone) -> impl Iterator<Item = Point> + '_ {
+    fn scan(&self, p: Point, dir: Direction, stone: Stone) -> impl Iterator<Item = Point> {
         p.adjacent_iter(dir)
             .take_while(move |&p| self.stone_at(p) == Some(stone))
     }

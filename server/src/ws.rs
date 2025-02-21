@@ -4,13 +4,13 @@ use crate::{game::GameManager, server::AppState};
 use axum::{
     body::Bytes,
     extract::{
-        ws::{close_code, CloseFrame, Message, WebSocket},
         State, WebSocketUpgrade,
+        ws::{CloseFrame, Message, WebSocket, close_code},
     },
     response::Response,
 };
 use c6ol_core::protocol::{ClientMessage, ServerMessage};
-use futures_util::{future, SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, future};
 use std::{convert::Infallible, time::Duration};
 use tokio::{sync::broadcast::error::RecvError, time};
 

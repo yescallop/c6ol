@@ -3,7 +3,7 @@
 mod dialog;
 mod game_view;
 
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use c6ol_core::{
     game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodeMethod, Stone},
     protocol::{ClientMessage, GameId, GameOptions, Request, ServerMessage},
@@ -13,9 +13,9 @@ use leptos::{ev, prelude::*};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tinyvec::ArrayVec;
 use web_sys::{
+    BinaryType, CloseEvent, MessageEvent, Storage, WebSocket,
     js_sys::{ArrayBuffer, Uint8Array},
     wasm_bindgen::prelude::*,
-    BinaryType, CloseEvent, MessageEvent, Storage, WebSocket,
 };
 
 #[allow(unused)]

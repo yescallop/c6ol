@@ -3,7 +3,6 @@
 use anyhow::Context;
 use clap::Parser;
 use std::{
-    future::Future,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::PathBuf,

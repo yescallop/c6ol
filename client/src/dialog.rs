@@ -1,4 +1,4 @@
-use crate::{Confirm, WinClaim, ANALYZE_PREFIX};
+use crate::{ANALYZE_PREFIX, Confirm, WinClaim};
 use base64::prelude::*;
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record, RecordEncodeMethod, Stone},

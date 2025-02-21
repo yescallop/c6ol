@@ -10,8 +10,8 @@ use std::{
 };
 use tinyvec::ArrayVec;
 use web_sys::{
-    wasm_bindgen::prelude::*, CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent,
-    MouseEvent, PointerEvent, WheelEvent,
+    CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent, MouseEvent, PointerEvent,
+    WheelEvent, wasm_bindgen::prelude::*,
 };
 
 const CURSOR_COLOR_ACTIVE: &str = "firebrick";
