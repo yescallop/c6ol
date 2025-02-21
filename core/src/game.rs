@@ -254,7 +254,7 @@ impl Move {
             Self::Pass => buf.put_u8(MOVE_PASS as u8),
             Self::Win(p, dir) => {
                 buf.put_u8(MOVE_WIN as u8);
-                buf.put_u32_varint(p.index());
+                p.encode(buf);
                 buf.put_u8(dir as u8);
             }
             Self::Draw => buf.put_u8(MOVE_DRAW as u8),
