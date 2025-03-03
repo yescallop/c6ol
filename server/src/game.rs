@@ -190,8 +190,11 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                 }
 
                 if let Some(state) = state {
-                    db_manager.save(id, state).await;
-                    tracing::info!("game saved: {id}");
+                    match db_manager.save(id, state).await {
+                        Some(true) => tracing::info!("game saved: {id}"),
+                        Some(false) => tracing::info!("game unchanged: {id}"),
+                        None => tracing::info!("game removed: {id}"),
+                    }
                 }
             }
         }
@@ -209,9 +212,14 @@ pub struct GameState {
     pub passcode_hashes: PlayerSlots<Option<PasscodeHash>>,
     pub requests: PlayerSlots<Option<Request>>,
     pub record: Record,
+    pub changed: bool,
 }
 
 impl GameState {
+    pub fn should_remain(&self) -> bool {
+        self.passcode_hashes[Player::Host].is_some()
+    }
+
     fn subscribe(&self, msg_tx: &broadcast::Sender<ServerMessage>) -> GameSubscription {
         GameSubscription {
             init_msgs: [
@@ -240,10 +248,12 @@ impl GameState {
                 }
             } else {
                 self.passcode_hashes[Player::Guest] = Some(hash);
+                self.changed = true;
                 Some(Player::Guest)
             }
         } else {
             self.passcode_hashes[Player::Host] = Some(hash);
+            self.changed = true;
             Some(Player::Host)
         }
     }
@@ -296,6 +306,8 @@ impl GameState {
 
                 *player_req = Some(req);
                 _ = msg_tx.send(ServerMessage::Request(player, req));
+
+                self.changed = true;
                 return;
             }
             Msg::AcceptRequest => {
@@ -314,6 +326,8 @@ impl GameState {
                 if self.requests[player.opposite()].take().is_some() {
                     // Inform the opponent of the decline.
                     _ = msg_tx.send(ServerMessage::DeclineRequest(player));
+
+                    self.changed = true;
                 }
                 return;
             }
@@ -349,6 +363,8 @@ impl GameState {
             // This has to be the last message in order for the dialog not to be closed.
             _ = msg_tx.send(ServerMessage::AcceptRequest(player));
         }
+
+        self.changed = true;
     }
 }
 

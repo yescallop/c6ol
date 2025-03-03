@@ -17,7 +17,7 @@ const CHANNEL_CAPACITY: usize = 64;
 enum Command {
     Create(oneshot::Sender<(GameId, Box<GameState>)>, GameOptions),
     Load(oneshot::Sender<Option<Box<GameState>>>, GameId),
-    Save(GameId, Box<GameState>),
+    Save(oneshot::Sender<Option<bool>>, GameId, Box<GameState>),
 }
 
 pub struct DbManager {
@@ -33,8 +33,8 @@ impl DbManager {
         exec!(self.cmd_tx, Command::Load, id)
     }
 
-    pub async fn save(&self, id: GameId, state: Box<GameState>) {
-        exec!(self.cmd_tx, Command::Save(id, state));
+    pub async fn save(&self, id: GameId, state: Box<GameState>) -> Option<bool> {
+        exec!(self.cmd_tx, Command::Save, id, state)
     }
 }
 
@@ -100,16 +100,20 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
             Command::Load(resp_tx, id) => {
                 let mut stmt = conn.prepare(
                     "SELECT options, passcode_host, passcode_guest,
-                        request_host, request_guest, record FROM game
-                        WHERE id = ?1 AND passcode_host IS NOT NULL",
+                        request_host, request_guest, record FROM game WHERE id = ?1",
                 )?;
-                let resp = stmt.query([id.0])?.next()?.map(parse_row).transpose()?;
+                let resp = stmt
+                    .query([id.0])?
+                    .next()?
+                    .map(parse_state)
+                    .transpose()?
+                    .filter(|state| state.should_remain());
                 _ = resp_tx.send(resp);
             }
-            Command::Save(id, state) => {
-                if state.passcode_hashes[Player::Host].is_none() {
+            Command::Save(resp_tx, id, state) => {
+                if !state.should_remain() {
                     conn.execute("DELETE FROM game WHERE id = ?1", [id.0])?;
-                } else {
+                } else if state.changed {
                     conn.execute(
                         "UPDATE game SET options = ?1,
                         passcode_host = ?2, passcode_guest = ?3,
@@ -127,6 +131,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                         ),
                     )?;
                 }
+                _ = resp_tx.send(state.should_remain().then_some(state.changed));
             }
         }
     }
@@ -134,7 +139,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
     Ok(())
 }
 
-fn parse_row(row: &Row<'_>) -> anyhow::Result<Box<GameState>> {
+fn parse_state(row: &Row<'_>) -> anyhow::Result<Box<GameState>> {
     let mut state = Box::new(GameState::default());
 
     state.options = GameOptions::decode(&mut row.get_ref("options")?.as_blob()?)
