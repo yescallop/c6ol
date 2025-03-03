@@ -3,7 +3,7 @@
 use crate::game::{Direction, Move, Player, Point, Record, RecordEncodeMethod, Stone};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
-use std::{fmt, iter, mem, str};
+use std::{fmt, iter, str};
 use strum::{EnumDiscriminants, FromRepr};
 
 /// A passcode.
@@ -165,7 +165,7 @@ pub enum ClientMessage {
     /// Requests to join an existing game.
     Join(GameId),
     /// Requests to authenticate.
-    Authenticate(Passcode),
+    Authenticate(PasscodeHash),
     /// Requests to place one or two stones.
     Place(Point, Option<Point>),
     /// Requests to pass.
@@ -190,7 +190,7 @@ impl ClientMessage {
         match self {
             Self::Start(options) => options.encode(&mut buf),
             Self::Join(game_id) => buf.put_i64(game_id.0),
-            Self::Authenticate(passcode) => buf.put_slice(&passcode),
+            Self::Authenticate(hash) => buf.put_i64(hash),
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
                     p.encode(&mut buf);
@@ -216,7 +216,7 @@ impl ClientMessage {
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
             Kind::Start => Self::Start(GameOptions::decode(&mut buf)?),
             Kind::Join => Self::Join(GameId(buf.try_get_i64().ok()?)),
-            Kind::Authenticate => Self::Authenticate(Box::from(mem::take(&mut buf))),
+            Kind::Authenticate => Self::Authenticate(buf.try_get_i64().ok()?),
             Kind::Place => {
                 let p1 = Point::decode(&mut buf)?;
                 let p2 = if buf.has_remaining() {

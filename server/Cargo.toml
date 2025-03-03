@@ -6,7 +6,6 @@ publish = false
 
 [dependencies]
 anyhow = "1"
-argon2 = "0.5"
 axum = { version = "0.8", features = ["ws"] }
 c6ol-core = { path = "../core" }
 chrono = "0.4"

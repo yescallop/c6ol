@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+argon2 = "0.5"
 base64 = "0.22"
 c6ol-core = { path = "../core" }
 console_error_panic_hook = "0.1.7"

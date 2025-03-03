@@ -1,5 +1,6 @@
 //! The client library for [Connect6 Online](https://github.com/yescallop/c6ol).
 
+mod argon2id;
 mod dialog;
 mod game_view;
 
@@ -207,7 +208,7 @@ pub fn App() -> impl IntoView {
                         show_game_menu_dialog();
                     }
                 } else {
-                    show_dialog(Dialog::from(JoinDialog));
+                    show_dialog(Dialog::from(AuthDialog));
                 }
                 options.set(Some(new_options));
             }
@@ -556,8 +557,8 @@ pub fn App() -> impl IntoView {
                 set_game_id("");
             }
         }
-        GameMenuRetVal::Join => {
-            show_dialog(Dialog::from(JoinDialog));
+        GameMenuRetVal::Auth => {
+            show_dialog(Dialog::from(AuthDialog));
         }
         GameMenuRetVal::Undo => on_event(Event::Undo),
         GameMenuRetVal::Redo => on_event(Event::Redo),
@@ -603,10 +604,19 @@ pub fn App() -> impl IntoView {
                 OnlineMenuRetVal::Start(options) => connect(ClientMessage::Start(options)),
                 OnlineMenuRetVal::Join(game_id) => set_game_id(&game_id),
             },
-            RetVal::Join(ret_val) => match ret_val {
-                JoinRetVal::ViewOnly => {}
-                JoinRetVal::Join(passcode) => {
-                    send(ClientMessage::Authenticate(passcode.into_bytes().into()));
+            RetVal::Auth(ret_val) => match ret_val {
+                AuthRetVal::ViewOnly => {}
+                AuthRetVal::Submit(passcode) => {
+                    let Some(id) = GameId::from_base62(game_id.get().as_bytes()) else {
+                        return;
+                    };
+
+                    match argon2id::hash(passcode.as_bytes(), id.0) {
+                        Ok(hash) => send(ClientMessage::Authenticate(hash)),
+                        Err(err) => {
+                            confirm(Confirm::Error(format!("Failed to hash passcode: {err}")));
+                        }
+                    }
                 }
             },
             RetVal::GameMenu(ret_val) => on_game_menu_return(ret_val),

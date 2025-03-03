@@ -131,9 +131,9 @@ async fn handle_websocket(
             opt = socket.next() => {
                 let msg = opt.ok_or(Error::Closed)??;
                 match msg {
-                    ClientMessage::Authenticate(passcode) if game.player().is_none() => {
+                    ClientMessage::Authenticate(hash) if game.player().is_none() => {
                         let player =
-                            game.authenticate(passcode).await.ok_or(Error::WrongPasscode)?;
+                            game.authenticate(hash).await.ok_or(Error::WrongPasscode)?;
 
                         let msg = ServerMessage::Authenticated(player);
                         socket.send(encode(msg)).await?;

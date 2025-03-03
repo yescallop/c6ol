@@ -94,7 +94,7 @@ dialogs! {
     EitherType = EitherOf6,
     MainMenu => A,
     OnlineMenu => B,
-    Join => C,
+    Auth => C,
     GameMenu => D,
     Confirm => E,
     Reset => F,
@@ -233,23 +233,23 @@ impl DialogImpl for OnlineMenuDialog {
 }
 
 #[derive(Clone)]
-pub struct JoinDialog;
+pub struct AuthDialog;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-pub enum JoinRetVal {
+pub enum AuthRetVal {
     #[default]
     ViewOnly,
-    Join(String),
+    Submit(String),
 }
 
-impl DialogImpl for JoinDialog {
-    type RetVal = JoinRetVal;
+impl DialogImpl for AuthDialog {
+    type RetVal = AuthRetVal;
 
     fn contents(self) -> impl IntoView {
         let passcode = RwSignal::new(String::new());
 
         view! {
-            <p class="title">"Join Game"</p>
+            <p class="title">"Authenticate"</p>
             <label for="passcode">"Passcode: "</label>
             <input
                 type="password"
@@ -259,7 +259,7 @@ impl DialogImpl for JoinDialog {
                 bind:value=passcode
             />
             <div class="btn-group reversed">
-                <button value=move || ret!(Join(passcode.get()))>"Join"</button>
+                <button value=move || ret!(Submit(passcode.get()))>"Submit"</button>
                 <button formnovalidate>"View Only"</button>
             </div>
         }
@@ -282,7 +282,7 @@ pub enum GameMenuRetVal {
     #[default]
     Resume,
     MainMenu,
-    Join,
+    Auth,
     Undo,
     Redo,
     Home,
@@ -511,11 +511,11 @@ impl DialogImpl for GameMenuDialog {
             }
         };
 
-        let maybe_join_btn_or_ctrl_view = move || {
+        let maybe_auth_btn_or_ctrl_view = move || {
             if game_id.read().is_empty() {
                 EitherOf3::A(())
             } else if online && player.get().is_none() {
-                EitherOf3::B(view! { <button value=ret!(Join)>"Join"</button> })
+                EitherOf3::B(view! { <button value=ret!(Auth)>"Authenticate"</button> })
             } else {
                 EitherOf3::C(ctrl_view())
             }
@@ -526,7 +526,7 @@ impl DialogImpl for GameMenuDialog {
             <p style="font-family: monospace;">{info_view}</p>
             <div class="menu-btn-group">
                 <button value=ret!(MainMenu)>"Main Menu"</button>
-                {maybe_join_btn_or_ctrl_view}
+                {maybe_auth_btn_or_ctrl_view}
                 <button autofocus>"Resume"</button>
             </div>
         }
