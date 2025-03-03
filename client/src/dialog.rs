@@ -137,10 +137,7 @@ pub struct OnlineMenuDialog;
 pub enum OnlineMenuRetVal {
     #[default]
     Cancel,
-    Start {
-        options: GameOptions,
-        passcode: String,
-    },
+    Start(GameOptions),
     Join(String),
 }
 
@@ -153,7 +150,6 @@ impl DialogImpl for OnlineMenuDialog {
         let start_or_join = move || {
             if start_checked.get() {
                 let stone = RwSignal::new(Stone::Black);
-                let passcode = RwSignal::new(String::new());
 
                 let view = view! {
                     <table>
@@ -177,28 +173,14 @@ impl DialogImpl for OnlineMenuDialog {
                                 <label for="white">"White"</label>
                             </td>
                         </tr>
-                        <tr>
-                            <td style="text-align: right;">
-                                <label for="passcode">"Passcode: "</label>
-                            </td>
-                            <td style="text-align: center;">
-                                <input
-                                    type="password"
-                                    id="passcode"
-                                    required
-                                    placeholder="Yours, not shared"
-                                    bind:value=passcode
-                                />
-                            </td>
-                        </tr>
-
+                    // TODO: More options.
                     </table>
                     <div class="btn-group reversed">
                         <button value=move || {
                             let options = GameOptions {
                                 swapped: stone.get() == Stone::White,
                             };
-                            ret!(Start { options, passcode: passcode.get() })
+                            ret!(Start(options))
                         }>"Start"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>

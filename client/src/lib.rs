@@ -600,9 +600,7 @@ pub fn App() -> impl IntoView {
                 OnlineMenuRetVal::Cancel => {
                     show_dialog(Dialog::from(MainMenuDialog));
                 }
-                OnlineMenuRetVal::Start { options, passcode } => {
-                    connect(ClientMessage::Start(options, passcode.into_bytes().into()));
-                }
+                OnlineMenuRetVal::Start(options) => connect(ClientMessage::Start(options)),
                 OnlineMenuRetVal::Join(game_id) => set_game_id(&game_id),
             },
             RetVal::Join(ret_val) => match ret_val {

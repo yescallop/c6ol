@@ -100,28 +100,33 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
             Command::Load(resp_tx, id) => {
                 let mut stmt = conn.prepare(
                     "SELECT options, passcode_host, passcode_guest,
-                        request_host, request_guest, record FROM game WHERE id = ?1",
+                        request_host, request_guest, record FROM game
+                        WHERE id = ?1 AND passcode_host IS NOT NULL",
                 )?;
                 let resp = stmt.query([id.0])?.next()?.map(parse_row).transpose()?;
                 _ = resp_tx.send(resp);
             }
             Command::Save(id, state) => {
-                conn.execute(
-                    "UPDATE game SET options = ?1,
+                if state.passcode_hashes[Player::Host].is_none() {
+                    conn.execute("DELETE FROM game WHERE id = ?1", [id.0])?;
+                } else {
+                    conn.execute(
+                        "UPDATE game SET options = ?1,
                         passcode_host = ?2, passcode_guest = ?3,
                         request_host = ?4, request_guest = ?5,
                         record = ?6, updated_at = ?7 WHERE id = ?8",
-                    (
-                        state.options.encode_to_vec(),
-                        state.passcode_hashes[Player::Host],
-                        state.passcode_hashes[Player::Guest],
-                        state.requests[Player::Host].map(Request::encode_to_vec),
-                        state.requests[Player::Guest].map(Request::encode_to_vec),
-                        state.record.encode_to_vec(RecordEncodeMethod::Past),
-                        Utc::now().timestamp_millis(),
-                        id.0,
-                    ),
-                )?;
+                        (
+                            state.options.encode_to_vec(),
+                            state.passcode_hashes[Player::Host],
+                            state.passcode_hashes[Player::Guest],
+                            state.requests[Player::Host].map(Request::encode_to_vec),
+                            state.requests[Player::Guest].map(Request::encode_to_vec),
+                            state.record.encode_to_vec(RecordEncodeMethod::Past),
+                            Utc::now().timestamp_millis(),
+                            id.0,
+                        ),
+                    )?;
+                }
             }
         }
     }

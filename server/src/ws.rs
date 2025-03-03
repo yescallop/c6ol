@@ -100,17 +100,10 @@ async fn handle_websocket(
     let mut game;
 
     match socket.next().await.ok_or(Error::Closed)?? {
-        ClientMessage::Start(options, passcode) => {
+        ClientMessage::Start(options) => {
             game = manager.create(options).await;
-            let player = game
-                .authenticate(passcode)
-                .await
-                .expect("should be able to authenticate");
 
             let msg = ServerMessage::Started(game.id());
-            socket.send(encode(msg)).await?;
-
-            let msg = ServerMessage::Authenticated(player);
             socket.send(encode(msg)).await?;
         }
         ClientMessage::Join(id) => {

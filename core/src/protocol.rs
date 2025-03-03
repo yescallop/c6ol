@@ -161,7 +161,7 @@ impl Request {
 #[strum_discriminants(derive(FromRepr), name(ClientMessageKind), repr(u8), vis(pub(self)))]
 pub enum ClientMessage {
     /// Requests to start a new game.
-    Start(GameOptions, Passcode),
+    Start(GameOptions),
     /// Requests to join an existing game.
     Join(GameId),
     /// Requests to authenticate.
@@ -188,10 +188,7 @@ impl ClientMessage {
     pub fn encode(self) -> Vec<u8> {
         let mut buf = vec![ClientMessageKind::from(&self) as u8];
         match self {
-            Self::Start(options, passcode) => {
-                options.encode(&mut buf);
-                buf.put_slice(&passcode);
-            }
+            Self::Start(options) => options.encode(&mut buf),
             Self::Join(game_id) => buf.put_i64(game_id.0),
             Self::Authenticate(passcode) => buf.put_slice(&passcode),
             Self::Place(p1, p2) => {
@@ -217,10 +214,7 @@ impl ClientMessage {
         use ClientMessageKind as Kind;
 
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
-            Kind::Start => Self::Start(
-                GameOptions::decode(&mut buf)?,
-                Box::from(mem::take(&mut buf)),
-            ),
+            Kind::Start => Self::Start(GameOptions::decode(&mut buf)?),
             Kind::Join => Self::Join(GameId(buf.try_get_i64().ok()?)),
             Kind::Authenticate => Self::Authenticate(Box::from(mem::take(&mut buf))),
             Kind::Place => {

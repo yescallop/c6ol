@@ -1005,11 +1005,11 @@ pub fn GameView(
             on:pointerleave=move |ev| on_leave((&ev).into())
             on:mouseleave=move |ev| on_leave((&ev).into())
             // Avoid touching a dialog opened by the same touch.
+            // Cancel only when possible to avoid error after pinching:
+            // [Intervention] Ignored attempt to cancel a touchend event with
+            // cancelable=false, for example because scrolling is in progress
+            // and cannot be interrupted.
             on:touchend=move |ev| {
-                // To avoid the error after pinching:
-                // [Intervention] Ignored attempt to cancel a touchend event with
-                // cancelable=false, for example because scrolling is in progress
-                // and cannot be interrupted.
                 if ev.cancelable() {
                     ev.prevent_default();
                 }
