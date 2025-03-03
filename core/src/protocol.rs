@@ -54,11 +54,11 @@ impl fmt::Display for GameId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut n = self.0 as u64;
         let mut buf = [b'0'; 11];
-        let mut i = 10;
-        while n != 0 {
+        let mut i = 11;
+        while n > 0 {
+            i -= 1;
             buf[i] = BASE62_ALPHABET[(n % 62) as usize];
             n /= 62;
-            i -= 1;
         }
         f.write_str(str::from_utf8(&buf).unwrap())
     }
