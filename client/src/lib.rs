@@ -11,7 +11,10 @@ use c6ol_core::{
 };
 use dialog::*;
 use leptos::{ev, prelude::*};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
+};
 use tinyvec::ArrayVec;
 use web_sys::{
     BinaryType, CloseEvent, MessageEvent, Storage, WebSocket,
@@ -83,6 +86,7 @@ struct WebSocketState {
     #[expect(dead_code)]
     onmessage: Closure<dyn Fn(MessageEvent)>,
     was_open: bool,
+    reconnect_handle: Option<TimeoutHandle>,
 }
 
 const CLOSE_CODE_ABNORMAL: u16 = 1006;
@@ -98,6 +102,8 @@ fn history_push_state(url: &str) {
         .push_state_with_url(&JsValue::UNDEFINED, "", Some(url))
         .unwrap();
 }
+
+const RECONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Entry-point for the app.
 #[component]
@@ -317,17 +323,25 @@ pub fn App() -> impl IntoView {
             if reason.is_empty() {
                 // The reason being empty means it's not the server closing the connection.
                 // If the socket was open and the game has started, attempt to reconnect.
-                if ws_state.read_untracked().as_ref().unwrap().was_open {
+                let mut state = ws_state.write_untracked();
+                let state = state.as_mut().unwrap();
+                if state.was_open {
                     if let Some(id) = GameId::from_base62(game_id.get().as_bytes()) {
-                        connect(
-                            ClientMessage::Join(id),
-                            ws_state,
-                            game_id,
-                            send,
-                            clear_all,
-                            on_message,
-                            confirm,
-                        );
+                        state.reconnect_handle = set_timeout_with_handle(
+                            move || {
+                                connect(
+                                    ClientMessage::Join(id),
+                                    ws_state,
+                                    game_id,
+                                    send,
+                                    clear_all,
+                                    on_message,
+                                    confirm,
+                                );
+                            },
+                            RECONNECT_TIMEOUT,
+                        )
+                        .ok();
                         return;
                     }
                 }
@@ -351,6 +365,7 @@ pub fn App() -> impl IntoView {
             onclose,
             onmessage,
             was_open: false,
+            reconnect_handle: None,
         }));
     }
 
@@ -362,11 +377,20 @@ pub fn App() -> impl IntoView {
 
     let set_game_id = move |id: &str| {
         if ws_state.read_untracked().is_some() {
-            let ws = ws_state.write().take().unwrap().ws;
+            let WebSocketState {
+                ws,
+                reconnect_handle,
+                ..
+            } = ws_state.write().take().unwrap();
+
             ws.set_onopen(None);
             ws.set_onclose(None);
             ws.set_onmessage(None);
             ws.close().unwrap();
+
+            if let Some(handle) = reconnect_handle {
+                handle.clear();
+            }
         }
 
         clear_all();
