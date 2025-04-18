@@ -37,7 +37,7 @@ An official instance is hosted at [c6.zhixia.dev](https://c6.zhixia.dev/). Pleas
 
 ## Setup (Linux)
 
-Install Rust 1.84+ and [Trunk](https://trunkrs.dev/). To develop, run:
+Install Rust 1.85+ and [Trunk](https://trunkrs.dev/). To develop, run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol
