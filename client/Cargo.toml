@@ -9,7 +9,7 @@ argon2 = "0.5"
 base64 = "0.22"
 c6ol-core = { path = "../core" }
 console_error_panic_hook = "0.1.7"
-leptos = { version = "0.7", features = ["csr"] }
+leptos = { version = "0.8", features = ["csr"] }
 paste = "1"
 ron = "0.10"
 serde = "1"
