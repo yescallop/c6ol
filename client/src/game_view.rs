@@ -595,7 +595,7 @@ pub fn GameView(
             return;
         }
 
-        if state.read_value().reviewing {
+        if state.with_value(|state| state.reviewing && state.down_pointers.is_empty()) {
             on_event(if ev.delta_y() > 0.0 {
                 Event::Undo
             } else {
