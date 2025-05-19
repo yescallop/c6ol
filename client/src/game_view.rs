@@ -42,6 +42,9 @@ const DIST_FOR_SWIPE_GESTURE: f64 = 100.0; // ~2.65cm
 
 const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
+const BUTTON_MAIN: i16 = 0;
+const BUTTON_SECONDARY: i16 = 2;
+
 /// Represents `pointerId`, `offsetX` and `offsetY` fields
 /// of a `PointerEvent` or `MouseEvent`.
 ///
@@ -113,8 +116,10 @@ enum PointerState {
     Pinched,
     /// Entered when a swipe gesture is triggered.
     ///
-    /// A swipe gesture may only be triggered when the state is not `Swiped`.
+    /// A swipe gesture may be triggered only when the state is `Calm` or `Moved`.
     Swiped,
+    /// Entered when a secondary button is pressed for the only active pointer.
+    SecondaryPressed { wheeled: bool },
 }
 
 #[derive(Default)]
@@ -548,10 +553,8 @@ pub fn GameView(
             _ => return,
         };
 
-        let state = state.read_value();
-
         // If the view is being dragged or pinched, bail out to avoid problems.
-        if !state.down_pointers.is_empty() {
+        if !state.read_value().down_pointers.is_empty() {
             return;
         }
 
@@ -588,15 +591,28 @@ pub fn GameView(
 
     // Handles `wheel` events.
     let on_wheel = move |ev: WheelEvent| {
-        zoom(
-            if ev.delta_y() > 0.0 {
-                Zoom::Out
+        if disabled.get() {
+            return;
+        }
+
+        if let PointerState::SecondaryPressed { wheeled } = &mut state.write_value().pointer_state {
+            on_event(if ev.delta_y() > 0.0 {
+                Event::Undo
             } else {
-                Zoom::In
-            },
-            Some((&MouseEvent::from(ev)).into()),
-        );
-        state.write_value().abort_long_press();
+                Event::Redo
+            });
+            *wheeled = true;
+        } else {
+            zoom(
+                if ev.delta_y() > 0.0 {
+                    Zoom::Out
+                } else {
+                    Zoom::In
+                },
+                Some((&MouseEvent::from(ev)).into()),
+            );
+            state.write_value().abort_long_press();
+        }
     };
 
     // Handles `pointerdown` events.
@@ -615,15 +631,18 @@ pub fn GameView(
         }
 
         if state.down_pointers.len() == 1 {
-            if ev.pointer_type() != "touch" {
-                return;
+            if ev.pointer_type() == "touch" {
+                let handle =
+                    set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
+                        .unwrap();
+                state.long_press_handle = Some(handle);
+            } else if ev.button() == BUTTON_SECONDARY {
+                state.pointer_state = PointerState::SecondaryPressed { wheeled: false };
+                if cursor_pos.get().is_some() {
+                    cursor_pos.set(None);
+                }
             }
-
-            let handle =
-                set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
-                    .unwrap();
-            state.long_press_handle = Some(handle);
-        } else if state.down_pointers.len() == 2 {
+        } else if state.down_pointers.len() == 2 && state.pointer_state < PointerState::Pinched {
             state.prev_view_size = view_size.get();
             state.pointer_state = PointerState::Pinched;
             if cursor_pos.get().is_some() {
@@ -648,10 +667,13 @@ pub fn GameView(
             return;
         }
         if state.pointer_state != PointerState::Calm {
+            if let PointerState::SecondaryPressed { wheeled: false } = state.pointer_state {
+                on_event(Event::Menu);
+            }
             state.pointer_state = PointerState::Calm;
             return;
         }
-        if disabled.get() || ev.button() != 0 {
+        if disabled.get() || ev.button() != BUTTON_MAIN {
             return;
         }
 
@@ -1015,11 +1037,7 @@ pub fn GameView(
                 }
             }
             on:keydown=on_keydown
-            on:contextmenu=move |ev| {
-                ev.prevent_default();
-                state.write_value().abort_long_press();
-                on_event(Event::Menu);
-            }
+            on:contextmenu=move |ev| ev.prevent_default()
         >
             <svg
                 class="view"
