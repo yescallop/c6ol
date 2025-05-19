@@ -43,7 +43,7 @@ const DIST_FOR_SWIPE_GESTURE: f64 = 100.0; // ~2.65cm
 const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
 const BUTTON_MAIN: i16 = 0;
-const BUTTON_SECONDARY: i16 = 2;
+const BUTTON_AUXILIARY: i16 = 1;
 
 /// Represents `pointerId`, `offsetX` and `offsetY` fields
 /// of a `PointerEvent` or `MouseEvent`.
@@ -118,8 +118,6 @@ enum PointerState {
     ///
     /// A swipe gesture may be triggered only when the state is `Calm` or `Moved`.
     Swiped,
-    /// Entered when a secondary button is pressed for the only active pointer.
-    SecondaryPressed { wheeled: bool },
 }
 
 #[derive(Default)]
@@ -139,6 +137,8 @@ struct State {
     pointer_state: PointerState,
     // Open a game menu after a long press of duration `LONG_PRESS_MENU_TIMEOUT`.
     long_press_handle: Option<TimeoutHandle>,
+    // Click wheel button to toggle review mode.
+    reviewing: bool,
 }
 
 impl State {
@@ -595,13 +595,12 @@ pub fn GameView(
             return;
         }
 
-        if let PointerState::SecondaryPressed { wheeled } = &mut state.write_value().pointer_state {
+        if state.read_value().reviewing {
             on_event(if ev.delta_y() > 0.0 {
                 Event::Undo
             } else {
                 Event::Redo
             });
-            *wheeled = true;
         } else {
             zoom(
                 if ev.delta_y() > 0.0 {
@@ -636,11 +635,8 @@ pub fn GameView(
                     set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
                         .unwrap();
                 state.long_press_handle = Some(handle);
-            } else if ev.button() == BUTTON_SECONDARY {
-                state.pointer_state = PointerState::SecondaryPressed { wheeled: false };
-                if cursor_pos.get().is_some() {
-                    cursor_pos.set(None);
-                }
+            } else if ev.button() == BUTTON_AUXILIARY {
+                state.reviewing = !state.reviewing;
             }
         } else if state.down_pointers.len() == 2 && state.pointer_state < PointerState::Pinched {
             state.prev_view_size = view_size.get();
@@ -667,9 +663,6 @@ pub fn GameView(
             return;
         }
         if state.pointer_state != PointerState::Calm {
-            if let PointerState::SecondaryPressed { wheeled: false } = state.pointer_state {
-                on_event(Event::Menu);
-            }
             state.pointer_state = PointerState::Calm;
             return;
         }
@@ -1037,7 +1030,11 @@ pub fn GameView(
                 }
             }
             on:keydown=on_keydown
-            on:contextmenu=move |ev| ev.prevent_default()
+            on:contextmenu=move |ev| {
+                ev.prevent_default();
+                state.write_value().abort_long_press();
+                on_event(Event::Menu);
+            }
         >
             <svg
                 class="view"
