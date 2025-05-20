@@ -262,7 +262,7 @@ pub fn GameView(
     stone: ReadSignal<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     pending: impl Fn() -> bool + Send + Sync + 'static,
-    phantom_disabled: impl Fn() -> bool + Copy + 'static,
+    analyzing: impl Fn() -> bool + Copy + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
     /// Size of the view.
     ///
@@ -285,6 +285,10 @@ pub fn GameView(
 
     // Non-reactive state.
     let state = StoredValue::<State>::default();
+
+    Effect::new(move || {
+        state.write_value().reviewing = analyzing();
+    });
 
     // Creates a view-board position calculator.
     let calc = move || Calc {
@@ -373,7 +377,7 @@ pub fn GameView(
             return;
         }
 
-        if phantom_disabled() {
+        if analyzing() {
             if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
                 tentatives.remove(i);
                 tentatives_pos.set(tentatives);
