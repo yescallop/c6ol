@@ -405,7 +405,8 @@ pub fn App() -> impl IntoView {
 
         DRAW_AS_HEART.store(
             id == "42b3AH5HntU"
-                || id == "analyze,AAcQDhsPCg0iHQgcMhQ0C1QYUgkeERIkFT4gOVsxOlhQgQE4gAEC",
+                || id == "analyze,AAcQDhsPCg0iHQgcMhQ0C1QYUgkeERIkFT4gOVsxOlhQgQE4gAEC"
+                || id == "analyze,AAcMFxMYCRUKCCcUCyUNLhAiPCAqFg9GKBFCEiYhPS0OOxtdP2GLAWMC",
             Ordering::Relaxed,
         );
 
