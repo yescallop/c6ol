@@ -144,13 +144,12 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                         tracing::info!("game started: {id}");
                     },
                     GameManageCommand::Find(resp_tx, id) => {
-                        if let Some(tx) = game_cmd_txs.get(&id) {
+                        if let Some(tx) = game_cmd_txs.get(&id)
+                            && let Some(tx) = tx.upgrade() {
                             // There is a chance that all senders have been dropped
                             // but the game task has not finished yet.
-                            if let Some(tx) = tx.upgrade() {
-                                _ = resp_tx.send(Some(Game::new(id, tx)));
-                                continue;
-                            }
+                            _ = resp_tx.send(Some(Game::new(id, tx)));
+                            continue;
                         }
 
                         if let Some(state) = db_manager.load(id).await {
@@ -181,12 +180,11 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                 };
 
                 let id = game_ids_by_task_id.remove(&task_id).unwrap();
-                if let Some(tx) = game_cmd_txs.get(&id) {
+                if let Some(tx) = game_cmd_txs.get(&id)
+                    && tx.strong_count() == 0 {
                     // There is a chance that the same game is loaded again
                     // before we even remove the weak sender.
-                    if tx.strong_count() == 0 {
-                        game_cmd_txs.remove(&id);
-                    }
+                    game_cmd_txs.remove(&id);
                 }
 
                 if let Some(state) = state {

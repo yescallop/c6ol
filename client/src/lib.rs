@@ -149,11 +149,11 @@ pub fn App() -> impl IntoView {
 
     // Sends the message on the WebSocket connection.
     let send = move |msg: ClientMessage| {
-        if let Some(ws_state) = &*ws_state.read_untracked() {
-            if ws_state.ws.ready_state() == WebSocket::OPEN {
-                ws_state.ws.send_with_u8_array(&msg.encode()).unwrap();
-                return;
-            }
+        if let Some(ws_state) = &*ws_state.read_untracked()
+            && ws_state.ws.ready_state() == WebSocket::OPEN
+        {
+            ws_state.ws.send_with_u8_array(&msg.encode()).unwrap();
+            return;
         }
         confirm(Confirm::Error("Connection is not open.".into()));
     };
@@ -235,10 +235,10 @@ pub fn App() -> impl IntoView {
             ServerMessage::Request(initiator, req) => {
                 requests.write()[initiator] = Some(req);
 
-                if let Some(player) = player.get() {
-                    if player != initiator {
-                        confirm(Confirm::Requested(player, req));
-                    }
+                if let Some(player) = player.get()
+                    && player != initiator
+                {
+                    confirm(Confirm::Requested(player, req));
                 }
             }
             ServerMessage::AcceptRequest(initiator) => {
@@ -327,25 +327,25 @@ pub fn App() -> impl IntoView {
                 // If the socket was open and the game has started, attempt to reconnect.
                 let mut state = ws_state.write_untracked();
                 let state = state.as_mut().unwrap();
-                if state.was_open {
-                    if let Some(id) = GameId::from_base62(game_id.get().as_bytes()) {
-                        state.reconnect_handle = set_timeout_with_handle(
-                            move || {
-                                connect(
-                                    ClientMessage::Join(id),
-                                    ws_state,
-                                    game_id,
-                                    send,
-                                    clear_all,
-                                    on_message,
-                                    confirm,
-                                );
-                            },
-                            RECONNECT_TIMEOUT,
-                        )
-                        .ok();
-                        return;
-                    }
+                if state.was_open
+                    && let Some(id) = GameId::from_base62(game_id.get().as_bytes())
+                {
+                    state.reconnect_handle = set_timeout_with_handle(
+                        move || {
+                            connect(
+                                ClientMessage::Join(id),
+                                ws_state,
+                                game_id,
+                                send,
+                                clear_all,
+                                on_message,
+                                confirm,
+                            );
+                        },
+                        RECONNECT_TIMEOUT,
+                    )
+                    .ok();
+                    return;
                 }
 
                 if code == CLOSE_CODE_ABNORMAL {
@@ -416,13 +416,11 @@ pub fn App() -> impl IntoView {
         }
 
         if id == "local" {
-            if let Some(decoded_record) = local_storage()
-                .get_item(STORAGE_KEY_RECORD)
-                .unwrap()
-                .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
-                .and_then(|buf| Record::decode(&mut &buf[..]))
+            if let Some(rec) = local_storage().get_item(STORAGE_KEY_RECORD).unwrap()
+                && let Ok(rec) = BASE64_STANDARD.decode(rec)
+                && let Some(rec) = Record::decode(&mut &rec[..])
             {
-                record.set(decoded_record);
+                record.set(rec);
             } else {
                 record.write().clear();
             }
@@ -430,13 +428,11 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        if let Some(buf) = id.strip_prefix(ANALYZE_PREFIX) {
-            if let Some(decoded_record) = BASE64_STANDARD
-                .decode(buf)
-                .ok()
-                .and_then(|buf| Record::decode(&mut &buf[..]))
+        if let Some(rec) = id.strip_prefix(ANALYZE_PREFIX) {
+            if let Ok(rec) = BASE64_STANDARD.decode(rec)
+                && let Some(rec) = Record::decode(&mut &rec[..])
             {
-                record.set(decoded_record);
+                record.set(rec);
                 stone.set(record.read().turn());
             } else {
                 confirm(Confirm::Error("Failed to decode record.".into()));
@@ -523,13 +519,13 @@ pub fn App() -> impl IntoView {
                     let requests = requests.read();
                     if let Some(req @ Request::Reset { .. }) = requests[player.opposite()] {
                         confirm(Confirm::Requested(player, req));
-                    } else if requests[player].is_none() {
-                        if let Some(options) = options.get() {
-                            show_dialog(Dialog::from(ResetDialog {
-                                player,
-                                old_options: options,
-                            }));
-                        }
+                    } else if requests[player].is_none()
+                        && let Some(options) = options.get()
+                    {
+                        show_dialog(Dialog::from(ResetDialog {
+                            player,
+                            old_options: options,
+                        }));
                     }
                 } else {
                     if !record.read().has_past() {
@@ -553,12 +549,9 @@ pub fn App() -> impl IntoView {
             Event::Resign => {
                 if online() {
                     confirm(Confirm::Resign);
-                } else {
-                    let turn = record.read().turn();
-                    if let Some(stone) = turn {
-                        record.write().make_move(Move::Resign(stone));
-                        record_changed = true;
-                    }
+                } else if let Some(stone) = record.read().turn() {
+                    record.write().make_move(Move::Resign(stone));
+                    record_changed = true;
                 }
             }
             Event::Draw => {
@@ -712,15 +705,14 @@ pub fn App() -> impl IntoView {
     let handle_hashchange = window_event_listener(ev::hashchange, move |_| on_hash_change());
 
     let handle_storage = window_event_listener(ev::storage, move |ev| {
-        if *game_id.read() == "local" && ev.key().as_deref() == Some(STORAGE_KEY_RECORD) {
-            if let Some(decoded_record) = ev
-                .new_value()
-                .and_then(|buf| BASE64_STANDARD.decode(buf).ok())
-                .and_then(|buf| Record::decode(&mut &buf[..]))
-            {
-                record.set(decoded_record);
-                stone.set(record.read().turn());
-            }
+        if *game_id.read() == "local"
+            && ev.key().as_deref() == Some(STORAGE_KEY_RECORD)
+            && let Some(rec) = ev.new_value()
+            && let Ok(rec) = BASE64_STANDARD.decode(rec)
+            && let Some(rec) = Record::decode(&mut &rec[..])
+        {
+            record.set(rec);
+            stone.set(record.read().turn());
         }
     });
 

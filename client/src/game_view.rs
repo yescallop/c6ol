@@ -708,16 +708,15 @@ pub fn GameView(
             return;
         }
 
-        if let Some(id) = po.id {
-            if let Some(pointer) = state.down_pointers.get_mut(&id) {
-                pointer.last = po;
-            }
-        } else {
+        let Some(id) = po.id else {
             // Firefox does not fire a `pointerover` event after a dialog is closed,
             // so we accept `mouseover` as a replacement. We bail out here, because
             // it is spuriously fired on Chrome when touching the screen on startup
             // or after a dialog is closed.
             return;
+        };
+        if let Some(pointer) = state.down_pointers.get_mut(&id) {
+            pointer.last = po;
         }
 
         if state.down_pointers.is_empty() {
@@ -806,10 +805,10 @@ pub fn GameView(
 
     // Replay the recorded hover event (if any) after the view is enabled.
     Effect::new(move || {
-        if !disabled.get() {
-            if let Some(po) = state.write_value().last_hover_before_enabled.take() {
-                update_cursor(po, false);
-            }
+        if !disabled.get()
+            && let Some(po) = state.write_value().last_hover_before_enabled.take()
+        {
+            update_cursor(po, false);
         }
     });
 
@@ -962,7 +961,7 @@ pub fn GameView(
                     _ => unreachable!(),
                 };
 
-                let fill = if let Move::Draw = mov {
+                let fill = if mov == Move::Draw {
                     "gray"
                 } else {
                     stone_fill(match mov {

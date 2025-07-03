@@ -448,10 +448,10 @@ impl Record {
             for p in iter::once(p1).chain(p2) {
                 self.map.insert(p, stone);
             }
-        } else if let Move::Win(p, dir) = mov {
-            if self.test_winning_row(p, dir).is_none() {
-                return false;
-            }
+        } else if let Move::Win(p, dir) = mov
+            && self.test_winning_row(p, dir).is_none()
+        {
+            return false;
         }
 
         self.moves.truncate(self.index);
@@ -597,10 +597,10 @@ impl Record {
             }
         }
 
-        if let Some(index) = index {
-            if !record.jump(index) {
-                return None;
-            }
+        if let Some(index) = index
+            && !record.jump(index)
+        {
+            return None;
         }
         Some(record)
     }
