@@ -9,7 +9,7 @@ use axum::{
     },
     response::Response,
 };
-use c6ol_core::protocol::{ClientMessage, ServerMessage};
+use c6ol_core::protocol::{ClientMessage, Message as _, ServerMessage};
 use futures_util::{SinkExt, StreamExt, future};
 use std::{convert::Infallible, time::Duration};
 use tokio::{sync::broadcast::error::RecvError, time};
@@ -75,7 +75,7 @@ enum Error {
 }
 
 fn encode(msg: ServerMessage) -> Message {
-    Message::Binary(msg.encode().into())
+    Message::Binary(msg.encode_to_vec().into())
 }
 
 const HEARTBEAT_PERIOD: Duration = Duration::from_secs(30);
@@ -87,7 +87,7 @@ async fn handle_websocket(
 ) -> Result<Infallible, Error> {
     let mut socket = socket.filter_map(|res| {
         future::ready(match res {
-            Ok(Message::Binary(data)) => match ClientMessage::decode(&data) {
+            Ok(Message::Binary(data)) => match ClientMessage::decode(&mut &data[..]) {
                 Some(msg) => Some(Ok(msg)),
                 None => Some(Err(Error::MalformedMessage)),
             },

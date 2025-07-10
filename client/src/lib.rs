@@ -7,7 +7,7 @@ mod game_view;
 use base64::{Engine, prelude::BASE64_STANDARD};
 use c6ol_core::{
     game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodeMethod, Stone},
-    protocol::{ClientMessage, GameId, GameOptions, Request, ServerMessage},
+    protocol::{ClientMessage, GameId, GameOptions, Message, Request, ServerMessage},
 };
 use dialog::*;
 use leptos::{ev, prelude::*};
@@ -152,7 +152,10 @@ pub fn App() -> impl IntoView {
         if let Some(ws_state) = &*ws_state.read_untracked()
             && ws_state.ws.ready_state() == WebSocket::OPEN
         {
-            ws_state.ws.send_with_u8_array(&msg.encode()).unwrap();
+            ws_state
+                .ws
+                .send_with_u8_array(&msg.encode_to_vec())
+                .unwrap();
             return;
         }
         confirm(Confirm::Error("Connection is not open.".into()));
@@ -184,7 +187,7 @@ pub fn App() -> impl IntoView {
             .data()
             .dyn_ref::<ArrayBuffer>()
             .map(|buf| Uint8Array::new(buf).to_vec())
-            .and_then(|buf| ServerMessage::decode(&buf))
+            .and_then(|buf| ServerMessage::decode(&mut &buf[..]))
         else {
             let ws_state = ws_state.read();
             let ws = &ws_state.as_ref().unwrap().ws;

@@ -2,7 +2,7 @@ use crate::{game::GameState, macros::exec};
 use anyhow::Context;
 use c6ol_core::{
     game::{Player, Record, RecordEncodeMethod},
-    protocol::{GameId, GameOptions, Request},
+    protocol::{GameId, GameOptions, Message, Request},
 };
 use chrono::Utc;
 use rusqlite::{Connection, Row};
@@ -123,8 +123,8 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                             state.options.encode_to_vec(),
                             state.passcode_hashes[Player::Host],
                             state.passcode_hashes[Player::Guest],
-                            state.requests[Player::Host].map(Request::encode_to_vec),
-                            state.requests[Player::Guest].map(Request::encode_to_vec),
+                            state.requests[Player::Host].map(Message::encode_to_vec),
+                            state.requests[Player::Guest].map(Message::encode_to_vec),
                             state.record.encode_to_vec(RecordEncodeMethod::Past),
                             Utc::now().timestamp_millis(),
                             id.0,

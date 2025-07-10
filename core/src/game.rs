@@ -156,13 +156,7 @@ impl Point {
     /// Returns an iterator of adjacent points in the given direction,
     /// which stops on overflow.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
-        let mut cur = self;
-        let (dx, dy) = dir.unit_vec();
-
-        iter::from_fn(move || {
-            cur = Self::new(cur.x.checked_add(dx)?, cur.y.checked_add(dy)?);
-            Some(cur)
-        })
+        iter::successors(Some(self), move |p| p.adjacent(dir))
     }
 
     /// Encodes the point to a buffer.
@@ -190,11 +184,11 @@ impl Stone {
     /// Creates a stone from a `u8`.
     #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
-        match n {
-            0 => Some(Self::Black),
-            1 => Some(Self::White),
-            _ => None,
-        }
+        Some(match n {
+            0 => Self::Black,
+            1 => Self::White,
+            _ => return None,
+        })
     }
 
     /// Returns the opposite stone.
@@ -619,11 +613,11 @@ impl Player {
     /// Creates a player from a `u8`.
     #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
-        match n {
-            0 => Some(Self::Host),
-            1 => Some(Self::Guest),
-            _ => None,
-        }
+        Some(match n {
+            0 => Self::Host,
+            1 => Self::Guest,
+            _ => return None,
+        })
     }
 
     /// Returns the opposite player.

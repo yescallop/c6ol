@@ -20,11 +20,11 @@ const BASE62_ALPHABET: &[u8] = b"0123456789\
     ABCDEFGHIJKLMNOPQRSTUVWXYZ\
     abcdefghijklmnopqrstuvwxyz";
 
-const BASE62_LUT: &[u8] = &{
-    let mut out = [0xff; 256];
+const BASE62_LUT: &[i8] = &{
+    let mut out = [-1; 256];
     let mut i = 0;
     while i < 62 {
-        out[BASE62_ALPHABET[i] as usize] = i as u8;
+        out[BASE62_ALPHABET[i] as usize] = i as i8;
         i += 1;
     }
     out
@@ -41,7 +41,7 @@ impl GameId {
         let mut n = 0u64;
         for &x in buf {
             let x = BASE62_LUT[x as usize];
-            if x > 127 {
+            if x < 0 {
                 return None;
             }
             n = n.checked_mul(62)?.checked_add(x as u64)?;
@@ -62,6 +62,24 @@ impl fmt::Display for GameId {
         }
         f.write_str(str::from_utf8(&buf).unwrap())
     }
+}
+
+/// Trait for types that can be encoded to and decoded from a buffer.
+pub trait Message: Sized {
+    /// Encodes the message to a buffer.
+    fn encode(self, buf: &mut Vec<u8>);
+
+    /// Encodes the message to a new buffer.
+    #[must_use]
+    fn encode_to_vec(self) -> Vec<u8> {
+        let mut buf = vec![];
+        self.encode(&mut buf);
+        buf
+    }
+
+    /// Decodes a message from a buffer.
+    #[must_use]
+    fn decode(buf: &mut &[u8]) -> Option<Self>;
 }
 
 /// Game options.
@@ -85,23 +103,14 @@ impl GameOptions {
             orig_stone
         }
     }
+}
 
-    /// Encodes the options to a buffer.
-    pub fn encode(self, buf: &mut Vec<u8>) {
+impl Message for GameOptions {
+    fn encode(self, buf: &mut Vec<u8>) {
         buf.put_u8(self.swapped as u8);
     }
 
-    /// Encodes the options to a new buffer.
-    #[must_use]
-    pub fn encode_to_vec(self) -> Vec<u8> {
-        let mut buf = vec![];
-        self.encode(&mut buf);
-        buf
-    }
-
-    /// Decodes options from a buffer.
-    #[must_use]
-    pub fn decode(buf: &mut &[u8]) -> Option<Self> {
+    fn decode(buf: &mut &[u8]) -> Option<Self> {
         Some(Self {
             swapped: match buf.try_get_u8().ok()? {
                 0 => false,
@@ -125,9 +134,8 @@ pub enum Request {
     Reset(GameOptions) = 3,
 }
 
-impl Request {
-    /// Encodes the request to a buffer.
-    pub fn encode(self, buf: &mut Vec<u8>) {
+impl Message for Request {
+    fn encode(self, buf: &mut Vec<u8>) {
         buf.put_u8(RequestKind::from(self) as u8);
         match self {
             Self::Draw | Self::Retract => {}
@@ -135,17 +143,7 @@ impl Request {
         }
     }
 
-    /// Encodes the request to a new buffer.
-    #[must_use]
-    pub fn encode_to_vec(self) -> Vec<u8> {
-        let mut buf = vec![];
-        self.encode(&mut buf);
-        buf
-    }
-
-    /// Decodes a request from a buffer.
-    #[must_use]
-    pub fn decode(buf: &mut &[u8]) -> Option<Self> {
+    fn decode(buf: &mut &[u8]) -> Option<Self> {
         use RequestKind as Kind;
 
         Some(match Kind::from_repr(buf.try_get_u8().ok()?)? {
@@ -182,45 +180,40 @@ pub enum ClientMessage {
     DeclineRequest,
 }
 
-impl ClientMessage {
-    /// Encodes the client message to a new buffer.
-    #[must_use]
-    pub fn encode(self) -> Vec<u8> {
-        let mut buf = vec![ClientMessageKind::from(&self) as u8];
+impl Message for ClientMessage {
+    fn encode(self, buf: &mut Vec<u8>) {
+        buf.put_u8(ClientMessageKind::from(&self) as u8);
         match self {
-            Self::Start(options) => options.encode(&mut buf),
+            Self::Start(options) => options.encode(buf),
             Self::Join(game_id) => buf.put_i64(game_id.0),
             Self::Authenticate(hash) => buf.put_i64(hash),
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
-                    p.encode(&mut buf);
+                    p.encode(buf);
                 }
             }
             Self::Pass => {}
             Self::ClaimWin(p, dir) => {
-                p.encode(&mut buf);
+                p.encode(buf);
                 buf.put_u8(dir as u8);
             }
             Self::Resign => {}
-            Self::Request(req) => req.encode(&mut buf),
+            Self::Request(req) => req.encode(buf),
             Self::AcceptRequest | Self::DeclineRequest => {}
         }
-        buf
     }
 
-    /// Decodes a client message from a buffer.
-    #[must_use]
-    pub fn decode(mut buf: &[u8]) -> Option<Self> {
+    fn decode(buf: &mut &[u8]) -> Option<Self> {
         use ClientMessageKind as Kind;
 
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
-            Kind::Start => Self::Start(GameOptions::decode(&mut buf)?),
+            Kind::Start => Self::Start(GameOptions::decode(buf)?),
             Kind::Join => Self::Join(GameId(buf.try_get_i64().ok()?)),
             Kind::Authenticate => Self::Authenticate(buf.try_get_i64().ok()?),
             Kind::Place => {
-                let p1 = Point::decode(&mut buf)?;
+                let p1 = Point::decode(buf)?;
                 let p2 = if buf.has_remaining() {
-                    Some(Point::decode(&mut buf)?)
+                    Some(Point::decode(buf)?)
                 } else {
                     None
                 };
@@ -228,11 +221,11 @@ impl ClientMessage {
             }
             Kind::Pass => Self::Pass,
             Kind::ClaimWin => Self::ClaimWin(
-                Point::decode(&mut buf)?,
+                Point::decode(buf)?,
                 Direction::from_u8(buf.try_get_u8().ok()?)?,
             ),
             Kind::Resign => Self::Resign,
-            Kind::Request => Self::Request(Request::decode(&mut buf)?),
+            Kind::Request => Self::Request(Request::decode(buf)?),
             Kind::AcceptRequest => Self::AcceptRequest,
             Kind::DeclineRequest => Self::DeclineRequest,
         };
@@ -264,42 +257,37 @@ pub enum ServerMessage {
     DeclineRequest(Player),
 }
 
-impl ServerMessage {
-    /// Encodes the server message to a new buffer.
-    #[must_use]
-    pub fn encode(self) -> Vec<u8> {
-        let mut buf = vec![ServerMessageKind::from(&self) as u8];
+impl Message for ServerMessage {
+    fn encode(self, buf: &mut Vec<u8>) {
+        buf.put_u8(ServerMessageKind::from(&self) as u8);
         match self {
             Self::Started(id) => buf.put_i64(id.0),
             Self::Authenticated(player) => buf.put_u8(player as u8),
-            Self::Options(options) => options.encode(&mut buf),
-            Self::Record(record) => record.encode(&mut buf, RecordEncodeMethod::Past),
-            Self::Move(mov) => mov.encode(&mut buf, true),
+            Self::Options(options) => options.encode(buf),
+            Self::Record(record) => record.encode(buf, RecordEncodeMethod::Past),
+            Self::Move(mov) => mov.encode(buf, true),
             Self::Retract => {}
             Self::Request(player, req) => {
                 buf.put_u8(player as u8);
-                req.encode(&mut buf);
+                req.encode(buf);
             }
             Self::AcceptRequest(player) | Self::DeclineRequest(player) => buf.put_u8(player as u8),
         }
-        buf
     }
 
-    /// Decodes a server message from a buffer.
-    #[must_use]
-    pub fn decode(mut buf: &[u8]) -> Option<Self> {
+    fn decode(buf: &mut &[u8]) -> Option<Self> {
         use ServerMessageKind as Kind;
 
         let msg = match Kind::from_repr(buf.try_get_u8().ok()?)? {
             Kind::Started => Self::Started(GameId(buf.try_get_i64().ok()?)),
             Kind::Authenticated => Self::Authenticated(Player::from_u8(buf.try_get_u8().ok()?)?),
-            Kind::Options => Self::Options(GameOptions::decode(&mut buf)?),
-            Kind::Record => Self::Record(Box::new(Record::decode(&mut buf)?)),
-            Kind::Move => Self::Move(Move::decode(&mut buf, false)?),
+            Kind::Options => Self::Options(GameOptions::decode(buf)?),
+            Kind::Record => Self::Record(Box::new(Record::decode(buf)?)),
+            Kind::Move => Self::Move(Move::decode(buf, false)?),
             Kind::Retract => Self::Retract,
             Kind::Request => Self::Request(
                 Player::from_u8(buf.try_get_u8().ok()?)?,
-                Request::decode(&mut buf)?,
+                Request::decode(buf)?,
             ),
             Kind::AcceptRequest => Self::AcceptRequest(Player::from_u8(buf.try_get_u8().ok()?)?),
             Kind::DeclineRequest => Self::DeclineRequest(Player::from_u8(buf.try_get_u8().ok()?)?),
