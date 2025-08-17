@@ -156,7 +156,13 @@ impl Point {
     /// Returns an iterator of adjacent points in the given direction,
     /// which stops on overflow.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
-        iter::successors(Some(self), move |p| p.adjacent(dir))
+        let mut cur = self;
+        let (dx, dy) = dir.unit_vec();
+
+        iter::from_fn(move || {
+            cur = Self::new(cur.x.checked_add(dx)?, cur.y.checked_add(dy)?);
+            Some(cur)
+        })
     }
 
     /// Encodes the point to a buffer.
