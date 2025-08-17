@@ -13,8 +13,8 @@ clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
 rand = "0.9"
 remain = "0.2"
-rusqlite = { version = "0.36", features = ["bundled"] }
-socket2 = "0.5"
+rusqlite = { version = "0.37", features = ["bundled"] }
+socket2 = "0.6"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tower-http = { version = "0.6", features = ["fs"] }
