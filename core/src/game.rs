@@ -146,7 +146,7 @@ impl Point {
     }
 
     /// Returns the adjacent point in the given direction,
-    /// or `None` if overflow occurred.
+    /// or `None` on overflow.
     #[must_use]
     pub fn adjacent(self, dir: Direction) -> Option<Self> {
         let (dx, dy) = dir.unit_vec();
