@@ -6,10 +6,8 @@ use c6ol_core::{
     protocol::{ClientMessage, GameId, GameOptions, PasscodeHash, Request, ServerMessage},
 };
 use std::collections::HashMap;
-use tokio::{
-    sync::{broadcast, mpsc, oneshot},
-    task::JoinSet,
-};
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio_util::task::JoinMap;
 
 const CHANNEL_CAPACITY_MANAGE_CMD: usize = 64;
 const CHANNEL_CAPACITY_GAME_CMD: usize = 8;
@@ -119,8 +117,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
     tracing::info!("game manager started");
 
     let mut game_cmd_txs = HashMap::new();
-    let mut game_tasks = JoinSet::new();
-    let mut game_ids_by_task_id = HashMap::new();
+    let mut game_tasks = JoinMap::new();
 
     loop {
         tokio::select! {
@@ -136,8 +133,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                         let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                         game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                        let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
-                        game_ids_by_task_id.insert(task_id, id);
+                        game_tasks.spawn(id, manage_game(state, game_cmd_rx));
 
                         _ = resp_tx.send(Game::new(id, game_cmd_tx));
 
@@ -156,8 +152,7 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
                             let (game_cmd_tx, game_cmd_rx) = mpsc::channel(CHANNEL_CAPACITY_GAME_CMD);
                             game_cmd_txs.insert(id, game_cmd_tx.downgrade());
 
-                            let task_id = game_tasks.spawn(manage_game(state, game_cmd_rx)).id();
-                            game_ids_by_task_id.insert(task_id, id);
+                            game_tasks.spawn(id, manage_game(state, game_cmd_rx));
 
                             _ = resp_tx.send(Some(Game::new(id, game_cmd_tx)));
 
@@ -170,16 +165,11 @@ async fn manage_games(db_manager: DbManager, mut cmd_rx: mpsc::Receiver<GameMana
             }
             // When `join_next` returns `None`, `select!` will disable
             // this branch and still wait on the other branch.
-            Some(res) = game_tasks.join_next_with_id() => {
-                let (task_id, state) = match res {
-                    Ok((id, state)) => (id, Some(state)),
-                    Err(err) => {
-                        tracing::error!("game task panicked: {err}");
-                        (err.id(), None)
-                    },
-                };
+            Some((id, res)) = game_tasks.join_next() => {
+                let state = res
+                    .inspect_err(|e| tracing::error!("game task panicked: {e}"))
+                    .ok();
 
-                let id = game_ids_by_task_id.remove(&task_id).unwrap();
                 if let Some(tx) = game_cmd_txs.get(&id)
                     && tx.strong_count() == 0 {
                     // There is a chance that the same game is loaded again
