@@ -330,6 +330,7 @@ pub fn App() -> impl IntoView {
                 // If the socket was open and the game has started, attempt to reconnect.
                 let mut state = ws_state.write_untracked();
                 let state = state.as_mut().unwrap();
+
                 if state.was_open
                     && let Some(id) = GameId::from_base62(game_id.get().as_bytes())
                 {
@@ -443,7 +444,6 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        #[cfg(feature = "online")]
         if let Some(id) = GameId::from_base62(id.as_bytes()) {
             connect(ClientMessage::Join(id));
             return;

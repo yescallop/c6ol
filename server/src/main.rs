@@ -56,8 +56,6 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("listening on {addr}");
     }
 
-    let shutdown_signal = shutdown_signal().context("failed to listen for shutdown signals")?;
-
     if let Some(path) = &args.serve_dir {
         tracing::info!("serving files from {}", path.display());
     }
@@ -67,6 +65,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::info!("opening in-memory database");
     };
+
+    let shutdown_signal = shutdown_signal().context("failed to listen for shutdown signals")?;
 
     c6ol_server::run(listeners, args.serve_dir, args.db_file, shutdown_signal).await;
     Ok(())

@@ -300,6 +300,16 @@ impl Move {
     }
 }
 
+/// Returns the stone to play at the given move index.
+#[must_use]
+pub fn turn_at(index: usize) -> Stone {
+    if index % 2 == 0 {
+        Stone::Black
+    } else {
+        Stone::White
+    }
+}
+
 /// Methods to encode a game record with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecordEncodeMethod {
@@ -401,19 +411,9 @@ impl Record {
         }
     }
 
-    /// Returns the stone to play at the given move index.
-    #[must_use]
-    pub fn turn_at(index: usize) -> Stone {
-        if index % 2 == 0 {
-            Stone::Black
-        } else {
-            Stone::White
-        }
-    }
-
     /// Returns the current stone to play, without checking if the game is ended.
     fn turn_unchecked(&self) -> Stone {
-        Self::turn_at(self.index)
+        turn_at(self.index)
     }
 
     /// Returns the current stone to play, or `None` if the game is ended.

@@ -1,5 +1,5 @@
 use crate::{DRAW_AS_HEART, Event, WinClaim};
-use c6ol_core::game::{Direction, Move, Point, Record, Stone};
+use c6ol_core::game::{self, Direction, Move, Point, Record, Stone};
 use leptos::{either::EitherOf4, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
@@ -90,11 +90,12 @@ impl From<&MouseEvent> for PointerOffsets {
     }
 }
 
+/// Records `pointerover`, `pointermove`, and `pointerdown` events
+/// fired for a pointer.
 struct Pointer {
-    /// The `pointerdown` event fired when the pointer became active.
-    down: PointerOffsets,
-    /// Last event fired about the pointer.
-    /// Can be `pointerover`, `pointermove`, or `pointerdown`.
+    /// First event fired after the most recent pointer became active.
+    first: PointerOffsets,
+    /// Last event fired.
     last: PointerOffsets,
 }
 
@@ -102,7 +103,7 @@ struct Pointer {
 enum PointerState {
     /// Default state. Entered when the only active pointer becomes inactive.
     ///
-    /// When a `pointerup` event about the only active pointer fires, we try
+    /// When a `pointerup` event for the only active pointer fires, we try
     /// to hit the cursor only when the previous state is `Calm`.
     #[default]
     Calm,
@@ -123,12 +124,13 @@ enum PointerState {
 
 #[derive(Default)]
 struct State {
-    /// Info about active pointers.
+    /// Info of active pointers.
     ///
-    /// A pointer is added to this map on a `pointerdown` event,
+    /// A pointer is added to this map on a `pointerdown` event
     /// and removed on a `pointerup` or `pointerleave` event.
     down_pointers: HashMap<i32, Pointer>,
-    /// Average board position the pointers were at when the last one became active.
+    /// Average board position the pointers were at
+    /// when the most recent one became active.
     board_pos_on_down: Point,
     /// Set as the current `viewSize` when a 2-pointer gesture begins.
     prev_view_size: i16,
@@ -625,12 +627,20 @@ pub fn GameView(
 
         let mut state = state.write_value();
 
-        state
-            .down_pointers
-            .insert(po.id.unwrap(), Pointer { down: po, last: po });
+        state.down_pointers.insert(
+            po.id.unwrap(),
+            Pointer {
+                first: po,
+                last: po,
+            },
+        );
 
         if state.down_pointers.len() <= 2 {
-            let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.down);
+            for p in state.down_pointers.values_mut() {
+                p.first = p.last;
+            }
+
+            let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.first);
             (state.board_pos_on_down, _) = svg_calc().svg_to_board_pos(avg_x, avg_y);
         }
 
@@ -686,11 +696,13 @@ pub fn GameView(
     // Performs different actions according to the number of active pointers:
     //
     // - 0: Updates the cursor.
-    // - 1: Drags the view if it isn't ever pinched since the pointer became active.
-    // - 2: Roughly speaking, whenever the distance of pointers increases (decreases)
-    //      by `DIST_FOR_PINCH_ZOOM`, `viewSize` will be decreased (increased) by 2.
-    // - 3: Retracts the previous move if all pointers have moved for at least
-    //      a distance of `DIST_FOR_SWIPE_RETRACT`.
+    // - 1: Drags the view if the event kind isn't "touch" and the view isn't ever
+    //      pinched since the pointer became active.
+    //      Undoes the previous move on a left swipe and redoes the next move on a
+    //      right swipe, both for at least a distance of `DIST_FOR_SWIPE_GESTURE`.
+    // - 2: Each time the distance of pointers increases (decreases) by
+    //      `DIST_FOR_PINCH_ZOOM`, decreases (increases) `viewSize` by 2.
+    //      Drags the view if the event kind is "touch".
     let on_hover = move |po: PointerOffsets, kind: &str| {
         let mut state = state.write_value();
         if disabled.get() {
@@ -715,8 +727,8 @@ pub fn GameView(
             // or after a dialog is closed.
             return;
         };
-        if let Some(pointer) = state.down_pointers.get_mut(&id) {
-            pointer.last = po;
+        if let Some(p) = state.down_pointers.get_mut(&id) {
+            p.last = po;
         }
 
         if state.down_pointers.is_empty() {
@@ -726,8 +738,8 @@ pub fn GameView(
                 return;
             }
 
-            // Avoid accidental dragging on touchscreen devices.
-            // Only allow dragging with two pointers, following the midpoint instead.
+            // Only allow dragging with two pointers when touching,
+            // following the midpoint instead.
             if follow_board_pos_on_down(&state, kind == "touch") {
                 state.pointer_state = PointerState::Moved;
                 state.abort_long_press();
@@ -743,11 +755,11 @@ pub fn GameView(
                 }
 
                 let p = state.down_pointers.values().next().unwrap();
-                if p.last.dist(p.down) < DIST_FOR_SWIPE_GESTURE {
+                if p.last.dist(p.first) < DIST_FOR_SWIPE_GESTURE {
                     return;
                 }
 
-                let angle = p.last.angle_from(p.down);
+                let angle = p.last.angle_from(p.first);
 
                 state.pointer_state = PointerState::Swiped;
 
@@ -766,7 +778,7 @@ pub fn GameView(
             let p1 = iter.next().unwrap();
             let p2 = iter.next().unwrap();
 
-            let dist_diff = p1.last.dist(p2.last) - p1.down.dist(p2.down);
+            let dist_diff = p1.last.dist(p2.last) - p1.first.dist(p2.first);
 
             let mut new_view_size =
                 state.prev_view_size - (dist_diff / DIST_FOR_PINCH_ZOOM) as i16 * 2;
@@ -841,7 +853,7 @@ pub fn GameView(
             let Move::Place(p1, p2) = mov else {
                 continue;
             };
-            let stone = Record::turn_at(i);
+            let stone = game::turn_at(i);
 
             for p in iter::once(p1).chain(p2) {
                 let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
@@ -934,7 +946,7 @@ pub fn GameView(
             return EitherOf4::A(vec![]);
         };
 
-        let stone = Record::turn_at(record.move_index() - 1);
+        let stone = game::turn_at(record.move_index() - 1);
         match mov {
             Move::Place(p1, p2) => {
                 let calc = calc();

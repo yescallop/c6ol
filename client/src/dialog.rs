@@ -29,10 +29,9 @@ macro_rules! ret {
 }
 
 macro_rules! dialogs {
-    (
-        EitherType = $either_type:ty,
-        $($name:ident => $either_variant:ident,)+
-    ) => {
+    ($either_type:ty {
+        $($either_variant:ident => $name:ident,)+
+    }) => {
         paste::paste! {
             #[derive(Clone)]
             pub enum Dialog {
@@ -91,15 +90,14 @@ macro_rules! dialogs {
     };
 }
 
-dialogs! {
-    EitherType = EitherOf6,
-    MainMenu => A,
-    OnlineMenu => B,
-    Auth => C,
-    GameMenu => D,
-    Confirm => E,
-    Reset => F,
-}
+dialogs!(EitherOf6 {
+    A => MainMenu,
+    B => OnlineMenu,
+    C => Auth,
+    D => GameMenu,
+    E => Confirm,
+    F => Reset,
+});
 
 #[derive(Clone)]
 pub struct MainMenuDialog;
@@ -119,10 +117,7 @@ impl DialogImpl for MainMenuDialog {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
                 <button>"Play Offline"</button>
-                {
-                    #[cfg(feature = "online")]
-                    view! { <button value=ret!(Online)>"Play Online"</button> }
-                }
+                <button value=ret!(Online)>"Play Online"</button>
                 <a target="_blank" href="https://github.com/yescallop/c6ol">
                     <button type="button">"Source Code"</button>
                 </a>

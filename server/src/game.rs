@@ -336,7 +336,7 @@ impl GameState {
             }
             Action::Reset(options) => {
                 self.options = options;
-                self.record.jump(0);
+                self.record = Default::default();
 
                 _ = msg_tx.send(ServerMessage::Options(options));
                 _ = msg_tx.send(ServerMessage::Record(Default::default()));
