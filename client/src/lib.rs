@@ -12,7 +12,7 @@ use c6ol_core::{
 use dialog::*;
 use leptos::{ev, prelude::*};
 use std::{
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
 use tinyvec::ArrayVec;
@@ -104,8 +104,6 @@ fn history_push_state(url: &str) {
 }
 
 const RECONNECT_TIMEOUT: Duration = Duration::from_millis(500);
-
-static DRAW_AS_HEART: AtomicBool = AtomicBool::new(false);
 
 /// Entry-point for the app.
 #[component]
@@ -406,13 +404,6 @@ pub fn App() -> impl IntoView {
         }
 
         game_id.set(id.into());
-
-        DRAW_AS_HEART.store(
-            id == "42b3AH5HntU"
-                || id == "analyze,AAcQDhsPCg0iHQgcMhQ0C1QYUgkeERIkFT4gOVsxOlhQgQE4gAEC"
-                || id == "analyze,AAcMFxMYCRUKCCcUCyUNLhAiPCAqFg9GKBFCEiYhPS0OOxtdP2GLAWMC",
-            Ordering::Relaxed,
-        );
 
         if id.is_empty() {
             show_dialog(Dialog::from(MainMenuDialog));

@@ -303,7 +303,7 @@ impl Move {
 /// Returns the stone to play at the given move index.
 #[must_use]
 pub fn turn_at(index: usize) -> Stone {
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         Stone::Black
     } else {
         Stone::White

@@ -1,4 +1,4 @@
-use crate::{ANALYZE_PREFIX, Confirm, DRAW_AS_HEART, WinClaim};
+use crate::{ANALYZE_PREFIX, Confirm, WinClaim};
 use base64::prelude::*;
 use c6ol_core::{
     game::{Move, Player, PlayerSlots, Record, RecordEncodeMethod, Stone},
@@ -10,7 +10,6 @@ use leptos::{
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::Ordering;
 
 trait DialogImpl {
     type RetVal;
@@ -337,13 +336,7 @@ impl DialogImpl for GameMenuDialog {
                     return format!("{stone:?} to Play");
                 }
                 match record.prev_move().unwrap() {
-                    Move::Draw => {
-                        if DRAW_AS_HEART.load(Ordering::Relaxed) {
-                            "Heart Given".into()
-                        } else {
-                            "Game Drawn".into()
-                        }
-                    }
+                    Move::Draw => "Game Drawn".into(),
                     Move::Resign(stone) => format!("{stone:?} Resigned"),
                     Move::Win(p, _) => {
                         let stone = record.stone_at(p).unwrap();
@@ -495,7 +488,7 @@ impl DialogImpl for GameMenuDialog {
                             class:prominent=move || req_state!(Draw) == CanAccept
                             class:pushed=move || req_state!(Draw) == Made
                         >
-                            {if DRAW_AS_HEART.load(Ordering::Relaxed) { "Heart" } else { "Draw" }}
+                            "Draw"
                         </button>
                         <button value=ret!(Resign) disabled=ended>
                             "Resign"
@@ -578,25 +571,13 @@ impl DialogImpl for ConfirmDialog {
                 1 => "Place one stone and claim a win?",
                 _ => "Place two stones and claim a win?",
             },
-            Confirm::RequestDraw => {
-                if DRAW_AS_HEART.load(Ordering::Relaxed) {
-                    "Offer your heart?"
-                } else {
-                    "Offer a draw?"
-                }
-            }
+            Confirm::RequestDraw => "Offer a draw?",
             Confirm::RequestRetract => "Request to retract the previous move?",
             Confirm::Requested(player, req) => {
                 (confirm, cancel, alt_confirm) = ("Accept", Some("Ignore"), Some("Decline"));
 
                 match req {
-                    Request::Draw => {
-                        if DRAW_AS_HEART.load(Ordering::Relaxed) {
-                            "The opponent offers their heart."
-                        } else {
-                            "The opponent offers a draw."
-                        }
-                    }
+                    Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
                     Request::Reset(options) => &format!(
                         "The opponent requests to reset the game. \
