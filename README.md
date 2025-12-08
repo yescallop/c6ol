@@ -8,7 +8,7 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 
 ## Play Now
 
-An official instance is hosted at [c6.zhixia.dev](https://c6.zhixia.dev/). Please refrain from sending automatic requests without prior notice. Games idle for more than 30 days are subject to removal.
+An official instance is hosted [here](https://c6.zhixia.dev/). Please refrain from sending automatic requests without prior notice. Games idle for more than 30 days are subject to removal.
 
 ## Features
 
