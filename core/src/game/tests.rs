@@ -234,18 +234,13 @@ fn test_special_case_encoding() {
 
     // Test with scheme::past()
     let encoded = record.encode_to_vec(RecordEncodingScheme::past());
-    assert_eq!(encoded, vec![0x02]);
+    assert_eq!(encoded, vec![0x82]);
     let decoded = Record::decode(&mut encoded.as_slice()).unwrap();
     assert_eq!(record.moves(), decoded.moves());
 
     // Test with scheme::all()
     let encoded = record.encode_to_vec(RecordEncodingScheme::all());
-    // scheme=3 (0011). index=1 (0001). special=0 (0000).
-    // put_u4(3) -> p=3
-    // put_u32_varint(1) -> put_u4(1) -> byte 0x13 (0001 0011). p=None.
-    // put_u4(0) -> p=0.
-    // drop -> byte 0xF0 (1000 0000).
-    assert_eq!(encoded, vec![0x13, 0xF0]);
+    assert_eq!(encoded, vec![0x13, 0xF8]);
     let decoded = Record::decode(&mut encoded.as_slice()).unwrap();
     assert_eq!(record.moves(), decoded.moves());
 }

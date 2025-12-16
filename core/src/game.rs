@@ -120,6 +120,14 @@ fn szudzik_unpair(z: u32) -> (u16, u16) {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrbitKind {
+    Central,
+    Axial,
+    Diagonal,
+    General,
+}
+
 /// A 2D point with integer coordinates.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Point {
@@ -318,6 +326,112 @@ impl Point {
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
         buf.try_get_u32_varint().ok().map(Self::from_index)
     }
+
+    pub fn encode_d4(self, block_sizes: &[u8], writer: &mut BitWriter<'_>, centrosymmetric: bool) {
+        let (x, y) = (self.x as i32, self.y as i32);
+        let xa = x.unsigned_abs();
+        let ya = y.unsigned_abs();
+        let (u, v) = if xa < ya { (xa, ya) } else { (ya, xa) };
+
+        let orbit = v * (v + 1) / 2 + u;
+        writer.write_u32_varint_with_sizes(orbit, block_sizes);
+
+        let (orbit_kind, mut sector);
+
+        if v == 0 {
+            orbit_kind = OrbitKind::Central;
+            // (0,0)
+            sector = 0;
+        } else if u == 0 {
+            orbit_kind = OrbitKind::Axial;
+            // (-,0) -> (0,-) -> (0,+) -> (+,0)
+            sector = ((x > 0 || y > 0) as u8) << 1 | ((x > 0 || y < 0) as u8);
+        } else if u == v {
+            orbit_kind = OrbitKind::Diagonal;
+            // (-,-) -> (-,+) -> (+,-) -> (+,+)
+            sector = ((x > 0) as u8) << 1 | ((y > 0) as u8);
+        } else {
+            orbit_kind = OrbitKind::General;
+            // (-v,-u) -> (-v,u) -> (-u,-v) -> (-u,v)
+            // -> (u,-v) -> (u,v) -> (v,-u) -> (v,u)
+            sector = ((x > 0) as u8) << 2 | (((x > 0) ^ (xa < ya)) as u8) << 1 | ((y > 0) as u8);
+        };
+
+        let sector_bits = match orbit_kind {
+            OrbitKind::Central => 0,
+            OrbitKind::Axial | OrbitKind::Diagonal => {
+                if centrosymmetric {
+                    sector = sector.min(3 - sector);
+                }
+                2 - centrosymmetric as u8
+            }
+            OrbitKind::General => {
+                if centrosymmetric {
+                    sector = sector.min(7 - sector);
+                }
+                3 - centrosymmetric as u8
+            }
+        };
+        writer.write(sector, sector_bits);
+    }
+
+    pub fn decode_d4(
+        orbit: u32,
+        reader: &mut BitReader<'_, '_>,
+        centrosymmetric: bool,
+    ) -> Option<Self> {
+        const MAX_ORBIT: u32 = 0x7ffe * (0x7ffe + 1) / 2 + 0x7ffe;
+
+        if orbit > MAX_ORBIT {
+            return None;
+        }
+
+        let v = ((8 * orbit + 1).isqrt() - 1) / 2;
+        let u = orbit - v * (v + 1) / 2;
+        let (u, v) = (u as i16, v as i16);
+
+        let orbit_kind = if v == 0 {
+            OrbitKind::Central
+        } else if u == 0 {
+            OrbitKind::Axial
+        } else if u == v {
+            OrbitKind::Diagonal
+        } else {
+            OrbitKind::General
+        };
+
+        let sector_bits = match orbit_kind {
+            OrbitKind::Central => 0,
+            OrbitKind::Axial | OrbitKind::Diagonal => 2 - centrosymmetric as u8,
+            OrbitKind::General => 3 - centrosymmetric as u8,
+        };
+        let sector = reader.read(sector_bits)?;
+
+        Some(match orbit_kind {
+            OrbitKind::Central => Self::ZERO,
+            OrbitKind::Axial => {
+                let val = if sector & 2 == 0 { -v } else { v };
+                let swap = (sector ^ (sector >> 1)) & 1 == 0;
+                if swap {
+                    Self::new(val, 0)
+                } else {
+                    Self::new(0, val)
+                }
+            }
+            OrbitKind::Diagonal => {
+                let x = if sector & 2 == 0 { -v } else { v };
+                let y = if sector & 1 == 0 { -v } else { v };
+                Self::new(x, y)
+            }
+            OrbitKind::General => {
+                let swap = ((sector >> 1) ^ (sector >> 2)) & 1 == 0;
+                let (xa, ya) = if swap { (v, u) } else { (u, v) };
+                let x = if sector & 4 == 0 { -xa } else { xa };
+                let y = if sector & 1 == 0 { -ya } else { ya };
+                Self::new(x, y)
+            }
+        })
+    }
 }
 
 impl Add for Point {
@@ -377,6 +491,9 @@ const MOVE_RESIGN: u32 = 3;
 
 // For delta encoding.
 const MOVE_PLACE_SINGLE: u32 = 4;
+
+const DELTA_ORIGIN_BLOCK_SIZES: &[u8] = &[3, 2];
+const SHAPE_BLOCK_SIZES: &[u8] = &[3, 3, 2];
 
 /// A move made by one player or both players.
 #[derive(Clone, Copy, Debug)]
@@ -467,11 +584,10 @@ impl Move {
         if let Self::Place(p1, p2) = self {
             if let Some(p2) = p2 {
                 let shape = p1 - p2;
-                let n = shape.sym_index().unwrap();
-                assert!(n != 0);
-                writer.write_u32_varint(n, 4);
+                assert_ne!(shape, Point::ZERO);
+                shape.encode_d4(SHAPE_BLOCK_SIZES, writer, true);
             } else {
-                writer.write(0, 4);
+                writer.write(0, SHAPE_BLOCK_SIZES[0]);
                 writer.write(MOVE_PLACE_SINGLE as u8, 4);
             }
 
@@ -479,12 +595,11 @@ impl Move {
             let delta_origin = new_origin - *origin;
             *origin = new_origin;
 
-            let n = delta_origin.new_index().unwrap();
-            writer.write_u32_varint(n, 4);
+            delta_origin.encode_d4(DELTA_ORIGIN_BLOCK_SIZES, writer, false);
             return;
         }
 
-        writer.write(0, 4);
+        writer.write(0, SHAPE_BLOCK_SIZES[0]);
 
         match self {
             Self::Place(..) => unreachable!(),
@@ -515,7 +630,7 @@ impl Move {
         origin: &mut Point,
         first: bool,
     ) -> Option<Self> {
-        let x = reader.read_u32_varint(4)?;
+        let x = reader.read_u32_varint_with_sizes(SHAPE_BLOCK_SIZES)?;
         if x == 0 {
             if first && !reader.has_remaining() {
                 return Some(Self::Place(Point::ZERO, None));
@@ -537,8 +652,8 @@ impl Move {
                 MOVE_DRAW => Self::Draw,
                 MOVE_RESIGN => Self::Resign(Stone::from_u8(reader.read(4)?)?),
                 MOVE_PLACE_SINGLE => {
-                    let n = reader.read_u32_varint(4)?;
-                    let delta_origin = Point::from_new_index(n)?;
+                    let orbit = reader.read_u32_varint_with_sizes(DELTA_ORIGIN_BLOCK_SIZES)?;
+                    let delta_origin = Point::decode_d4(orbit, reader, false)?;
 
                     origin.x = origin.x.checked_add(delta_origin.x)?;
                     origin.y = origin.y.checked_add(delta_origin.y)?;
@@ -548,10 +663,10 @@ impl Move {
                 _ => return None,
             })
         } else {
-            let shape = Point::from_sym_index(x)?;
+            let shape = Point::decode_d4(x, reader, true)?;
 
-            let n = reader.read_u32_varint(4)?;
-            let delta_origin = Point::from_new_index(n)?;
+            let orbit = reader.read_u32_varint_with_sizes(DELTA_ORIGIN_BLOCK_SIZES)?;
+            let delta_origin = Point::decode_d4(orbit, reader, false)?;
 
             origin.x = origin.x.checked_add(delta_origin.x)?;
             origin.y = origin.y.checked_add(delta_origin.y)?;
@@ -897,7 +1012,7 @@ impl Record {
             };
 
             if let [Move::Place(Point::ZERO, None)] = moves {
-                writer.write(0, 4);
+                writer.write(0, 3);
                 return;
             }
 
