@@ -4,9 +4,9 @@ mod argon2id;
 mod dialog;
 mod game_view;
 
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::engine::{DecodePaddingMode, Engine, GeneralPurpose, GeneralPurposeConfig};
 use c6ol_core::{
-    game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodeMethod, Stone},
+    game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodingScheme, Stone},
     protocol::{ClientMessage, GameId, GameOptions, Message, Request, ServerMessage},
 };
 use dialog::*;
@@ -21,6 +21,13 @@ use web_sys::{
     js_sys::{ArrayBuffer, Uint8Array},
     wasm_bindgen::prelude::*,
 };
+
+const BASE64: GeneralPurpose = GeneralPurpose::new(
+    &base64::alphabet::STANDARD,
+    GeneralPurposeConfig::new()
+        .with_encode_padding(false)
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
 
 #[allow(unused)]
 macro_rules! console_log {
@@ -139,8 +146,8 @@ pub fn App() -> impl IntoView {
         if *game_id.read() == "local" {
             // Save the record to local storage.
             let mut buf = vec![];
-            record.read().encode(&mut buf, RecordEncodeMethod::All);
-            let buf = BASE64_STANDARD.encode(buf);
+            record.read().encode(&mut buf, RecordEncodingScheme::all());
+            let buf = BASE64.encode(buf);
             local_storage().set_item(STORAGE_KEY_RECORD, &buf).unwrap();
         }
     });
@@ -412,7 +419,7 @@ pub fn App() -> impl IntoView {
 
         if id == "local" {
             if let Some(rec) = local_storage().get_item(STORAGE_KEY_RECORD).unwrap()
-                && let Ok(rec) = BASE64_STANDARD.decode(rec)
+                && let Ok(rec) = BASE64.decode(rec)
                 && let Some(rec) = Record::decode(&mut &rec[..])
             {
                 record.set(rec);
@@ -424,7 +431,7 @@ pub fn App() -> impl IntoView {
         }
 
         if let Some(rec) = id.strip_prefix(ANALYZE_PREFIX) {
-            if let Ok(rec) = BASE64_STANDARD.decode(rec)
+            if let Ok(rec) = BASE64.decode(rec)
                 && let Some(rec) = Record::decode(&mut &rec[..])
             {
                 record.set(rec);
@@ -702,7 +709,7 @@ pub fn App() -> impl IntoView {
         if *game_id.read() == "local"
             && ev.key().as_deref() == Some(STORAGE_KEY_RECORD)
             && let Some(rec) = ev.new_value()
-            && let Ok(rec) = BASE64_STANDARD.decode(rec)
+            && let Ok(rec) = BASE64.decode(rec)
             && let Some(rec) = Record::decode(&mut &rec[..])
         {
             record.set(rec);

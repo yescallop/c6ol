@@ -10,5 +10,8 @@ bytes-varint = "1"
 serde = { version = "1", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
 
+[dev-dependencies]
+base64 = "0.22"
+
 [lints]
 workspace = true

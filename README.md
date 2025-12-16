@@ -13,7 +13,7 @@ An official instance is hosted [here](https://c6.zhixia.dev/). Please refrain fr
 ## Features
 
 - **Easy Setup:** Submit a passcode to start a game. Then send a link to your friend, who submits a different passcode to join the game.
-- **Infinite Board:** The board is $2^{16}$ by $2^{16}$ in size, with drag & zoom support. Generally[^1], you never worry about hitting the border.
+- **Infinite Board:** The board is 32,767x32,767 in size, with drag & zoom support. Generally[^1], you never worry about hitting the border.
 - **Analysis (Permanent Link):** Click *Analyze* in the game menu to open a copy of the game in a new tab for analysis. Right click or long press to copy a permanent link. Feel free to share it with others or save it for your collection!
 - **Requests:** Request your opponent to retract the previous move or reset the game (clear the stones and optionally swap colors), or offer a draw (why do this when you have infinite space and time?).
 - **Manual Claim of Win:** Watch your friend not notice their six-in-a-row and win before them!
