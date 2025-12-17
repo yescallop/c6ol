@@ -22,6 +22,16 @@ semicolon_if_nothing_returned = "warn"
 single_match_else = "warn"
 use_self = "warn"
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
+
 [profile.release]
 strip = true
 lto = true

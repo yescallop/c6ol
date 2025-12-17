@@ -1,12 +1,19 @@
 //! Connect6 game logic, record, and serialization.
 
+mod nibble;
+
+#[cfg(test)]
+mod tests;
+
 use bytes::{Buf, BufMut};
 use bytes_varint::{VarIntSupport, VarIntSupportMut};
 use std::{
     collections::HashMap,
     iter,
-    ops::{Index, IndexMut},
+    ops::{Add, Index, IndexMut, Sub},
 };
+
+use nibble::{NibbleReader, NibbleWriter};
 
 /// A direction on the board.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,13 +37,9 @@ pub enum Direction {
 }
 
 impl Direction {
-    /// List of all pairs of opposite directions.
-    pub const OPPOSITE_PAIRS: [(Self, Self); 4] = [
-        (Self::North, Self::South),
-        (Self::Northeast, Self::Southwest),
-        (Self::East, Self::West),
-        (Self::Southeast, Self::Northwest),
-    ];
+    /// Four canonical directions.
+    pub const VALUES_CANONICAL: [Self; 4] =
+        [Self::North, Self::Northeast, Self::East, Self::Southeast];
 
     /// Creates a direction from a `u8`.
     #[must_use]
@@ -54,10 +57,22 @@ impl Direction {
         })
     }
 
+    /// Checks if this direction is canonical, with value less than 4.
+    #[must_use]
+    pub fn is_canonical(self) -> bool {
+        (self as u8) < 4
+    }
+
+    /// Returns the opposite direction.
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        Self::from_u8(self as u8 ^ 4).unwrap()
+    }
+
     /// Creates a direction from a unit vector.
     #[must_use]
-    pub fn from_unit_vec(dx: i16, dy: i16) -> Option<Self> {
-        Some(match (dx, dy) {
+    pub fn from_unit_vec(v: Point) -> Option<Self> {
+        Some(match (v.x, v.y) {
             (0, -1) => Self::North,
             (1, -1) => Self::Northeast,
             (1, 0) => Self::East,
@@ -70,40 +85,45 @@ impl Direction {
         })
     }
 
-    /// Returns the unit vector in this direction.
+    /// Returns an offset of `n` units in this direction.
     #[must_use]
-    pub fn unit_vec(self) -> (i16, i16) {
-        match self {
-            Self::North => (0, -1),
-            Self::Northeast => (1, -1),
-            Self::East => (1, 0),
-            Self::Southeast => (1, 1),
-            Self::South => (0, 1),
-            Self::Southwest => (-1, 1),
-            Self::West => (-1, 0),
-            Self::Northwest => (-1, -1),
-        }
+    pub fn offset(self, n: i16) -> Point {
+        let (x, y) = match self {
+            Self::North => (0, -n),
+            Self::Northeast => (n, -n),
+            Self::East => (n, 0),
+            Self::Southeast => (n, n),
+            Self::South => (0, n),
+            Self::Southwest => (-n, n),
+            Self::West => (-n, 0),
+            Self::Northwest => (-n, -n),
+        };
+        Point::new(x, y)
     }
 }
 
-/// Maps an integer to a natural number.
-fn zigzag_encode(n: i16) -> u16 {
+fn zigzag_encode_16(n: i16) -> u16 {
     ((n << 1) ^ (n >> 15)) as u16
 }
 
-/// Maps a natural number to an integer (undoes `zigzag_encode`).
-fn zigzag_decode(n: u16) -> i16 {
+fn zigzag_decode_16(n: u16) -> i16 {
     ((n >> 1) ^ (n & 1).wrapping_neg()) as i16
 }
 
-/// Maps two natural numbers to one.
-fn elegant_pair(x: u16, y: u16) -> u32 {
+fn zigzag_encode_32(n: i32) -> u32 {
+    ((n << 1) ^ (n >> 31)) as u32
+}
+
+fn zigzag_decode_32(n: u32) -> i32 {
+    ((n >> 1) ^ (n & 1).wrapping_neg()) as i32
+}
+
+fn szudzik_pair(x: u16, y: u16) -> u32 {
     let (x, y) = (x as u32, y as u32);
     if x < y { y * y + x } else { x * x + x + y }
 }
 
-/// Maps one natural number to two (undoes `elegant_pair`).
-fn elegant_unpair(z: u32) -> (u16, u16) {
+fn szudzik_unpair(z: u32) -> (u16, u16) {
     let s = z.isqrt();
     let t = z - s * s;
     if t < s {
@@ -123,8 +143,8 @@ pub struct Point {
 }
 
 impl Point {
-    /// The origin.
-    pub const ORIGIN: Self = Self { x: 0, y: 0 };
+    /// A point with zero coordinates.
+    pub const ZERO: Self = Self { x: 0, y: 0 };
 
     /// Creates a point with the given coordinates.
     #[must_use]
@@ -135,34 +155,137 @@ impl Point {
     /// Maps the point to a natural number.
     #[must_use]
     pub fn index(self) -> u32 {
-        elegant_pair(zigzag_encode(self.x), zigzag_encode(self.y))
+        szudzik_pair(zigzag_encode_16(self.x), zigzag_encode_16(self.y))
     }
 
     /// Maps a natural number to a point (undoes `index`).
     #[must_use]
     pub fn from_index(i: u32) -> Self {
-        let (x, y) = elegant_unpair(i);
-        Self::new(zigzag_decode(x), zigzag_decode(y))
+        let (x, y) = szudzik_unpair(i);
+        Self::new(zigzag_decode_16(x), zigzag_decode_16(y))
     }
 
-    /// Returns the adjacent point in the given direction,
-    /// or `None` on overflow.
+    /// Maps the point to a natural number, with each orbit under the action
+    /// of the dihedral group D_4 mapped to a contiguous block of numbers.
     #[must_use]
-    pub fn adjacent(self, dir: Direction) -> Option<Self> {
-        let (dx, dy) = dir.unit_vec();
-        Some(Self::new(self.x.checked_add(dx)?, self.y.checked_add(dy)?))
+    pub fn d4_index(self) -> u32 {
+        let mut n = self.d4_centrosymmetric_index() as i32;
+        if (self.x, self.y) < (0, 0) {
+            n = -n;
+        }
+        zigzag_encode_32(n)
     }
 
-    /// Returns an iterator of adjacent points in the given direction,
-    /// which stops on overflow.
+    /// Maps a natural number to a point (undoes `d4_index`).
+    #[must_use]
+    pub fn from_d4_index(n: u32) -> Option<Self> {
+        let n = zigzag_decode_32(n);
+        let mut p = Self::from_d4_centrosymmetric_index(n.unsigned_abs())?;
+        if n < 0 {
+            p.x = -p.x;
+            p.y = -p.y;
+        }
+        Some(p)
+    }
+
+    /// Maps the point to a natural number, with each orbit under the action
+    /// of the dihedral group D_4 mapped to a contiguous block of numbers,
+    /// and a set of centrosymmetric points mapped to a single number.
+    #[must_use]
+    pub fn d4_centrosymmetric_index(self) -> u32 {
+        let (x, y) = (self.x as i32, self.y as i32);
+        let u = x.unsigned_abs();
+        let v = y.unsigned_abs();
+
+        let s = u.max(v);
+        if s == 0 {
+            return 0;
+        }
+
+        let base = 2 * s * s - 2 * s + 1;
+        let k = if u <= v { 2 * u } else { 2 * v + 1 };
+        let offset = match k {
+            0 | 1 => k, // (0, s), (s, 0)
+            _ => 2 * k - 1 - ((x ^ y) < 0) as u32,
+        };
+        base + offset
+    }
+
+    /// Maps a natural number to a point, the lexicographically greater one in
+    /// a set of centrosymmetric points (undoes `d4_centrosymmetric_index`).
+    #[must_use]
+    pub fn from_d4_centrosymmetric_index(n: u32) -> Option<Self> {
+        const MAX_N: u32 = 2 * 0x8000 * 0x8000 - 2 * 0x8000;
+
+        if n == 0 {
+            return Some(Self::new(0, 0));
+        }
+        if n > MAX_N {
+            return None;
+        }
+
+        let s = (2 * n - 1).isqrt().div_ceil(2);
+        let base = 2 * s * s - 2 * s + 1;
+        let offset = n - base;
+
+        let s = s as i16;
+        Some(match offset {
+            0 => Self::new(0, s),
+            1 => Self::new(s, 0),
+            _ => {
+                let k = offset / 2 + 1;
+                let h = (k / 2) as i16;
+                let (u, v) = if k & 1 == 0 { (h, s) } else { (s, h) };
+
+                let y = if offset & 1 == 0 { -v } else { v };
+                Self::new(u, y)
+            }
+        })
+    }
+
+    /// Returns an iterator of adjacent points in the given direction.
     pub fn adjacent_iter(self, dir: Direction) -> impl Iterator<Item = Self> {
         let mut cur = self;
-        let (dx, dy) = dir.unit_vec();
+        let unit_vec = dir.offset(1);
 
         iter::from_fn(move || {
-            cur = Self::new(cur.x.checked_add(dx)?, cur.y.checked_add(dy)?);
+            cur = cur + unit_vec;
             Some(cur)
         })
+    }
+
+    /// Performs checked addition.
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        Some(Self::new(
+            self.x.checked_add(rhs.x)?,
+            self.y.checked_add(rhs.y)?,
+        ))
+    }
+
+    /// Performs checked subtraction.
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        Some(Self::new(
+            self.x.checked_sub(rhs.x)?,
+            self.y.checked_sub(rhs.y)?,
+        ))
+    }
+
+    /// Calculates the midpoint of two points, rounding towards negative infinity.
+    #[must_use]
+    pub fn midpoint_floor(self, rhs: Self) -> Self {
+        let x = (self.x as i32 + rhs.x as i32) >> 1;
+        let y = (self.y as i32 + rhs.y as i32) >> 1;
+        Self::new(x as i16, y as i16)
+    }
+
+    /// Halves the coordinates, rounding towards positive infinity.
+    #[must_use]
+    pub fn half_ceil(self) -> Self {
+        let x = (self.x >> 1) + (self.x & 1);
+        let y = (self.y >> 1) + (self.y & 1);
+        Self::new(x, y)
     }
 
     /// Encodes the point to a buffer.
@@ -174,6 +297,22 @@ impl Point {
     #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
         buf.try_get_u32_varint().ok().map(Self::from_index)
+    }
+}
+
+impl Add for Point {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self {
+        Self::new(self.x + rhs.x, self.y + rhs.y)
+    }
+}
+
+impl Sub for Point {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        Self::new(self.x - rhs.x, self.y - rhs.y)
     }
 }
 
@@ -207,16 +346,20 @@ impl Stone {
     }
 }
 
-/// Allows room for extension. Equals (2^7-11^2).
-const MOVE_STONE_OFFSET: u64 = 7;
+// Allows room for extension. Equals (2^7-11^2).
+const MOVE_PLACE_OFFSET: u32 = 7;
 
-const MOVE_PASS: u64 = 0;
-const MOVE_WIN: u64 = 1;
-const MOVE_DRAW: u64 = 2;
-const MOVE_RESIGN: u64 = 3;
+// For both full and delta encoding.
+const MOVE_PASS: u32 = 0;
+const MOVE_WIN: u32 = 1;
+const MOVE_DRAW: u32 = 2;
+const MOVE_RESIGN: u32 = 3;
+
+// For delta encoding.
+const MOVE_PLACE_SINGLE: u32 = 4;
 
 /// A move made by one player or both players.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub enum Move {
     /// One or two stones placed on the board by the current player.
     Place(Point, Option<Point>),
@@ -244,8 +387,8 @@ impl Move {
         match self {
             Self::Place(p1, p2) => {
                 for p in iter::once(p1).chain(p2) {
-                    let x = p.index() as u64 + MOVE_STONE_OFFSET;
-                    buf.put_u64_varint(x);
+                    let x = p.index() + MOVE_PLACE_OFFSET;
+                    buf.put_u32_varint(x);
                 }
                 if p2.is_none() && !compact {
                     buf.put_u8(MOVE_PASS as u8);
@@ -270,17 +413,18 @@ impl Move {
     /// If `first`, eagerly returns a 1-stone move.
     #[must_use]
     pub fn decode(buf: &mut &[u8], first: bool) -> Option<Self> {
-        let x = buf.try_get_u64_varint().ok()?;
-        if let Some(i) = x.checked_sub(MOVE_STONE_OFFSET) {
-            let p1 = Point::from_index(i.try_into().ok()?);
-            if first || !buf.has_remaining() {
+        let x = buf.try_get_u32_varint().ok()?;
+        if let Some(i) = x.checked_sub(MOVE_PLACE_OFFSET) {
+            let p1 = Point::from_index(i);
+
+            if first {
                 return Some(Self::Place(p1, None));
             }
 
             let mut p2 = None;
-            let x = buf.try_get_u64_varint().ok()?;
-            if let Some(i) = x.checked_sub(MOVE_STONE_OFFSET) {
-                p2 = Some(Point::from_index(i.try_into().ok()?));
+            let x = buf.try_get_u32_varint().ok()?;
+            if let Some(i) = x.checked_sub(MOVE_PLACE_OFFSET) {
+                p2 = Some(Point::from_index(i));
             } else if x != MOVE_PASS {
                 return None;
             }
@@ -298,7 +442,128 @@ impl Move {
             _ => return None,
         })
     }
+
+    fn encode_delta(self, writer: &mut NibbleWriter<'_>, origin: &mut Point) {
+        if let Self::Place(p1, p2) = self {
+            if let Some(p2) = p2 {
+                let shape = p2 - p1;
+                assert_ne!(shape, Point::ZERO);
+                writer.write_u32_varint(shape.d4_centrosymmetric_index());
+            } else {
+                writer.write_u3(0);
+                writer.write_u3(MOVE_PLACE_SINGLE as u8);
+            }
+
+            let new_origin = p2.map_or(p1, |p2| p1.midpoint_floor(p2));
+            let delta_origin = new_origin - *origin;
+            *origin = new_origin;
+
+            writer.write_u32_varint(delta_origin.d4_index());
+            return;
+        }
+
+        writer.write_u3(0);
+
+        match self {
+            Self::Place(..) => unreachable!(),
+            Self::Pass => {
+                writer.write_u3(MOVE_PASS as u8);
+            }
+            Self::Win(p, dir) => {
+                writer.write_u3(MOVE_WIN as u8);
+
+                let (third, dir) = if dir.is_canonical() {
+                    (p + dir.offset(2), dir)
+                } else {
+                    (p + dir.offset(3), dir.opposite())
+                };
+                writer.write_u3(dir as u8);
+
+                let delta = third - *origin;
+                writer.write_u32_varint(delta.d4_index());
+            }
+            Self::Draw => {
+                writer.write_u3(MOVE_DRAW as u8);
+            }
+            Self::Resign(stone) => {
+                writer.write_u3(MOVE_RESIGN as u8);
+                writer.write_u3(stone as u8);
+            }
+        }
+    }
+
+    fn decode_delta(
+        reader: &mut NibbleReader<'_, '_>,
+        origin: &mut Point,
+        first: bool,
+    ) -> Option<Self> {
+        let x = reader.read_u32_varint()?;
+        if x == 0 {
+            if first && !reader.has_remaining() {
+                return Some(Self::Place(Point::ZERO, None));
+            }
+
+            let kind = reader.read_u32_varint()?;
+            Some(match kind {
+                MOVE_PASS => Self::Pass,
+                MOVE_WIN => {
+                    let dir = Direction::from_u8(reader.read_u3()?)?;
+                    if !dir.is_canonical() {
+                        return None;
+                    }
+
+                    let n = reader.read_u32_varint()?;
+                    let delta = Point::from_d4_index(n)?;
+
+                    let third = origin.checked_add(delta)?;
+                    let first = third.checked_add(dir.offset(-2))?;
+                    Self::Win(first, dir)
+                }
+                MOVE_DRAW => Self::Draw,
+                MOVE_RESIGN => Self::Resign(Stone::from_u8(reader.read_u3()?)?),
+                MOVE_PLACE_SINGLE => {
+                    let n = reader.read_u32_varint()?;
+                    let delta_origin = Point::from_d4_index(n)?;
+
+                    *origin = origin.checked_add(delta_origin)?;
+                    Self::Place(*origin, None)
+                }
+                _ => return None,
+            })
+        } else {
+            let shape = Point::from_d4_centrosymmetric_index(x)?;
+
+            let n = reader.read_u32_varint()?;
+            let delta_origin = Point::from_d4_index(n)?;
+
+            *origin = origin.checked_add(delta_origin)?;
+
+            let p2 = origin.checked_add(shape.half_ceil())?;
+            let p1 = p2.checked_sub(shape)?;
+            Some(Self::Place(p1, Some(p2)))
+        }
+    }
 }
+
+impl PartialEq for Move {
+    fn eq(&self, other: &Self) -> bool {
+        match (*self, *other) {
+            (Self::Place(p1, None), Self::Place(p2, None)) => p1 == p2,
+            (Self::Place(p11, Some(p21)), Self::Place(p12, Some(p22))) => {
+                (p11, p21) == (p12, p22) || (p11, p21) == (p22, p12)
+            }
+            (Self::Pass, Self::Pass) => true,
+            (Self::Win(p1, d1), Self::Win(p2, d2)) => {
+                (p1, d1) == (p2, d2) || (p1 + d1.offset(5), d1.opposite()) == (p2, d2)
+            }
+            (Self::Draw, Self::Draw) => true,
+            (Self::Resign(s1), Self::Resign(s2)) => s1 == s2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Move {}
 
 /// Returns the stone to play at the given move index.
 #[must_use]
@@ -310,24 +575,58 @@ pub fn turn_at(index: usize) -> Stone {
     }
 }
 
-/// Methods to encode a game record with.
+/// Scheme to encode a game record with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RecordEncodeMethod {
-    /// Include only past moves.
-    Past = 0,
-    /// Include all moves prefixed with the current move index.
-    All = 1,
+pub struct RecordEncodingScheme {
+    /// Whether to include all moves prefixed with the current move index.
+    pub all: bool,
+    /// Whether to enable delta encoding.
+    pub delta: bool,
 }
 
-impl RecordEncodeMethod {
-    /// Creates a `RecordEncodeMethod` from a `u8`.
+impl RecordEncodingScheme {
+    /// Returns the default scheme for encoding all moves.
+    #[must_use]
+    pub fn all() -> Self {
+        Self {
+            all: true,
+            delta: false,
+        }
+    }
+
+    /// Returns the default scheme for encoding only the past moves.
+    #[must_use]
+    pub fn past() -> Self {
+        Self {
+            all: false,
+            delta: false,
+        }
+    }
+
+    /// Enables delta encoding.
+    #[must_use]
+    pub fn delta(mut self) -> Self {
+        self.delta = true;
+        self
+    }
+
+    /// Encodes the scheme to a `u8`.
+    #[must_use]
+    pub fn as_u8(self) -> u8 {
+        self.all as u8 | (self.delta as u8) << 1
+    }
+
+    /// Creates a `RecordEncodeScheme` from a `u8`.
     #[must_use]
     pub fn from_u8(n: u8) -> Option<Self> {
-        Some(match n {
-            0 => Self::Past,
-            1 => Self::All,
-            _ => return None,
-        })
+        if n > 3 {
+            return None;
+        }
+
+        let all = n & 1 != 0;
+        let delta = n & 2 != 0;
+
+        Some(Self { all, delta })
     }
 }
 
@@ -435,13 +734,26 @@ impl Record {
         if self.is_ended() {
             return false;
         }
+        if self.index >= u32::MAX as usize {
+            return false;
+        }
 
         if let Move::Place(p1, p2) = mov {
             if self.index == 0 && p2.is_some() {
                 return false;
             }
-            if self.map.contains_key(&p1) || p2.is_some_and(|p| self.map.contains_key(&p)) {
+            if p2 == Some(p1) {
                 return false;
+            }
+
+            for p in iter::once(p1).chain(p2) {
+                // Avoid overflow for delta and varint encoding
+                if p.x.unsigned_abs().max(p.y.unsigned_abs()) > 0x3fff {
+                    return false;
+                }
+                if self.map.contains_key(&p) {
+                    return false;
+                }
             }
 
             let stone = self.turn_unchecked();
@@ -516,7 +828,9 @@ impl Record {
     #[must_use]
     pub fn find_winning_row(&self, p: Point) -> Option<(Point, Direction)> {
         let stone = self.stone_at(p)?;
-        for (dir_fwd, dir_bwd) in Direction::OPPOSITE_PAIRS {
+        for dir_fwd in Direction::VALUES_CANONICAL {
+            let dir_bwd = dir_fwd.opposite();
+
             let scan_fwd = self.scan(p, dir_fwd, stone).map(|p| (p, dir_bwd));
             let scan_bwd = self.scan(p, dir_bwd, stone).map(|p| (p, dir_fwd));
 
@@ -554,55 +868,122 @@ impl Record {
     }
 
     /// Encodes the record to a buffer.
-    pub fn encode(&self, buf: &mut Vec<u8>, method: RecordEncodeMethod) {
-        buf.put_u8(method as u8);
+    pub fn encode(&self, buf: &mut Vec<u8>, scheme: RecordEncodingScheme) {
+        if scheme.delta {
+            let mut writer = NibbleWriter::new(buf);
+            writer.write_u3(scheme.as_u8());
 
-        let end = match method {
-            RecordEncodeMethod::Past => self.index,
-            RecordEncodeMethod::All => {
-                buf.put_u64_varint(self.index as u64);
-                self.moves.len()
+            let moves = if scheme.all {
+                writer.write_u32_varint(self.index as u32);
+                &self.moves
+            } else {
+                &self.moves[..self.index]
+            };
+
+            if let [Move::Place(Point::ZERO, None)] = moves {
+                writer.write_u3(0);
+                return;
             }
-        };
 
-        for i in 0..end {
-            self.moves[i].encode(buf, i == 0);
+            let mut origin = Point::ZERO;
+            for (i, mov) in moves.iter().enumerate() {
+                if i == 0
+                    && let Move::Place(Point::ZERO, None) = mov
+                    && let Some(Move::Place(_, Some(_))) = moves.get(1)
+                {
+                    continue;
+                }
+                mov.encode_delta(&mut writer, &mut origin);
+            }
+        } else {
+            buf.put_u8(scheme.as_u8());
+
+            let end = if scheme.all {
+                buf.put_u32_varint(self.index as u32);
+                self.moves.len()
+            } else {
+                self.index
+            };
+
+            for i in 0..end {
+                self.moves[i].encode(buf, i == 0);
+            }
         }
     }
 
     /// Encodes the record to a new buffer.
     #[must_use]
-    pub fn encode_to_vec(&self, method: RecordEncodeMethod) -> Vec<u8> {
+    pub fn encode_to_vec(&self, scheme: RecordEncodingScheme) -> Vec<u8> {
         let mut buf = vec![];
-        self.encode(&mut buf, method);
+        self.encode(&mut buf, scheme);
         buf
     }
 
     /// Decodes a record from a buffer.
     #[must_use]
     pub fn decode(buf: &mut &[u8]) -> Option<Self> {
-        let method = RecordEncodeMethod::from_u8(buf.try_get_u8().ok()?)?;
-
-        let index = match method {
-            RecordEncodeMethod::Past => None,
-            RecordEncodeMethod::All => Some(buf.try_get_usize_varint().ok()?),
-        };
-
-        let mut record = Self::new();
-
-        while buf.has_remaining() {
-            let mov = Move::decode(buf, !record.has_past())?;
-            if !record.make_move(mov) {
-                return None;
-            }
-        }
-
-        if let Some(index) = index
-            && !record.jump(index)
-        {
+        if buf.is_empty() {
             return None;
         }
-        Some(record)
+
+        let mut reader = NibbleReader::new(buf);
+        let scheme = RecordEncodingScheme::from_u8(reader.read_u3()?)?;
+
+        if scheme.delta {
+            let index = if scheme.all {
+                Some(reader.read_u32_varint()?)
+            } else {
+                None
+            };
+
+            let mut record = Self::new();
+            let mut origin = Point::ZERO;
+
+            while reader.has_remaining() {
+                let first = !record.has_past();
+                let mov = Move::decode_delta(&mut reader, &mut origin, first)?;
+
+                if first
+                    && let Move::Place(_, Some(_)) = mov
+                    && !record.make_move(Move::Place(Point::ZERO, None))
+                {
+                    return None;
+                }
+
+                if !record.make_move(mov) {
+                    return None;
+                }
+            }
+
+            if let Some(index) = index
+                && !record.jump(index as usize)
+            {
+                return None;
+            }
+            Some(record)
+        } else {
+            let index = if scheme.all {
+                Some(buf.try_get_u32_varint().ok()?)
+            } else {
+                None
+            };
+
+            let mut record = Self::new();
+
+            while buf.has_remaining() {
+                let mov = Move::decode(buf, !record.has_past())?;
+                if !record.make_move(mov) {
+                    return None;
+                }
+            }
+
+            if let Some(index) = index
+                && !record.jump(index as usize)
+            {
+                return None;
+            }
+            Some(record)
+        }
     }
 }
 

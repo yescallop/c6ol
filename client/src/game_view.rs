@@ -347,10 +347,9 @@ pub fn GameView(
             let new_claim = match claim {
                 WinClaim::PendingPoint | WinClaim::Ready(..) => WinClaim::PendingDirection(cursor),
                 WinClaim::PendingDirection(p) => {
-                    let Some(dir) = Direction::from_unit_vec(
-                        (cursor.x - p.x).signum(),
-                        (cursor.y - p.y).signum(),
-                    ) else {
+                    let diff = cursor - p;
+                    let v = Point::new(diff.x.signum(), diff.y.signum());
+                    let Some(dir) = Direction::from_unit_vec(v) else {
                         return;
                     };
 
@@ -1082,8 +1081,8 @@ pub fn GameView(
                 </g>
                 // Draw the board origin.
                 {move || {
-                    let p = calc().board_to_view_pos(Point::ORIGIN)?;
-                    if record.read().stone_at(Point::ORIGIN).is_none() {
+                    let p = calc().board_to_view_pos(Point::ZERO)?;
+                    if record.read().stone_at(Point::ZERO).is_none() {
                         Some(view! { <circle cx=p.x cy=p.y r=DOT_RADIUS fill="black" /> })
                     } else {
                         None

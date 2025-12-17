@@ -1,6 +1,6 @@
 //! WebSocket protocol.
 
-use crate::game::{Direction, Move, Player, Point, Record, RecordEncodeMethod, Stone};
+use crate::game::{Direction, Move, Player, Point, Record, RecordEncodingScheme, Stone};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
 use std::{fmt, iter, str};
@@ -264,8 +264,8 @@ impl Message for ServerMessage {
             Self::Started(id) => buf.put_i64(id.0),
             Self::Authenticated(player) => buf.put_u8(player as u8),
             Self::Options(options) => options.encode(buf),
-            Self::Record(record) => record.encode(buf, RecordEncodeMethod::Past),
-            Self::Move(mov) => mov.encode(buf, true),
+            Self::Record(record) => record.encode(buf, RecordEncodingScheme::past()),
+            Self::Move(mov) => mov.encode(buf, false),
             Self::Retract => {}
             Self::Request(player, req) => {
                 buf.put_u8(player as u8);

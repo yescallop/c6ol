@@ -1,7 +1,7 @@
 use crate::{game::GameState, macros::exec};
 use anyhow::Context;
 use c6ol_core::{
-    game::{Player, Record, RecordEncodeMethod},
+    game::{Player, Record, RecordEncodingScheme},
     protocol::{GameId, GameOptions, Message, Request},
 };
 use chrono::Utc;
@@ -80,7 +80,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                 });
 
                 let options = state.options.encode_to_vec();
-                let record = state.record.encode_to_vec(RecordEncodeMethod::Past);
+                let record = state.record.encode_to_vec(RecordEncodingScheme::past());
                 let timestamp = Utc::now().timestamp_millis();
 
                 let mut stmt = conn.prepare(
@@ -125,7 +125,7 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
                             state.passcode_hashes[Player::Guest],
                             state.requests[Player::Host].map(Message::encode_to_vec),
                             state.requests[Player::Guest].map(Message::encode_to_vec),
-                            state.record.encode_to_vec(RecordEncodeMethod::Past),
+                            state.record.encode_to_vec(RecordEncodingScheme::past()),
                             Utc::now().timestamp_millis(),
                             id.0,
                         ),
