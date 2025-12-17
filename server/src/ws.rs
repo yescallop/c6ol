@@ -144,6 +144,9 @@ async fn handle_websocket(
                     }
                     _ => {}
                 }
+                if game.player().is_none() {
+                    return Err(Error::UnexpectedMessage);
+                }
                 game.play(msg).await;
             }
             _ = heartbeat_interval.tick() => {
