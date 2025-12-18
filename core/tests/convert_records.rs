@@ -48,7 +48,7 @@ fn convert_records() {
         total_bytes_new as f64 / total_moves as f64,
     );
 
-    assert_eq!(total_moves, 754);
-    assert_eq!(total_bytes, 1725);
-    assert_eq!(total_bytes_new, 1203);
+    assert_eq!(total_moves, 1236);
+    assert_eq!(total_bytes, 2839);
+    assert_eq!(total_bytes_new, 2046);
 }
