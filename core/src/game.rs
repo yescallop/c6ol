@@ -257,19 +257,17 @@ impl Point {
     /// Performs checked addition.
     #[must_use]
     pub fn checked_add(self, rhs: Self) -> Option<Self> {
-        Some(Self::new(
-            self.x.checked_add(rhs.x)?,
-            self.y.checked_add(rhs.y)?,
-        ))
+        let x = self.x.checked_add(rhs.x)?;
+        let y = self.y.checked_add(rhs.y)?;
+        Some(Self::new(x, y))
     }
 
     /// Performs checked subtraction.
     #[must_use]
     pub fn checked_sub(self, rhs: Self) -> Option<Self> {
-        Some(Self::new(
-            self.x.checked_sub(rhs.x)?,
-            self.y.checked_sub(rhs.y)?,
-        ))
+        let x = self.x.checked_sub(rhs.x)?;
+        let y = self.y.checked_sub(rhs.y)?;
+        Some(Self::new(x, y))
     }
 
     /// Calculates the midpoint of two points, rounding towards negative infinity.
@@ -283,9 +281,9 @@ impl Point {
     /// Halves the coordinates, rounding towards positive infinity.
     #[must_use]
     pub fn half_ceil(self) -> Self {
-        let x = (self.x >> 1) + (self.x & 1);
-        let y = (self.y >> 1) + (self.y & 1);
-        Self::new(x, y)
+        let x = (self.x as i32 + 1) >> 1;
+        let y = (self.y as i32 + 1) >> 1;
+        Self::new(x as i16, y as i16)
     }
 
     /// Encodes the point to a buffer.
