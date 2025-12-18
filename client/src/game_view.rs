@@ -425,13 +425,10 @@ pub fn GameView(
         let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.last);
         let (p, _) = svg_calc().svg_to_board_pos(avg_x, avg_y);
 
-        let (dx, dy) = (p.x - p0.x, p.y - p0.y);
-        if dx != 0 || dy != 0 {
+        let diff = p - p0;
+        if diff != Point::ZERO {
             if !dry_run {
-                view_center.update(|p| {
-                    p.x -= dx;
-                    p.y -= dy;
-                });
+                view_center.update(|p| *p -= diff);
             }
             true
         } else {
@@ -521,10 +518,10 @@ pub fn GameView(
                 state.write_value().abort_long_press();
                 return on_event(Event::Menu);
             }
-            "KeyW" | "ArrowUp" => 0,
-            "KeyA" | "ArrowLeft" => 1,
-            "KeyS" | "ArrowDown" => 2,
-            "KeyD" | "ArrowRight" => 3,
+            "KeyW" | "ArrowUp" => Direction::North,
+            "KeyA" | "ArrowLeft" => Direction::West,
+            "KeyS" | "ArrowDown" => Direction::South,
+            "KeyD" | "ArrowRight" => Direction::East,
             "Minus" => return zoom(Zoom::Out, None),
             "Equal" => return zoom(Zoom::In, None),
             "Backspace" | "KeyZ" => {
@@ -563,32 +560,23 @@ pub fn GameView(
             return;
         }
 
-        const DIRECTION_OFFSETS: [(i16, i16); 4] = [(0, -1), (-1, 0), (0, 1), (1, 0)];
+        let offset = direction.offset(1);
 
-        let (dx, dy) = DIRECTION_OFFSETS[direction as usize];
         if code.starts_with("Key") {
             if let Some(mut cursor) = cursor_pos.get() {
-                cursor.x += dx;
-                cursor.y += dy;
+                cursor += offset;
                 cursor_pos.set(Some(cursor));
 
                 // If the cursor is going out of view, adjust the view center to keep up.
                 if calc().board_to_view_pos(cursor).is_none() {
-                    view_center.update(|p| {
-                        p.x += dx;
-                        p.y += dy;
-                    });
+                    view_center.update(|p| *p += offset);
                 }
             } else {
                 // Put a cursor at the view center if there is no cursor.
                 cursor_pos.set(Some(view_center.get()));
             }
         } else {
-            view_center.update(|p| {
-                p.x += dx;
-                p.y += dy;
-            });
-
+            view_center.update(|p| *p += offset);
             // Restrict the cursor so that it doesn't go out of view.
             clamp_cursor();
         }

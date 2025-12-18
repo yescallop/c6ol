@@ -1,8 +1,8 @@
 use crate::{game::GameState, macros::exec};
 use anyhow::Context;
 use c6ol_core::{
-    game::{Player, Record, RecordEncodingScheme},
-    protocol::{GameId, GameOptions, Message, Request},
+    game::{Record, RecordEncodingScheme},
+    protocol::{GameId, GameOptions, Message, Player, Request},
 };
 use chrono::Utc;
 use rusqlite::{Connection, Row};

@@ -1,8 +1,8 @@
 use crate::{ANALYZE_PREFIX, BASE64, Confirm, WinClaim};
 use base64::Engine;
 use c6ol_core::{
-    game::{Move, Player, PlayerSlots, Record, RecordEncodingScheme, Stone},
-    protocol::{GameOptions, Request},
+    game::{Move, Record, RecordEncodingScheme, Stone},
+    protocol::{GameOptions, Player, PlayerSlots, Request},
 };
 use leptos::{
     either::{Either, EitherOf3, EitherOf6},

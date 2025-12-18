@@ -10,7 +10,7 @@ use bytes_varint::{VarIntSupport, VarIntSupportMut};
 use std::{
     collections::HashMap,
     iter,
-    ops::{Add, Index, IndexMut, Sub},
+    ops::{Add, AddAssign, Sub, SubAssign},
 };
 
 use nibble::{NibbleReader, NibbleWriter};
@@ -249,7 +249,7 @@ impl Point {
         let unit_vec = dir.offset(1);
 
         iter::from_fn(move || {
-            cur = cur + unit_vec;
+            cur += unit_vec;
             Some(cur)
         })
     }
@@ -306,11 +306,23 @@ impl Add for Point {
     }
 }
 
+impl AddAssign for Point {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
 impl Sub for Point {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
         Self::new(self.x - rhs.x, self.y - rhs.y)
+    }
+}
+
+impl SubAssign for Point {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
     }
 }
 
@@ -566,11 +578,7 @@ impl Eq for Move {}
 /// Returns the stone to play at the given move index.
 #[must_use]
 pub fn turn_at(index: usize) -> Stone {
-    if index.is_multiple_of(2) {
-        Stone::Black
-    } else {
-        Stone::White
-    }
+    Stone::from_u8(index as u8 & 1).unwrap()
 }
 
 /// Scheme to encode a game record with.
@@ -871,7 +879,7 @@ impl Record {
             let mut writer = NibbleWriter::new(buf);
             writer.write_u3(scheme.as_u8());
 
-            let moves = if scheme.all {
+            let mut moves = if scheme.all {
                 writer.write_u32_varint(self.index as u32);
                 &self.moves
             } else {
@@ -883,14 +891,12 @@ impl Record {
                 return;
             }
 
+            if let [Move::Place(Point::ZERO, None), Move::Place(_, Some(_)), ..] = moves {
+                moves = &moves[1..];
+            }
+
             let mut origin = Point::ZERO;
-            for (i, mov) in moves.iter().enumerate() {
-                if i == 0
-                    && let Move::Place(Point::ZERO, None) = mov
-                    && let Some(Move::Place(_, Some(_))) = moves.get(1)
-                {
-                    continue;
-                }
+            for mov in moves {
                 mov.encode_delta(&mut writer, &mut origin);
             }
         } else {
@@ -982,65 +988,5 @@ impl Record {
             }
             Some(record)
         }
-    }
-}
-
-/// Players.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Player {
-    /// One who starts the game.
-    Host = 0,
-    /// The other who joins the game.
-    Guest = 1,
-}
-
-impl Player {
-    /// Creates a player from a `u8`.
-    #[must_use]
-    pub fn from_u8(n: u8) -> Option<Self> {
-        Some(match n {
-            0 => Self::Host,
-            1 => Self::Guest,
-            _ => return None,
-        })
-    }
-
-    /// Returns the opposite player.
-    #[must_use]
-    pub fn opposite(self) -> Self {
-        match self {
-            Self::Host => Self::Guest,
-            Self::Guest => Self::Host,
-        }
-    }
-}
-
-/// A struct to store data for both players.
-#[derive(Debug, Default)]
-pub struct PlayerSlots<T> {
-    slots: [T; 2],
-}
-
-impl<T> PlayerSlots<T> {
-    /// Fills both slots with the value.
-    pub fn fill(&mut self, value: T)
-    where
-        T: Clone,
-    {
-        self.slots.fill(value);
-    }
-}
-
-impl<T> Index<Player> for PlayerSlots<T> {
-    type Output = T;
-
-    fn index(&self, player: Player) -> &T {
-        &self.slots[player as usize]
-    }
-}
-
-impl<T> IndexMut<Player> for PlayerSlots<T> {
-    fn index_mut(&mut self, player: Player) -> &mut T {
-        &mut self.slots[player as usize]
     }
 }

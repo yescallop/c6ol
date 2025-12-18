@@ -31,7 +31,6 @@ fn test_delta_encoding_roundtrip() {
     }
 }
 
-
 #[test]
 fn test_delta_encoding_all_types() {
     let mut record = Record::new();
@@ -90,14 +89,19 @@ fn test_delta_encoding_win_all_directions() {
         assert!(record.make_move(Move::Place(Point::ZERO, None)));
 
         // We need 5 more stones for Black: offset(1)..offset(5)
-        let stones: Vec<Point> = (1..=5).map(|i| Point::ZERO + dir.offset(i as i16)).collect();
+        let stones: Vec<Point> = (1..=5)
+            .map(|i| Point::ZERO + dir.offset(i as i16))
+            .collect();
 
         // White dummy moves base
         let mut white_y = 100;
 
         for chunk in stones.chunks(2) {
             // White dummy move
-            assert!(record.make_move(Move::Place(Point::new(0, white_y), Some(Point::new(1, white_y)))));
+            assert!(record.make_move(Move::Place(
+                Point::new(0, white_y),
+                Some(Point::new(1, white_y))
+            )));
             white_y += 1;
 
             if chunk.len() == 2 {

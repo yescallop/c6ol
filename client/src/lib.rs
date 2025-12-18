@@ -6,8 +6,10 @@ mod game_view;
 
 use base64::engine::{DecodePaddingMode, Engine, GeneralPurpose, GeneralPurposeConfig};
 use c6ol_core::{
-    game::{Direction, Move, Player, PlayerSlots, Point, Record, RecordEncodingScheme, Stone},
-    protocol::{ClientMessage, GameId, GameOptions, Message, Request, ServerMessage},
+    game::{Direction, Move, Point, Record, RecordEncodingScheme, Stone},
+    protocol::{
+        ClientMessage, GameId, GameOptions, Message, Player, PlayerSlots, Request, ServerMessage,
+    },
 };
 use dialog::*;
 use leptos::{ev, prelude::*};

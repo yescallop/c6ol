@@ -1,10 +1,74 @@
 //! WebSocket protocol.
 
-use crate::game::{Direction, Move, Player, Point, Record, RecordEncodingScheme, Stone};
+use crate::game::{Direction, Move, Point, Record, RecordEncodingScheme, Stone};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
-use std::{fmt, iter, str};
+use std::{
+    fmt, iter,
+    ops::{Index, IndexMut},
+    str,
+};
 use strum::{EnumDiscriminants, FromRepr};
+
+/// Players.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Player {
+    /// One who starts the game.
+    Host = 0,
+    /// The other who joins the game.
+    Guest = 1,
+}
+
+impl Player {
+    /// Creates a player from a `u8`.
+    #[must_use]
+    pub fn from_u8(n: u8) -> Option<Self> {
+        Some(match n {
+            0 => Self::Host,
+            1 => Self::Guest,
+            _ => return None,
+        })
+    }
+
+    /// Returns the opposite player.
+    #[must_use]
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Host => Self::Guest,
+            Self::Guest => Self::Host,
+        }
+    }
+}
+
+/// A struct to store data for both players.
+#[derive(Debug, Default)]
+pub struct PlayerSlots<T> {
+    slots: [T; 2],
+}
+
+impl<T> PlayerSlots<T> {
+    /// Fills both slots with the value.
+    pub fn fill(&mut self, value: T)
+    where
+        T: Clone,
+    {
+        self.slots.fill(value);
+    }
+}
+
+impl<T> Index<Player> for PlayerSlots<T> {
+    type Output = T;
+
+    fn index(&self, player: Player) -> &T {
+        &self.slots[player as usize]
+    }
+}
+
+impl<T> IndexMut<Player> for PlayerSlots<T> {
+    fn index_mut(&mut self, player: Player) -> &mut T {
+        &mut self.slots[player as usize]
+    }
+}
 
 /// A passcode.
 pub type Passcode = Box<[u8]>;

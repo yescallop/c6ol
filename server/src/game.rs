@@ -2,8 +2,11 @@
 
 use crate::{db::DbManager, macros::exec};
 use c6ol_core::{
-    game::{Move, Player, PlayerSlots, Record},
-    protocol::{ClientMessage, GameId, GameOptions, PasscodeHash, Request, ServerMessage},
+    game::{Move, Record},
+    protocol::{
+        ClientMessage, GameId, GameOptions, PasscodeHash, Player, PlayerSlots, Request,
+        ServerMessage,
+    },
 };
 use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc, oneshot};
