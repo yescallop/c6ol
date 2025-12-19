@@ -346,6 +346,15 @@ impl DialogImpl for GameMenuDialog {
                 }
             }}
             <br />
+            {move || {
+                let record = record.read();
+                if record.has_future() {
+                    format!("Move {} of {}", record.move_index(), record.moves().len())
+                } else {
+                    format!("Move {}", record.move_index())
+                }
+            }}
+            <br />
             <a
                 target="_blank"
                 href=move || {

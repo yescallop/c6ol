@@ -246,7 +246,9 @@ pub fn App() -> impl IntoView {
                 record_changed = true;
             }
             ServerMessage::Retract => {
-                record.write().undo_move();
+                let mut record = record.write();
+                record.undo_move();
+                record.clear_future();
                 record_changed = true;
             }
             ServerMessage::Request(initiator, req) => {

@@ -662,6 +662,11 @@ impl Record {
         self.index = 0;
     }
 
+    /// Clears future moves.
+    pub fn clear_future(&mut self) {
+        self.moves.truncate(self.index);
+    }
+
     /// Returns a slice of all moves, in the past or in the future.
     #[must_use]
     pub fn moves(&self) -> &[Move] {
@@ -772,7 +777,7 @@ impl Record {
             return false;
         }
 
-        self.moves.truncate(self.index);
+        self.clear_future();
         self.moves.push(mov);
         self.index += 1;
         true
