@@ -264,7 +264,7 @@ impl DialogImpl for AuthDialog {
 #[derive(Clone)]
 pub struct GameMenuDialog {
     pub game_id: ReadSignal<String>,
-    pub stone: ReadSignal<Option<Stone>>,
+    pub stone: Memo<Option<Stone>>,
     pub online: bool,
     pub player: ReadSignal<Option<Player>>,
     pub record: ReadSignal<Record>,
@@ -594,7 +594,14 @@ impl DialogImpl for ConfirmDialog {
                 (confirm, cancel) = ("Noted", None);
                 "The opponent declined your request."
             }
-            Confirm::Resign => "Resign the game?",
+            Confirm::Resign { online } => {
+                if online {
+                    "Resign the game?"
+                } else {
+                    (confirm, alt_confirm) = ("White", Some("Black"));
+                    "Resign for which stone?"
+                }
+            }
             Confirm::ConnClosed(ref reason) => {
                 title = Some("Connection Closed");
                 (confirm, cancel) = ("Retry", Some("Menu"));

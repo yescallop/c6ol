@@ -260,7 +260,7 @@ fn stone_fill(stone: Stone) -> &'static str {
 #[component]
 pub fn GameView(
     record: RwSignal<Record>,
-    stone: ReadSignal<Option<Stone>>,
+    stone: Memo<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     pending: impl Fn() -> bool + Send + Sync + 'static,
     analyzing: impl Fn() -> bool + Copy + 'static,

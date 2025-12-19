@@ -54,7 +54,7 @@ enum Confirm {
     Requested(Player, Request),
     RequestAccepted,
     RequestDeclined,
-    Resign,
+    Resign { online: bool },
     ConnClosed(String),
     Error(String),
 }
@@ -118,7 +118,6 @@ const RECONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 #[component]
 pub fn App() -> impl IntoView {
     let record = RwSignal::new(Record::new());
-    let stone = RwSignal::new(None::<Stone>);
 
     let tentatives_pos = RwSignal::new(ArrayVec::new());
     let win_claim = RwSignal::new(None);
@@ -128,6 +127,16 @@ pub fn App() -> impl IntoView {
     let player = RwSignal::new(None::<Player>);
     let requests = RwSignal::new(PlayerSlots::<Option<Request>>::default());
     let options = RwSignal::new(None::<GameOptions>);
+
+    let stone = Memo::new(move |_| {
+        if let Some(player) = player.get()
+            && let Some(options) = options.get()
+        {
+            Some(options.stone_of(player))
+        } else {
+            record.read().turn()
+        }
+    });
 
     let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
 
@@ -180,7 +189,7 @@ pub fn App() -> impl IntoView {
 
         show_dialog(Dialog::from(GameMenuDialog {
             game_id: game_id.read_only(),
-            stone: stone.read_only(),
+            stone,
             online: online(),
             player: player.read_only(),
             record: record.read_only(),
@@ -211,8 +220,7 @@ pub fn App() -> impl IntoView {
             }
             ServerMessage::Authenticated(assigned_player) => {
                 player.set(Some(assigned_player));
-                if let Some(options) = options.get() {
-                    stone.set(Some(options.stone_of(assigned_player)));
+                if options.get().is_some() {
                     show_game_menu_dialog();
                 }
                 if let Some(req) = requests.read()[assigned_player.opposite()] {
@@ -220,8 +228,7 @@ pub fn App() -> impl IntoView {
                 }
             }
             ServerMessage::Options(new_options) => {
-                if let Some(player) = player.get() {
-                    stone.set(Some(new_options.stone_of(player)));
+                if player.get().is_some() {
                     if options.get().is_none() {
                         show_game_menu_dialog();
                     }
@@ -292,7 +299,6 @@ pub fn App() -> impl IntoView {
 
     let clear_all = move || {
         record.write().clear();
-        stone.set(None);
 
         player.set(None);
         requests.write().fill(None);
@@ -428,7 +434,6 @@ pub fn App() -> impl IntoView {
             } else {
                 record.write().clear();
             }
-            stone.set(record.read_untracked().turn());
             return;
         }
 
@@ -437,7 +442,6 @@ pub fn App() -> impl IntoView {
                 && let Some(rec) = Record::decode(&mut &rec[..])
             {
                 record.set(rec);
-                stone.set(record.read().turn());
             } else {
                 confirm(Confirm::Error("Failed to decode record.".into()));
             }
@@ -452,128 +456,107 @@ pub fn App() -> impl IntoView {
         confirm(Confirm::Error("Invalid game ID.".into()));
     };
 
-    let on_event = move |ev: Event| {
-        let mut record_changed = false;
+    let on_event = move |ev: Event| match ev {
+        Event::Menu => show_game_menu_dialog(),
+        Event::Submit => {
+            let tentatives = tentatives_pos.get();
+            let claim = win_claim.get();
+            if online() {
+                confirm(match claim {
+                    Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentatives, p, dir),
+                    _ => match tentatives[..] {
+                        [] => Confirm::Pass(None),
+                        [p] if record.read().has_past() => Confirm::Pass(Some(p)),
+                        [p] => Confirm::Submit(p, None),
+                        [p1, p2] => Confirm::Submit(p1, Some(p2)),
+                        _ => unreachable!(),
+                    },
+                });
+            } else {
+                let mut record = record.write();
 
-        match ev {
-            Event::Menu => show_game_menu_dialog(),
-            Event::Submit => {
-                let tentatives = tentatives_pos.get();
-                let claim = win_claim.get();
-                if online() {
-                    confirm(match claim {
-                        Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentatives, p, dir),
-                        _ => match tentatives[..] {
-                            [] => Confirm::Pass(None),
-                            [p] if record.read().has_past() => Confirm::Pass(Some(p)),
-                            [p] => Confirm::Submit(p, None),
-                            [p1, p2] => Confirm::Submit(p1, Some(p2)),
-                            _ => unreachable!(),
-                        },
+                if let Some(WinClaim::Ready(p, dir)) = claim {
+                    if !tentatives.is_empty() {
+                        record.make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
+                    }
+                    record.make_move(Move::Win(p, dir));
+                } else {
+                    record.make_move(match tentatives[..] {
+                        [] => Move::Pass,
+                        [p] => Move::Place(p, None),
+                        [p1, p2] => Move::Place(p1, Some(p2)),
+                        _ => unreachable!(),
                     });
-                } else {
-                    let mut record = record.write();
-
-                    if let Some(WinClaim::Ready(p, dir)) = claim {
-                        if !tentatives.is_empty() {
-                            record
-                                .make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
-                        }
-                        record.make_move(Move::Win(p, dir));
-                    } else {
-                        record.make_move(match tentatives[..] {
-                            [] => Move::Pass,
-                            [p] => Move::Place(p, None),
-                            [p1, p2] => Move::Place(p1, Some(p2)),
-                            _ => unreachable!(),
-                        });
-                    }
-
-                    record_changed = true;
-                }
-            }
-            Event::Undo => {
-                if !record.read().has_past() {
-                    return;
-                }
-                if !online() {
-                    record.write().undo_move();
-                    record_changed = true;
-                } else if let Some(player) = player.get() {
-                    let requests = requests.read();
-                    if let Some(req @ Request::Retract) = requests[player.opposite()] {
-                        confirm(Confirm::Requested(player, req));
-                    } else if requests[player].is_none() {
-                        confirm(Confirm::RequestRetract);
-                    }
-                }
-            }
-            Event::Redo => {
-                if !record.read().has_future() {
-                    return;
-                }
-                if !online() {
-                    record.write().redo_move();
-                    record_changed = true;
-                }
-            }
-            Event::Home => {
-                if let Some(player) = player.get() {
-                    let requests = requests.read();
-                    if let Some(req @ Request::Reset { .. }) = requests[player.opposite()] {
-                        confirm(Confirm::Requested(player, req));
-                    } else if requests[player].is_none()
-                        && let Some(options) = options.get()
-                    {
-                        show_dialog(Dialog::from(ResetDialog {
-                            player,
-                            old_options: options,
-                        }));
-                    }
-                } else {
-                    if !record.read().has_past() {
-                        return;
-                    }
-                    record.write().jump(0);
-                    record_changed = true;
-                }
-            }
-            Event::End => {
-                if !record.read().has_future() {
-                    return;
-                }
-                if !online() {
-                    let mut record = record.write();
-                    let len = record.moves().len();
-                    record.jump(len);
-                    record_changed = true;
-                }
-            }
-            Event::Resign => {
-                if online() {
-                    confirm(Confirm::Resign);
-                } else if let Some(stone) = record.read().turn() {
-                    record.write().make_move(Move::Resign(stone));
-                    record_changed = true;
-                }
-            }
-            Event::Draw => {
-                if let Some(player) = player.get() {
-                    let requests = requests.read();
-                    if let Some(req @ Request::Draw) = requests[player.opposite()] {
-                        confirm(Confirm::Requested(player, req));
-                    } else if requests[player].is_none() {
-                        confirm(Confirm::RequestDraw);
-                    }
-                } else {
-                    record.write().make_move(Move::Draw);
-                    record_changed = true;
                 }
             }
         }
-
-        if record_changed {
-            stone.set(record.read().turn());
+        Event::Undo => {
+            if !record.read().has_past() {
+                return;
+            }
+            if !online() {
+                record.write().undo_move();
+            } else if let Some(player) = player.get() {
+                let requests = requests.read();
+                if let Some(req @ Request::Retract) = requests[player.opposite()] {
+                    confirm(Confirm::Requested(player, req));
+                } else if requests[player].is_none() {
+                    confirm(Confirm::RequestRetract);
+                }
+            }
+        }
+        Event::Redo => {
+            if !record.read().has_future() {
+                return;
+            }
+            if !online() {
+                record.write().redo_move();
+            }
+        }
+        Event::Home => {
+            if let Some(player) = player.get() {
+                let requests = requests.read();
+                if let Some(req @ Request::Reset { .. }) = requests[player.opposite()] {
+                    confirm(Confirm::Requested(player, req));
+                } else if requests[player].is_none()
+                    && let Some(options) = options.get()
+                {
+                    show_dialog(Dialog::from(ResetDialog {
+                        player,
+                        old_options: options,
+                    }));
+                }
+            } else {
+                if !record.read().has_past() {
+                    return;
+                }
+                record.write().jump(0);
+            }
+        }
+        Event::End => {
+            if !record.read().has_future() {
+                return;
+            }
+            if !online() {
+                let mut record = record.write();
+                let len = record.moves().len();
+                record.jump(len);
+            }
+        }
+        Event::Resign => {
+            confirm(Confirm::Resign { online: online() });
+        }
+        Event::Draw => {
+            if let Some(player) = player.get() {
+                let requests = requests.read();
+                if let Some(req @ Request::Draw) = requests[player.opposite()] {
+                    confirm(Confirm::Requested(player, req));
+                } else if requests[player].is_none() {
+                    confirm(Confirm::RequestDraw);
+                }
+            } else {
+                record.write().make_move(Move::Draw);
+            }
         }
     };
 
@@ -686,7 +669,18 @@ pub fn App() -> impl IntoView {
                         });
                     }
                     Confirm::RequestAccepted | Confirm::RequestDeclined => {}
-                    Confirm::Resign => send(ClientMessage::Resign),
+                    Confirm::Resign { online } => {
+                        if online {
+                            send(ClientMessage::Resign);
+                        } else {
+                            let resigned_stone = match ret_val {
+                                ConfirmRetVal::Confirm => Stone::White,
+                                ConfirmRetVal::AltConfirm => Stone::Black,
+                                ConfirmRetVal::Cancel => unreachable!(),
+                            };
+                            record.write().make_move(Move::Resign(resigned_stone));
+                        }
+                    }
                     Confirm::ConnClosed(_) => set_game_id(&game_id.get()),
                     Confirm::Error(_) => set_game_id(""),
                 }
@@ -715,7 +709,6 @@ pub fn App() -> impl IntoView {
             && let Some(rec) = Record::decode(&mut &rec[..])
         {
             record.set(rec);
-            stone.set(record.read().turn());
         }
     });
 
@@ -727,7 +720,7 @@ pub fn App() -> impl IntoView {
     view! {
         <game_view::GameView
             record=record
-            stone=stone.read_only()
+            stone=stone
             disabled=move || !dialog_entries.read().is_empty()
             pending=move || online() && options.get().is_none()
             analyzing=move || game_id.read().starts_with(ANALYZE_PREFIX)
