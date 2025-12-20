@@ -15,7 +15,7 @@ fn convert_records() {
     let mut total_bytes_new = 0;
 
     for (i, (rec_str, rec_new_str)) in recs.lines().zip(recs_new.lines()).enumerate() {
-        let rec_bytes = BASE64_STANDARD.decode(rec_str).unwrap();
+        let rec_bytes = BASE64_STANDARD_NO_PAD.decode(rec_str).unwrap();
         let rec = Record::decode(&mut &rec_bytes[..]).unwrap();
 
         let mut rec_bytes_new = Vec::new();
