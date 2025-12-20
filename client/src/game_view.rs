@@ -869,7 +869,7 @@ pub fn GameView(
         let calc = calc();
         let rings = iter::once(p)
             .chain(dir.iter().flat_map(|&d| p.adjacent_iter(d).take(5)))
-            .filter_map(|p| calc.board_to_view_pos(p))
+            .map(|p| calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder).0)
             .map(|p| view! { <circle cx=p.x cy=p.y r=STONE_RADIUS - WIN_RING_WIDTH / 2.0 /> })
             .collect::<Vec<_>>();
         view! {
