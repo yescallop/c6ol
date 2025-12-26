@@ -24,11 +24,18 @@ use web_sys::{
     wasm_bindgen::prelude::*,
 };
 
-const BASE64: GeneralPurpose = GeneralPurpose::new(
+const BASE64_STD: GeneralPurpose = GeneralPurpose::new(
     &base64::alphabet::STANDARD,
     GeneralPurposeConfig::new()
         .with_encode_padding(false)
         .with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
+
+const BASE64_URL: GeneralPurpose = GeneralPurpose::new(
+    &base64::alphabet::URL_SAFE,
+    GeneralPurposeConfig::new()
+        .with_encode_padding(false)
+        .with_decode_padding_mode(DecodePaddingMode::RequireNone),
 );
 
 #[allow(unused)]
@@ -78,7 +85,8 @@ enum WinClaim {
 }
 
 const STORAGE_KEY_RECORD: &str = "record";
-const ANALYZE_PREFIX: &str = "analyze,";
+const RECORD_PREFIX_LEGACY: &str = "analyze,";
+const RECORD_PREFIX: &str = "rec,";
 
 #[derive(Clone)]
 struct DialogEntry {
@@ -88,13 +96,14 @@ struct DialogEntry {
 
 struct WebSocketState {
     ws: WebSocket,
+    init_msg: ClientMessage,
     #[expect(dead_code)]
     onopen: Closure<dyn FnMut()>,
     #[expect(dead_code)]
     onclose: Closure<dyn Fn(CloseEvent)>,
     #[expect(dead_code)]
     onmessage: Closure<dyn Fn(MessageEvent)>,
-    was_open: bool,
+    was_active: bool,
     reconnect_handle: Option<TimeoutHandle>,
 }
 
@@ -114,6 +123,14 @@ fn history_push_state(url: &str) {
 
 const RECONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GameKind {
+    Pending,
+    Local,
+    Record,
+    Online(GameId),
+}
+
 /// Entry-point for the app.
 #[component]
 pub fn App() -> impl IntoView {
@@ -122,7 +139,7 @@ pub fn App() -> impl IntoView {
     let tentatives_pos = RwSignal::new(ArrayVec::new());
     let win_claim = RwSignal::new(None);
 
-    let game_id = RwSignal::new(String::new());
+    let game_kind = RwSignal::new(GameKind::Pending);
 
     let player = RwSignal::new(None::<Player>);
     let requests = RwSignal::new(PlayerSlots::<Option<Request>>::default());
@@ -154,11 +171,11 @@ pub fn App() -> impl IntoView {
     let online = move || ws_state.read().is_some();
 
     Effect::new(move || {
-        if *game_id.read() == "local" {
+        if game_kind.get() == GameKind::Local {
             // Save the record to local storage.
             let mut buf = vec![];
             record.read().encode(&mut buf, RecordEncodingScheme::all());
-            let buf = BASE64.encode(buf);
+            let buf = BASE64_STD.encode(buf);
             local_storage().set_item(STORAGE_KEY_RECORD, &buf).unwrap();
         }
     });
@@ -188,7 +205,7 @@ pub fn App() -> impl IntoView {
         }
 
         show_dialog(Dialog::from(GameMenuDialog {
-            game_id: game_id.read_only(),
+            game_kind: game_kind.read_only(),
             stone,
             online: online(),
             player: player.read_only(),
@@ -212,11 +229,13 @@ pub fn App() -> impl IntoView {
             return;
         };
 
+        ws_state.write_untracked().as_mut().unwrap().was_active = true;
+
         let mut record_changed = false;
         match msg {
             ServerMessage::Started(id) => {
                 history_push_state(&format!("#{id}"));
-                game_id.set(id.to_string());
+                game_kind.set(GameKind::Online(id));
             }
             ServerMessage::Authenticated(assigned_player) => {
                 player.set(Some(assigned_player));
@@ -312,7 +331,7 @@ pub fn App() -> impl IntoView {
     fn connect(
         init_msg: ClientMessage,
         ws_state: RwSignal<Option<WebSocketState>, LocalStorage>,
-        game_id: RwSignal<String>,
+        game_kind: RwSignal<GameKind>,
         send: impl Fn(ClientMessage) + Copy + 'static,
         clear_all: impl Fn() + Copy + 'static,
         on_message: impl Fn(MessageEvent) + Copy + 'static,
@@ -330,7 +349,6 @@ pub fn App() -> impl IntoView {
 
         let onopen = Closure::once(move || {
             send(init_msg);
-            ws_state.write_untracked().as_mut().unwrap().was_open = true;
         });
         ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
 
@@ -346,15 +364,15 @@ pub fn App() -> impl IntoView {
                 let mut state = ws_state.write_untracked();
                 let state = state.as_mut().unwrap();
 
-                if state.was_open
-                    && let Some(id) = GameId::from_base62(game_id.get().as_bytes())
+                if state.was_active
+                    && let GameKind::Online(id) = game_kind.get()
                 {
                     state.reconnect_handle = set_timeout_with_handle(
                         move || {
                             connect(
                                 ClientMessage::Join(id),
                                 ws_state,
-                                game_id,
+                                game_kind,
                                 send,
                                 clear_all,
                                 on_message,
@@ -382,17 +400,18 @@ pub fn App() -> impl IntoView {
 
         ws_state.set(Some(WebSocketState {
             ws,
+            init_msg,
             onopen,
             onclose,
             onmessage,
-            was_open: false,
+            was_active: false,
             reconnect_handle: None,
         }));
     }
 
     let connect = move |init_msg| {
         connect(
-            init_msg, ws_state, game_id, send, clear_all, on_message, confirm,
+            init_msg, ws_state, game_kind, send, clear_all, on_message, confirm,
         );
     };
 
@@ -420,16 +439,18 @@ pub fn App() -> impl IntoView {
             history_push_state(&format!("#{id}"));
         }
 
-        game_id.set(id.into());
-
         if id.is_empty() {
+            game_kind.set(GameKind::Pending);
+
             show_dialog(Dialog::from(MainMenuDialog));
             return;
         }
 
         if id == "local" {
+            game_kind.set(GameKind::Local);
+
             if let Some(rec) = local_storage().get_item(STORAGE_KEY_RECORD).unwrap()
-                && let Ok(rec) = BASE64.decode(rec)
+                && let Ok(rec) = BASE64_STD.decode(rec)
                 && let Some(rec) = Record::decode(&mut &rec[..])
             {
                 record.set(rec);
@@ -439,18 +460,27 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        if let Some(rec) = id.strip_prefix(ANALYZE_PREFIX) {
-            if let Ok(rec) = BASE64.decode(rec)
-                && let Some(rec) = Record::decode(&mut &rec[..])
-            {
-                record.set(rec);
-            } else {
-                confirm(Confirm::Error("Failed to decode record.".into()));
+        for (prefix, base64_engine) in [
+            (RECORD_PREFIX_LEGACY, BASE64_STD),
+            (RECORD_PREFIX, BASE64_URL),
+        ] {
+            if let Some(rec) = id.strip_prefix(prefix) {
+                if let Ok(rec) = base64_engine.decode(rec)
+                    && let Some(rec) = Record::decode(&mut &rec[..])
+                {
+                    game_kind.set(GameKind::Record);
+
+                    record.set(rec);
+                } else {
+                    confirm(Confirm::Error("Failed to decode record.".into()));
+                }
+                return;
             }
-            return;
         }
 
         if let Some(id) = GameId::from_base62(id.as_bytes()) {
+            game_kind.set(GameKind::Online(id));
+
             connect(ClientMessage::Join(id));
             return;
         }
@@ -606,7 +636,7 @@ pub fn App() -> impl IntoView {
 
         match ret_val {
             RetVal::MainMenu(ret_val) => match ret_val {
-                MainMenuRetVal::Offline => set_game_id("local"),
+                MainMenuRetVal::Local => set_game_id("local"),
                 MainMenuRetVal::Online => {
                     show_dialog(Dialog::from(OnlineMenuDialog));
                 }
@@ -621,7 +651,7 @@ pub fn App() -> impl IntoView {
             RetVal::Auth(ret_val) => match ret_val {
                 AuthRetVal::ViewOnly => {}
                 AuthRetVal::Submit(passcode) => {
-                    let Some(id) = GameId::from_base62(game_id.get().as_bytes()) else {
+                    let GameKind::Online(id) = game_kind.get() else {
                         return;
                     };
 
@@ -683,7 +713,12 @@ pub fn App() -> impl IntoView {
                             record.write().make_move(Move::Resign(resigned_stone));
                         }
                     }
-                    Confirm::ConnClosed(_) => set_game_id(&game_id.get()),
+                    Confirm::ConnClosed(_) => {
+                        let init_msg = ws_state.read().as_ref().map(|s| s.init_msg);
+                        if let Some(init_msg) = init_msg {
+                            connect(init_msg);
+                        }
+                    }
                     Confirm::Error(_) => set_game_id(""),
                 }
             }
@@ -704,10 +739,10 @@ pub fn App() -> impl IntoView {
     let handle_hashchange = window_event_listener(ev::hashchange, move |_| on_hash_change());
 
     let handle_storage = window_event_listener(ev::storage, move |ev| {
-        if *game_id.read() == "local"
+        if game_kind.get() == GameKind::Local
             && ev.key().as_deref() == Some(STORAGE_KEY_RECORD)
             && let Some(rec) = ev.new_value()
-            && let Ok(rec) = BASE64.decode(rec)
+            && let Ok(rec) = BASE64_STD.decode(rec)
             && let Some(rec) = Record::decode(&mut &rec[..])
         {
             record.set(rec);
@@ -725,7 +760,7 @@ pub fn App() -> impl IntoView {
             stone=stone
             disabled=move || !dialog_entries.read().is_empty()
             pending=move || online() && options.get().is_none()
-            analyzing=move || game_id.read().starts_with(ANALYZE_PREFIX)
+            replaying=move || game_kind.get() == GameKind::Record
             on_event=on_event
             tentatives_pos=tentatives_pos
             win_claim=win_claim

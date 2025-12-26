@@ -22,7 +22,7 @@ fn test_delta_encoding_roundtrip() {
         }
 
         // Encode
-        let encoded = record.encode_to_vec(RecordEncodingScheme::all().delta());
+        let encoded = record.encode_to_vec(RecordEncodingScheme::all());
 
         // Decode
         let decoded = Record::decode(&mut encoded.as_slice()).expect("Failed to decode");
@@ -48,7 +48,7 @@ fn test_delta_encoding_all_types() {
     assert!(record.make_move(Move::Draw));
 
     // Encode/Decode
-    let encoded = record.encode_to_vec(RecordEncodingScheme::all().delta());
+    let encoded = record.encode_to_vec(RecordEncodingScheme::all());
     let decoded = Record::decode(&mut encoded.as_slice()).expect("Failed to decode");
     assert_eq!(record.moves(), decoded.moves());
 
@@ -57,7 +57,7 @@ fn test_delta_encoding_all_types() {
     assert!(record.make_move(Move::Place(Point::new(0, 0), None)));
     assert!(record.make_move(Move::Resign(Stone::White)));
 
-    let encoded = record.encode_to_vec(RecordEncodingScheme::all().delta());
+    let encoded = record.encode_to_vec(RecordEncodingScheme::all());
     let decoded = Record::decode(&mut encoded.as_slice()).expect("Failed to decode");
     assert_eq!(record.moves(), decoded.moves());
 }
@@ -74,7 +74,7 @@ fn test_delta_encoding_single_place_mid_game() {
     let m = Move::Place(Point::new(2, 2), Some(Point::new(2, 3)));
     assert!(record.make_move(m));
 
-    let encoded = record.encode_to_vec(RecordEncodingScheme::all().delta());
+    let encoded = record.encode_to_vec(RecordEncodingScheme::all());
     let decoded = Record::decode(&mut encoded.as_slice()).expect("Failed to decode");
     assert_eq!(record.moves(), decoded.moves());
 }
@@ -121,7 +121,7 @@ fn test_delta_encoding_win_all_directions() {
             dir
         );
 
-        let encoded = record.encode_to_vec(RecordEncodingScheme::all().delta());
+        let encoded = record.encode_to_vec(RecordEncodingScheme::all());
         let decoded = Record::decode(&mut encoded.as_slice()).expect("Failed to decode");
 
         assert_eq!(

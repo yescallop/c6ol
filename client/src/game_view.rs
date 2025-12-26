@@ -43,7 +43,6 @@ const DIST_FOR_SWIPE_GESTURE: f64 = 100.0; // ~2.65cm
 const LONG_PRESS_MENU_TIMEOUT: Duration = Duration::from_millis(800);
 
 const BUTTON_MAIN: i16 = 0;
-const BUTTON_AUXILIARY: i16 = 1;
 
 /// Represents `pointerId`, `offsetX` and `offsetY` fields
 /// of a `PointerEvent` or `MouseEvent`.
@@ -139,8 +138,6 @@ struct State {
     pointer_state: PointerState,
     // Open a game menu after a long press of duration `LONG_PRESS_MENU_TIMEOUT`.
     long_press_handle: Option<TimeoutHandle>,
-    // Click wheel button to toggle review mode.
-    reviewing: bool,
 }
 
 impl State {
@@ -263,7 +260,7 @@ pub fn GameView(
     stone: Memo<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
     pending: impl Fn() -> bool + Send + Sync + 'static,
-    analyzing: impl Fn() -> bool + Copy + 'static,
+    replaying: impl Fn() -> bool + Copy + 'static,
     on_event: impl Fn(Event) + Copy + 'static,
     /// Size of the view.
     ///
@@ -286,10 +283,6 @@ pub fn GameView(
 
     // Non-reactive state.
     let state = StoredValue::<State>::default();
-
-    Effect::new(move || {
-        state.write_value().reviewing = analyzing();
-    });
 
     // Creates a view-board position calculator.
     let calc = move || Calc {
@@ -377,7 +370,7 @@ pub fn GameView(
             return;
         }
 
-        if analyzing() {
+        if replaying() {
             if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
                 tentatives.remove(i);
                 tentatives_pos.set(tentatives);
@@ -423,7 +416,7 @@ pub fn GameView(
     let follow_board_pos_on_down = move |state: &State, dry_run: bool| {
         let p0 = state.board_pos_on_down;
         let (avg_x, avg_y) = state.average_pointer_offsets(|p| p.last);
-        let (p, _) = svg_calc().svg_to_board_pos(avg_x, avg_y);
+        let (p, _out) = svg_calc().svg_to_board_pos(avg_x, avg_y);
 
         let diff = p - p0;
         if diff != Point::ZERO {
@@ -588,7 +581,7 @@ pub fn GameView(
             return;
         }
 
-        if state.with_value(|state| state.reviewing && state.down_pointers.is_empty()) {
+        if replaying() && state.read_value().down_pointers.is_empty() {
             on_event(if ev.delta_y() > 0.0 {
                 Event::Undo
             } else {
@@ -636,8 +629,6 @@ pub fn GameView(
                     set_timeout_with_handle(move || on_event(Event::Menu), LONG_PRESS_MENU_TIMEOUT)
                         .unwrap();
                 state.long_press_handle = Some(handle);
-            } else if ev.button() == BUTTON_AUXILIARY {
-                state.reviewing = !state.reviewing;
             }
         } else if state.down_pointers.len() == 2 && state.pointer_state < PointerState::Pinched {
             state.prev_view_size = view_size.get();
@@ -869,7 +860,10 @@ pub fn GameView(
         let calc = calc();
         let rings = iter::once(p)
             .chain(dir.iter().flat_map(|&d| p.adjacent_iter(d).take(5)))
-            .map(|p| calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder).0)
+            .map(|p| {
+                let (p, _out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                p
+            })
             .map(|p| view! { <circle cx=p.x cy=p.y r=STONE_RADIUS - WIN_RING_WIDTH / 2.0 /> })
             .collect::<Vec<_>>();
         view! {
@@ -920,7 +914,7 @@ pub fn GameView(
                 let circles = iter::once(p1)
                     .chain(p2)
                     .map(|p| {
-                        let (p, _) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
+                        let (p, _out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
                         view! { <circle cx=p.x cy=p.y r=DOT_RADIUS fill=stone_fill(stone.opposite()) /> }
                     })
                     .collect();

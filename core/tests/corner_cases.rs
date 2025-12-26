@@ -43,6 +43,6 @@ fn max_delta() {
     record.make_move(Move::Place(Point::new(-0x3fff, 0x3fff), None));
 
     let mut buf = vec![];
-    record.encode(&mut buf, RecordEncodingScheme::past().delta());
+    record.encode(&mut buf, RecordEncodingScheme::past());
     assert_eq!(Some(record), Record::decode(&mut &buf[..]));
 }

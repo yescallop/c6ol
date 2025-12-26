@@ -219,7 +219,7 @@ impl Message for Request {
 }
 
 /// A client message.
-#[derive(Clone, Debug, EnumDiscriminants)]
+#[derive(Clone, Copy, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(FromRepr), name(ClientMessageKind), repr(u8), vis(pub(self)))]
 pub enum ClientMessage {
     /// Requests to start a new game.

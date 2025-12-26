@@ -102,20 +102,12 @@ impl Direction {
     }
 }
 
-fn zigzag_encode_16(n: i16) -> u16 {
+fn zigzag_encode(n: i16) -> u16 {
     ((n << 1) ^ (n >> 15)) as u16
 }
 
-fn zigzag_decode_16(n: u16) -> i16 {
+fn zigzag_decode(n: u16) -> i16 {
     ((n >> 1) ^ (n & 1).wrapping_neg()) as i16
-}
-
-fn zigzag_encode_32(n: i32) -> u32 {
-    ((n << 1) ^ (n >> 31)) as u32
-}
-
-fn zigzag_decode_32(n: u32) -> i32 {
-    ((n >> 1) ^ (n & 1).wrapping_neg()) as i32
 }
 
 fn szudzik_pair(x: u16, y: u16) -> u32 {
@@ -155,44 +147,20 @@ impl Point {
     /// Maps the point to a natural number.
     #[must_use]
     pub fn index(self) -> u32 {
-        szudzik_pair(zigzag_encode_16(self.x), zigzag_encode_16(self.y))
+        szudzik_pair(zigzag_encode(self.x), zigzag_encode(self.y))
     }
 
     /// Maps a natural number to a point (undoes `index`).
     #[must_use]
     pub fn from_index(i: u32) -> Self {
         let (x, y) = szudzik_unpair(i);
-        Self::new(zigzag_decode_16(x), zigzag_decode_16(y))
+        Self::new(zigzag_decode(x), zigzag_decode(y))
     }
 
-    /// Maps the point to a natural number, with each orbit under the action
-    /// of the dihedral group D_4 mapped to a contiguous block of numbers.
+    /// Maps the point to a natural number, with a set of
+    /// centrosymmetric points mapped to a single number.
     #[must_use]
-    pub fn d4_index(self) -> u32 {
-        let mut n = self.d4_centrosymmetric_index() as i32;
-        if (self.x, self.y) < (0, 0) {
-            n = -n;
-        }
-        zigzag_encode_32(n)
-    }
-
-    /// Maps a natural number to a point (undoes `d4_index`).
-    #[must_use]
-    pub fn from_d4_index(n: u32) -> Option<Self> {
-        let n = zigzag_decode_32(n);
-        let mut p = Self::from_d4_centrosymmetric_index(n.unsigned_abs())?;
-        if n < 0 {
-            p.x = -p.x;
-            p.y = -p.y;
-        }
-        Some(p)
-    }
-
-    /// Maps the point to a natural number, with each orbit under the action
-    /// of the dihedral group D_4 mapped to a contiguous block of numbers,
-    /// and a set of centrosymmetric points mapped to a single number.
-    #[must_use]
-    pub fn d4_centrosymmetric_index(self) -> u32 {
+    pub fn centrosymmetric_index(self) -> u32 {
         let (x, y) = (self.x as i32, self.y as i32);
         let u = x.unsigned_abs();
         let v = y.unsigned_abs();
@@ -212,9 +180,9 @@ impl Point {
     }
 
     /// Maps a natural number to a point, the lexicographically greater one in
-    /// a set of centrosymmetric points (undoes `d4_centrosymmetric_index`).
+    /// a set of centrosymmetric points (undoes `centrosymmetric_index`).
     #[must_use]
-    pub fn from_d4_centrosymmetric_index(n: u32) -> Option<Self> {
+    pub fn from_centrosymmetric_index(n: u32) -> Option<Self> {
         const MAX_N: u32 = 2 * 0x8000 * 0x8000 - 2 * 0x8000;
 
         if n == 0 {
@@ -458,7 +426,7 @@ impl Move {
             if let Some(p2) = p2 {
                 let shape = p2 - p1;
                 assert_ne!(shape, Point::ZERO);
-                writer.write_u32_varint(shape.d4_centrosymmetric_index());
+                writer.write_u32_varint(shape.centrosymmetric_index());
             } else {
                 writer.write_u3(0);
                 writer.write_u3(MOVE_PLACE_SINGLE as u8);
@@ -468,7 +436,7 @@ impl Move {
             let delta_origin = new_origin - *origin;
             *origin = new_origin;
 
-            writer.write_u32_varint(delta_origin.d4_index());
+            writer.write_u32_varint(delta_origin.index());
             return;
         }
 
@@ -490,7 +458,7 @@ impl Move {
                 writer.write_u3(dir as u8);
 
                 let delta = third - *origin;
-                writer.write_u32_varint(delta.d4_index());
+                writer.write_u32_varint(delta.index());
             }
             Self::Draw => {
                 writer.write_u3(MOVE_DRAW as u8);
@@ -502,17 +470,9 @@ impl Move {
         }
     }
 
-    fn decode_delta(
-        reader: &mut NibbleReader<'_, '_>,
-        origin: &mut Point,
-        first: bool,
-    ) -> Option<Self> {
+    fn decode_delta(reader: &mut NibbleReader<'_, '_>, origin: &mut Point) -> Option<Self> {
         let x = reader.read_u32_varint()?;
         if x == 0 {
-            if first && !reader.has_remaining() {
-                return Some(Self::Place(Point::ZERO, None));
-            }
-
             let kind = reader.read_u32_varint()?;
             Some(match kind {
                 MOVE_PASS => Self::Pass,
@@ -523,7 +483,7 @@ impl Move {
                     }
 
                     let n = reader.read_u32_varint()?;
-                    let delta = Point::from_d4_index(n)?;
+                    let delta = Point::from_index(n);
 
                     let third = origin.checked_add(delta)?;
                     let first = third.checked_add(dir.offset(-2))?;
@@ -533,7 +493,7 @@ impl Move {
                 MOVE_RESIGN => Self::Resign(Stone::from_u8(reader.read_u3()?)?),
                 MOVE_PLACE_SINGLE => {
                     let n = reader.read_u32_varint()?;
-                    let delta_origin = Point::from_d4_index(n)?;
+                    let delta_origin = Point::from_index(n);
 
                     *origin = origin.checked_add(delta_origin)?;
                     Self::Place(*origin, None)
@@ -541,10 +501,10 @@ impl Move {
                 _ => return None,
             })
         } else {
-            let shape = Point::from_d4_centrosymmetric_index(x)?;
+            let shape = Point::from_centrosymmetric_index(x)?;
 
             let n = reader.read_u32_varint()?;
-            let delta_origin = Point::from_d4_index(n)?;
+            let delta_origin = Point::from_index(n);
 
             *origin = origin.checked_add(delta_origin)?;
 
@@ -584,19 +544,19 @@ pub fn turn_at(index: usize) -> Stone {
 /// Scheme to encode a game record with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecordEncodingScheme {
-    /// Whether to include all moves prefixed with the current move index.
+    /// Whether to include all moves, past and future.
     pub all: bool,
     /// Whether to enable delta encoding.
     pub delta: bool,
 }
 
 impl RecordEncodingScheme {
-    /// Returns the default scheme for encoding all moves.
+    /// Returns the default scheme for encoding all moves, past and future.
     #[must_use]
     pub fn all() -> Self {
         Self {
             all: true,
-            delta: false,
+            delta: true,
         }
     }
 
@@ -605,15 +565,8 @@ impl RecordEncodingScheme {
     pub fn past() -> Self {
         Self {
             all: false,
-            delta: false,
+            delta: true,
         }
-    }
-
-    /// Enables delta encoding.
-    #[must_use]
-    pub fn delta(mut self) -> Self {
-        self.delta = true;
-        self
     }
 
     /// Encodes the scheme to a `u8`.
@@ -667,7 +620,7 @@ impl Record {
         self.moves.truncate(self.index);
     }
 
-    /// Returns a slice of all moves, in the past or in the future.
+    /// Returns a slice of all moves, past and future.
     #[must_use]
     pub fn moves(&self) -> &[Move] {
         &self.moves
@@ -891,11 +844,6 @@ impl Record {
                 &self.moves[..self.index]
             };
 
-            if let [Move::Place(Point::ZERO, None)] = moves {
-                writer.write_u3(0);
-                return;
-            }
-
             if let [Move::Place(Point::ZERO, None), Move::Place(_, Some(_)), ..] = moves {
                 moves = &moves[1..];
             }
@@ -949,10 +897,9 @@ impl Record {
             let mut origin = Point::ZERO;
 
             while reader.has_remaining() {
-                let first = !record.has_past();
-                let mov = Move::decode_delta(&mut reader, &mut origin, first)?;
+                let mov = Move::decode_delta(&mut reader, &mut origin)?;
 
-                if first
+                if !record.has_past()
                     && let Move::Place(_, Some(_)) = mov
                     && !record.make_move(Move::Place(Point::ZERO, None))
                 {

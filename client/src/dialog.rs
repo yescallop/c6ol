@@ -1,4 +1,4 @@
-use crate::{ANALYZE_PREFIX, BASE64, Confirm, WinClaim};
+use crate::{BASE64_URL, Confirm, GameKind, RECORD_PREFIX, WinClaim};
 use base64::Engine;
 use c6ol_core::{
     game::{Move, Record, RecordEncodingScheme, Stone},
@@ -104,7 +104,7 @@ pub struct MainMenuDialog;
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub enum MainMenuRetVal {
     #[default]
-    Offline,
+    Local,
     Online,
 }
 
@@ -115,8 +115,8 @@ impl DialogImpl for MainMenuDialog {
         view! {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
-                <button>"Play Offline"</button>
-                <button value=ret!(Online)>"Play Online"</button>
+                <button>"Local Play"</button>
+                <button value=ret!(Online)>"Online Play"</button>
                 <a target="_blank" href="https://github.com/yescallop/c6ol">
                     <button type="button">"Source Code"</button>
                 </a>
@@ -204,7 +204,7 @@ impl DialogImpl for OnlineMenuDialog {
         };
 
         view! {
-            <p class="title">"Play Online"</p>
+            <p class="title">"Online Play"</p>
             <div class="radio-group">
                 <input
                     type="radio"
@@ -263,7 +263,7 @@ impl DialogImpl for AuthDialog {
 
 #[derive(Clone)]
 pub struct GameMenuDialog {
-    pub game_id: ReadSignal<String>,
+    pub game_kind: ReadSignal<GameKind>,
     pub stone: Memo<Option<Stone>>,
     pub online: bool,
     pub player: ReadSignal<Option<Player>>,
@@ -297,7 +297,7 @@ impl DialogImpl for GameMenuDialog {
 
     fn contents(self) -> impl IntoView {
         let Self {
-            game_id,
+            game_kind,
             stone,
             online,
             player,
@@ -306,27 +306,27 @@ impl DialogImpl for GameMenuDialog {
             requests,
         } = self;
 
+        let alt_pushed = RwSignal::new(false);
+
         let info_view = view! {
             {move || {
-                let id = game_id.read();
-                if id.is_empty() {
-                    Either::Left("Pending")
-                } else if *id == "local" {
-                    Either::Left("Offline")
-                } else if id.starts_with(ANALYZE_PREFIX) {
-                    Either::Left("Analyzing")
-                } else {
-                    let href = format!("#{id}");
-                    Either::Right(
-                        view! {
-                            <a href=href>{id.clone()}</a>
-                            <br />
-                            {move || match stone.get() {
-                                Some(stone) => format!("Playing {stone:?}"),
-                                None => "View Only".into(),
-                            }}
-                        },
-                    )
+                match game_kind.get() {
+                    GameKind::Pending => Either::Left("Pending"),
+                    GameKind::Local => Either::Left("Local"),
+                    GameKind::Record => Either::Left("Record"),
+                    GameKind::Online(id) => {
+                        let href = format!("#{id}");
+                        Either::Right(
+                            view! {
+                                <a href=href>{id.to_string()}</a>
+                                <br />
+                                {move || match stone.get() {
+                                    Some(stone) => format!("Playing {stone:?}"),
+                                    None => "View Only".into(),
+                                }}
+                            },
+                        )
+                    }
                 }
             }}
             <br />
@@ -359,17 +359,26 @@ impl DialogImpl for GameMenuDialog {
                 target="_blank"
                 href=move || {
                     let mut buf = vec![];
-                    record.read().encode(&mut buf, RecordEncodingScheme::past());
-                    format!("#{ANALYZE_PREFIX}{}", BASE64.encode(buf))
+                    let scheme = if alt_pushed.get() && record.read().has_future() {
+                        RecordEncodingScheme::all()
+                    } else {
+                        RecordEncodingScheme::past()
+                    };
+                    record.read().encode(&mut buf, scheme);
+                    format!("#{RECORD_PREFIX}{}", BASE64_URL.encode(buf))
                 }
             >
-                "Analyze"
+                {move || {
+                    if alt_pushed.get() && record.read().has_future() {
+                        "Export with Future"
+                    } else {
+                        "Export"
+                    }
+                }}
             </a>
         };
 
         let ctrl_view = move || {
-            let alt_pushed = RwSignal::new(false);
-
             let alt_btn = move |pushed: bool| {
                 view! {
                     <button
@@ -516,7 +525,7 @@ impl DialogImpl for GameMenuDialog {
         };
 
         let maybe_auth_btn_or_ctrl_view = move || {
-            if game_id.read().is_empty() {
+            if game_kind.get() == GameKind::Pending {
                 EitherOf3::A(())
             } else if online && player.get().is_none() {
                 EitherOf3::B(view! { <button value=ret!(Auth)>"Authenticate"</button> })

@@ -10,10 +10,10 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 
 - **Easy Setup:** Submit a passcode to start a game. Then send a link to your friend, who submits a different passcode to join the game.
 - **Infinite Board:** The board is 32,767x32,767 in size, with drag & zoom support. Generally[^1], you never worry about hitting the border.
-- **Analysis (Permanent Link):** Click *Analyze* in the game menu to open a copy of the game in a new tab for analysis. Right click or long press to copy a permanent link. Feel free to share it with others or save it for your collection!
+- **Export Permanent Link:** Click *Export* in the game menu to open a copy of the game in a new tab for analysis. Right click or long press to copy a permanent link. Feel free to share it with others or save it for your collection!
 - **Requests:** Request your opponent to retract the previous move or reset the game (clear the stones and optionally swap colors), or offer a draw (why do this when you have infinite space and time?).
 - **Manual Claim of Win:** Watch your friend not notice their six-in-a-row and win before them!
-- **Offline Play:** You can choose to play offline. An offline game is saved in the browser's local storage.
+- **Local Play:** You can choose to play locally. A local game is saved in the browser's local storage.
 - **Keyboard Control:** It's possible to control the app with keyboard only.
 
 [^1]: It is good sportsmanship to start near the center and to place stones near existing ones.
