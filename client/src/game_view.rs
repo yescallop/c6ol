@@ -255,7 +255,7 @@ fn stone_fill(stone: Stone) -> &'static str {
 ///
 /// All `Point`s in the props are board positions.
 #[component]
-pub fn GameView(
+pub(crate) fn GameView(
     record: RwSignal<Record>,
     stone: Memo<Option<Stone>>,
     disabled: impl Fn() -> bool + Send + Sync + 'static,
