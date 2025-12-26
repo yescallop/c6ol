@@ -6,10 +6,6 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 [Leptos]: https://github.com/leptos-rs/leptos
 [axum]: https://github.com/tokio-rs/axum
 
-## Play Now
-
-An official instance is hosted [here](https://c6.zhixia.dev/). Please refrain from sending automatic requests without prior notice. Games idle for more than 30 days are subject to removal.
-
 ## Features
 
 - **Easy Setup:** Submit a passcode to start a game. Then send a link to your friend, who submits a different passcode to join the game.
