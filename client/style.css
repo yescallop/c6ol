@@ -90,6 +90,12 @@ button {
   margin-bottom: 5px;
 }
 
+/* Work around the unexpected gap on Chrome Desktop. */
+.menu-btn-group>a {
+  display: flex;
+  text-decoration: none;
+}
+
 .radio-group {
   margin-bottom: 5px;
   display: flex;
