@@ -86,7 +86,7 @@ enum WinClaim {
 
 const STORAGE_KEY_RECORD: &str = "record";
 const RECORD_PREFIX_LEGACY: &str = "analyze,";
-const RECORD_PREFIX: &str = "rec,";
+const RECORD_PREFIX: &str = "r=";
 
 #[derive(Clone)]
 struct DialogEntry {

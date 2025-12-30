@@ -359,22 +359,11 @@ impl DialogImpl for GameMenuDialog {
                 target="_blank"
                 href=move || {
                     let mut buf = vec![];
-                    let scheme = if alt_pushed.get() && record.read().has_future() {
-                        RecordEncodingScheme::all()
-                    } else {
-                        RecordEncodingScheme::past()
-                    };
-                    record.read().encode(&mut buf, scheme);
+                    record.read().encode(&mut buf, RecordEncodingScheme::past());
                     format!("#{RECORD_PREFIX}{}", BASE64_URL.encode(buf))
                 }
             >
-                {move || {
-                    if alt_pushed.get() && record.read().has_future() {
-                        "Export with Future"
-                    } else {
-                        "Export"
-                    }
-                }}
+                "Export"
             </a>
         };
 

@@ -2,12 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <link data-trunk rel="copy-file" href="/icon.svg"/>
-    <link rel="icon" href="/icon.svg">
-    <link data-trunk rel="copy-file" href="/manifest.json"/>
-    <link rel="manifest" href="/manifest.json" />
-    <link data-trunk rel="css" href="/style.css">
-    <link data-trunk rel="rust" data-wasm-opt="z" data-wasm-opt-params="--enable-nontrapping-float-to-int --enable-bulk-memory" data-cargo-profile-release="release-wasm" />
+    <link data-trunk rel="icon" href="/icon.svg" data-target-path="assets">
+    <!-- <link data-trunk rel="copy-file" href="/manifest.json"/> -->
+    <!-- <link rel="manifest" href="/manifest.json" /> -->
+    <link data-trunk rel="css" href="/style.css" data-target-path="assets">
+    <link data-trunk rel="rust" data-wasm-opt="z" data-wasm-opt-params="--enable-nontrapping-float-to-int --enable-bulk-memory" data-cargo-profile-release="release-wasm" data-target-path="assets" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#fc6" />
     <title>Connect6</title>
