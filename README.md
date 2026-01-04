@@ -33,7 +33,7 @@ A web app for playing [Connect6] games online, built with Rust frameworks [Lepto
 
 ## Setup (Linux)
 
-Install Rust 1.88+ and [Trunk](https://trunkrs.dev/). To develop, run:
+Install Rust 1.88+ and Node.js. To develop, run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol
@@ -43,14 +43,16 @@ cd server
 cargo run
 # In another:
 cd client
-trunk serve --open
+npm install
+npm run dev
 ```
 
 To build for deployment, run:
 
 ```sh
 cd client
-trunk build --release
+npm install
+npm run build
 cd ../server
 cargo build --release
 cd ..

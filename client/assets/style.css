@@ -149,4 +149,6 @@ button {
 
   /* Avoid selecting the element on WebKit. */
   -webkit-user-select: none;
+  /* For completeness, not required. */
+  user-select: none;
 }
