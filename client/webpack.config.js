@@ -11,137 +11,150 @@ function getHash(content) {
   return crypto.createHash('md5').update(content).digest('hex').slice(0, 20);
 }
 
-export default {
-  entry: {
-    'c6ol-client': './assets/entry.js',
-  },
-  output: {
-    filename: 'assets/[name]-[contenthash].js',
-    path: path.join(import.meta.dirname, 'dist'),
-    clean: true,
-    library: {
-      type: 'module',
+export default (env, argv) => {
+  const isProduction = argv.mode === 'production';
+  let srcHash = '[contenthash]';
+
+  if (isProduction) {
+    try {
+      srcHash = fs.readFileSync('pkg/src_hash.txt', 'utf8').trim().slice(0, 20);
+    } catch (e) {
+      console.warn('Could not read pkg/src_hash.txt, falling back to [contenthash]');
+    }
+  }
+
+  return {
+    entry: {
+      'c6ol-client': './assets/entry.js',
     },
-    assetModuleFilename: 'assets/[name]-[contenthash][ext]'
-  },
-  module: {
-    rules: [
-      {
-        test: /\.css$/i,
-        use: [MiniCssExtractPlugin.loader, 'css-loader'],
+    output: {
+      filename: isProduction ? `assets/[name]-${srcHash}.js` : 'assets/[name].js',
+      path: path.join(import.meta.dirname, 'dist'),
+      clean: true,
+      library: {
+        type: 'module',
       },
-      {
-        test: /\.wasm$/i,
-        type: 'asset/resource',
-      },
-    ],
-  },
-  plugins: [
-    new HtmlWebpackPlugin({
-      template: "index.html",
-      inject: false,
-    }),
-    new MiniCssExtractPlugin({
-      filename: 'assets/style-[contenthash].css',
-    }),
-    new CopyWebpackPlugin({
-      patterns: [
+      assetModuleFilename: isProduction ? `assets/[name]-${srcHash}[ext]` : 'assets/[name][ext]'
+    },
+    module: {
+      rules: [
         {
-          from: "assets/manifest.json",
-          to: () => "assets/[name]-[contenthash][ext]",
-          transform(content) {
-            const manifest = JSON.parse(content.toString());
-            const iconContent = fs.readFileSync('assets/icon.svg');
-            const iconHash = getHash(iconContent);
-            manifest.icons[0].src = `/assets/icon-${iconHash}.svg`;
-            return JSON.stringify(manifest);
-          }
+          test: /\.css$/i,
+          use: [MiniCssExtractPlugin.loader, 'css-loader'],
         },
         {
-          from: "assets/icon.svg",
-          to: () => {
-            const content = fs.readFileSync('assets/icon.svg');
-            const hash = getHash(content);
-            return `assets/icon-${hash}.svg`;
-          }
-        }
+          test: /\.wasm$/i,
+          type: 'asset/resource',
+        },
       ],
-    }),
-    {
-      apply: (compiler) => {
-        compiler.hooks.afterCompile.tap('WatchRust', (compilation) => {
-          compilation.contextDependencies.add(path.resolve(import.meta.dirname, 'src'));
-        });
+    },
+    plugins: [
+      new HtmlWebpackPlugin({
+        template: "index.html",
+        inject: false,
+      }),
+      new MiniCssExtractPlugin({
+        filename: isProduction ? 'assets/style-[contenthash].css' : 'assets/style.css',
+      }),
+      new CopyWebpackPlugin({
+        patterns: [
+          {
+            from: "assets/manifest.json",
+            to: () => "assets/[name]-[contenthash][ext]",
+            transform(content) {
+              const manifest = JSON.parse(content.toString());
+              const iconContent = fs.readFileSync('assets/icon.svg');
+              const iconHash = getHash(iconContent);
+              manifest.icons[0].src = `/assets/icon-${iconHash}.svg`;
+              return JSON.stringify(manifest);
+            }
+          },
+          {
+            from: "assets/icon.svg",
+            to: () => {
+              const content = fs.readFileSync('assets/icon.svg');
+              const hash = getHash(content);
+              return `assets/icon-${hash}.svg`;
+            }
+          }
+        ],
+      }),
+      {
+        apply: (compiler) => {
+          compiler.hooks.afterCompile.tap('WatchRust', (compilation) => {
+            compilation.contextDependencies.add(path.resolve(import.meta.dirname, 'src'));
+          });
 
-        compiler.hooks.watchRun.tapAsync('BuildRust', (params, callback) => {
-          const modifiedFiles = params.modifiedFiles;
-          let rustChanged = false;
-          const srcDir = path.resolve(import.meta.dirname, 'src');
+          compiler.hooks.watchRun.tapAsync('BuildRust', (params, callback) => {
+            const modifiedFiles = params.modifiedFiles;
+            let rustChanged = false;
+            const srcDir = path.resolve(import.meta.dirname, 'src');
 
-          if (modifiedFiles) {
-            for (const file of modifiedFiles) {
-              if (file.startsWith(srcDir)) {
-                if (file.endsWith('.rs') || file === srcDir) {
-                  rustChanged = true;
-                  break;
+            if (modifiedFiles) {
+              for (const file of modifiedFiles) {
+                if (file.startsWith(srcDir)) {
+                  if (file.endsWith('.rs') || file === srcDir) {
+                    rustChanged = true;
+                    break;
+                  }
                 }
               }
             }
-          }
 
-          if (rustChanged) {
-            const build = spawn('./build.sh dev', [], { stdio: 'inherit', shell: true });
+            if (rustChanged) {
+              const build = spawn('./build.sh dev', [], { stdio: 'inherit', shell: true });
 
-            build.on('error', (err) => {
-              console.error('Failed to start build script:', err);
+              build.on('error', (err) => {
+                console.error('Failed to start build script:', err);
+                callback();
+              });
+
+              build.on('close', (code) => {
+                if (code === 0) {
+                  console.log('Rust build successful.');
+                } else {
+                  console.error(`Rust build failed with code ${code}`);
+                }
+                callback();
+              });
+            } else {
               callback();
-            });
-
-            build.on('close', (code) => {
-              if (code === 0) {
-                console.log('Rust build successful.');
-              } else {
-                console.error(`Rust build failed with code ${code}`);
-              }
-              callback();
-            });
-          } else {
-            callback();
-          }
-        });
+            }
+          });
+        }
       }
-    }
-  ],
-  experiments: {
-    outputModule: true,
-  },
-  optimization: {
-    minimizer: [
-      '...',
-      new CssMinimizerPlugin(),
     ],
-  },
-  performance: {
-    maxAssetSize: 512000
-  },
-  devServer: {
-    port: 8080,
-    proxy: [
-      {
-        context: ['/ws'],
-        target: 'ws://localhost:8086',
-        ws: true,
+    experiments: {
+      outputModule: true,
+    },
+    optimization: {
+      minimizer: [
+        '...',
+        new CssMinimizerPlugin(),
+      ],
+    },
+    performance: {
+      maxAssetSize: 512000
+    },
+    devServer: {
+      port: 8080,
+      proxy: [
+        {
+          context: ['/ws'],
+          target: 'ws://localhost:8086',
+          ws: true,
+        },
+      ],
+      client: {
+        webSocketURL: {
+          pathname: '/webpack-ws',
+        },
       },
-    ],
-    client: {
-      webSocketURL: {
-        pathname: '/webpack-ws',
+      webSocketServer: {
+        options: {
+          path: '/webpack-ws',
+        },
       },
     },
-    webSocketServer: {
-      options: {
-        path: '/webpack-ws',
-      },
-    },
-  },
+  };
 };

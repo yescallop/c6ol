@@ -1,8 +1,13 @@
 use crate::{db, game, shutdown, ws};
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    http::{HeaderValue, header},
+    routing::get,
+};
 use std::{iter, path::PathBuf};
 use tokio::{net::TcpListener, task::JoinSet};
-use tower_http::services::ServeDir;
+use tower::ServiceBuilder;
+use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer};
 
 /// Shared state for WebSocket handlers.
 #[derive(Clone)]
@@ -48,6 +53,15 @@ pub async fn run(
         .with_state(app_state);
 
     if let Some(path) = serve_dir {
+        app = app.nest_service(
+            "/assets",
+            ServiceBuilder::new()
+                .layer(SetResponseHeaderLayer::overriding(
+                    header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, immutable"),
+                ))
+                .service(ServeDir::new(path.join("assets"))),
+        );
         app = app.fallback_service(ServeDir::new(path));
     }
 
