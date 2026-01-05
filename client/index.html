@@ -1,7 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
   <head>
-    <meta charset="UTF-8" />
+    <meta charset="utf-8">
+    <title>Connect6</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#fc6">
     <% 
       var manifestFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/manifest') && k.endsWith('.json'));
       var iconFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/icon') && k.endsWith('.svg'));
@@ -13,7 +16,7 @@
     <link rel="icon" sizes="any" href="/<%= iconFile %>">
     <% } %>
     <% if (manifestFile) { %>
-    <link rel="manifest" href="/<%= manifestFile %>" />
+    <link rel="manifest" href="/<%= manifestFile %>">
     <% } %>
     <% if (cssFile) { %>
     <link rel="stylesheet" href="/<%= cssFile %>">
@@ -21,9 +24,6 @@
     <% if (wasmFile) { %>
     <link rel="preload" href="/<%= wasmFile %>" as="fetch" type="application/wasm" crossorigin>
     <% } %>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#fc6" />
-    <title>Connect6</title>
     <script type="module">
       import init from '/<%= jsFile %>';await init()
     </script>
