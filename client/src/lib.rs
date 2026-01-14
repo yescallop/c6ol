@@ -145,14 +145,10 @@ pub fn App() -> impl IntoView {
     let requests = RwSignal::new(PlayerSlots::<Option<Request>>::default());
     let options = RwSignal::new(None::<GameOptions>);
 
-    let stone = Memo::new(move |_| {
-        if let Some(player) = player.get()
-            && let Some(options) = options.get()
-        {
-            Some(options.stone_of(player))
-        } else {
-            record.read().turn()
-        }
+    let stone = Memo::new(move |_| match game_kind.get() {
+        GameKind::Pending => None,
+        GameKind::Local | GameKind::Record => record.read().turn(),
+        GameKind::Online(_) => Some(options.get()?.stone_of(player.get()?)),
     });
 
     let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
