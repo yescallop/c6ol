@@ -13,28 +13,19 @@ function getHash(content) {
 
 export default (env, argv) => {
   const isProduction = argv.mode === 'production';
-  let srcHash = '[contenthash]';
-
-  if (isProduction) {
-    try {
-      srcHash = fs.readFileSync('pkg/src_hash.txt', 'utf8').trim().slice(0, 20);
-    } catch (e) {
-      console.warn('Could not read pkg/src_hash.txt, falling back to [contenthash]');
-    }
-  }
 
   return {
     entry: {
       'c6ol-client': './assets/entry.js',
     },
     output: {
-      filename: isProduction ? `assets/[name]-${srcHash}.js` : 'assets/[name].js',
+      filename: isProduction ? `assets/[name]-[contenthash].js` : 'assets/[name].js',
       path: path.join(import.meta.dirname, 'dist'),
       clean: true,
       library: {
         type: 'module',
       },
-      assetModuleFilename: isProduction ? `assets/[name]-${srcHash}[ext]` : 'assets/[name][ext]'
+      assetModuleFilename: isProduction ? `assets/[name]-[contenthash][ext]` : 'assets/[name][ext]'
     },
     module: {
       rules: [
