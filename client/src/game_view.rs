@@ -1063,8 +1063,8 @@ pub(crate) fn GameView(
                 </g>
                 // Draw the board origin.
                 {move || {
-                    let p = calc().board_to_view_pos(Point::ZERO)?;
                     if record.read().stone_at(Point::ZERO).is_none() {
+                        let p = calc().board_to_view_pos(Point::ZERO)?;
                         Some(view! { <circle cx=p.x cy=p.y r=DOT_RADIUS fill="black" /> })
                     } else {
                         None

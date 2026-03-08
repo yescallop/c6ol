@@ -123,7 +123,7 @@ fn history_push_state(url: &str) {
 
 const RECONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum GameKind {
     Pending,
     Local,
