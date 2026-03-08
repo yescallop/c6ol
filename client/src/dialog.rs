@@ -9,7 +9,6 @@ use leptos::{
     html,
     prelude::*,
 };
-use serde::{Deserialize, Serialize};
 
 trait DialogImpl {
     type RetVal;
@@ -23,7 +22,9 @@ trait DialogImpl {
 
 macro_rules! ret {
     ($($val:tt)+) => {
-        ron::to_string(&Self::RetVal::$($val)+).unwrap()
+        move |_| use_context::<StoredValue<RetVal>>()
+            .unwrap()
+            .set_value(RetVal::from(Self::RetVal::$($val)+))
     };
 }
 
@@ -54,6 +55,14 @@ macro_rules! dialogs {
                 )+
             }
 
+            $(
+                impl From<[<$name RetVal>]> for RetVal {
+                    fn from(ret_val: [<$name RetVal>]) -> Self {
+                        Self::$name(ret_val)
+                    }
+                }
+            )+
+
             impl Dialog {
                 pub fn show(self, id: u32, on_return: impl Fn(u32, RetVal) + 'static) -> impl IntoView {
                     let dialog_ref = NodeRef::<html::Dialog>::new();
@@ -62,11 +71,18 @@ macro_rules! dialogs {
                         dialog_ref.get().unwrap().show_modal().unwrap();
                     });
 
-                    let (ret_val_from_str, class, inner_view) = match self {
+                    let default_ret_val = match self {
+                        $(
+                            Dialog::$name(_) => RetVal::$name(Default::default()),
+                        )+
+                    };
+
+                    let ret_val = StoredValue::new(default_ret_val);
+                    provide_context(ret_val);
+
+                    let (class, inner_view) = match self {
                         $(
                             Dialog::$name(dialog) => (
-                                (|s| RetVal::$name(ron::from_str(s).unwrap_or_default()))
-                                    as fn(&str) -> RetVal,
                                 dialog.class(),
                                 $either_type::$either_variant(dialog.contents()),
                             ),
@@ -74,8 +90,7 @@ macro_rules! dialogs {
                     };
 
                     let on_close = move |_| {
-                        let dialog = dialog_ref.get().unwrap();
-                        on_return(id, ret_val_from_str(&dialog.return_value()));
+                        on_return(id, ret_val.into_inner().unwrap());
                     };
 
                     view! {
@@ -101,7 +116,7 @@ dialogs!(EitherOf6 {
 #[derive(Clone)]
 pub struct MainMenuDialog;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
 pub enum MainMenuRetVal {
     #[default]
     Local,
@@ -116,7 +131,7 @@ impl DialogImpl for MainMenuDialog {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
                 <button>"Local Play"</button>
-                <button value=ret!(Online)>"Online Play"</button>
+                <button on:click=ret!(Online)>"Online Play"</button>
                 <a target="_blank" href="https://github.com/yescallop/c6ol">
                     <button type="button">"Source Code"</button>
                 </a>
@@ -128,7 +143,7 @@ impl DialogImpl for MainMenuDialog {
 #[derive(Clone)]
 pub struct OnlineMenuDialog;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
 pub enum OnlineMenuRetVal {
     #[default]
     Cancel,
@@ -171,11 +186,11 @@ impl DialogImpl for OnlineMenuDialog {
                     // TODO: More options.
                     </table>
                     <div class="btn-group reversed">
-                        <button value=move || {
+                        <button on:click=move |_| {
                             let options = GameOptions {
                                 swapped: stone.get() == Stone::White,
                             };
-                            ret!(Start(options))
+                            ret!(Start(options))(());
                         }>"Start"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>
@@ -195,7 +210,7 @@ impl DialogImpl for OnlineMenuDialog {
                         bind:value=game_id
                     />
                     <div class="btn-group reversed">
-                        <button value=move || ret!(Join(game_id.get()))>"Join"</button>
+                        <button on:click=ret!(Join(game_id.get()))>"Join"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>
                 };
@@ -230,7 +245,7 @@ impl DialogImpl for OnlineMenuDialog {
 #[derive(Clone)]
 pub struct AuthDialog;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
 pub enum AuthRetVal {
     #[default]
     ViewOnly,
@@ -254,7 +269,7 @@ impl DialogImpl for AuthDialog {
                 bind:value=passcode
             />
             <div class="btn-group reversed">
-                <button value=move || ret!(Submit(passcode.get()))>"Submit"</button>
+                <button on:click=ret!(Submit(passcode.get()))>"Submit"</button>
                 <button formnovalidate>"View Only"</button>
             </div>
         }
@@ -272,7 +287,7 @@ pub struct GameMenuDialog {
     pub requests: ReadSignal<PlayerSlots<Option<Request>>>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
 pub enum GameMenuRetVal {
     #[default]
     Resume,
@@ -427,7 +442,7 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         {alt_btn(false)}
                         <button
-                            value=ret!(Undo)
+                            on:click=ret!(Undo)
                             disabled=move || { no_past() || req_state!(Retract) >= Made }
                             class:prominent=move || req_state!(Retract) == CanAccept
                             class:pushed=move || req_state!(Retract) == Made
@@ -437,7 +452,7 @@ impl DialogImpl for GameMenuDialog {
                         {(!online)
                             .then(|| {
                                 view! {
-                                    <button value=ret!(Redo) disabled=no_future>
+                                    <button on:click=ret!(Redo) disabled=no_future>
                                         "Redo"
                                     </button>
                                 }
@@ -446,13 +461,13 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         <button
                             class:pushed=move || win_claim.read().is_some()
-                            value=ret!(ClaimWin)
+                            on:click=ret!(ClaimWin)
                             disabled=ended
                         >
                             "Claim Win"
                         </button>
                         <button
-                            value=ret!(Submit)
+                            on:click=ret!(Submit)
                             disabled=move || {
                                 ended()
                                     || (record.read().turn() != stone.get()
@@ -470,7 +485,7 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         {alt_btn(true)}
                         <button
-                            value=ret!(Home)
+                            on:click=ret!(Home)
                             disabled=move || {
                                 (!online && no_past()) || req_state!(Reset { .. }) >= Made
                             }
@@ -482,7 +497,7 @@ impl DialogImpl for GameMenuDialog {
                         {(!online)
                             .then(|| {
                                 view! {
-                                    <button value=ret!(End) disabled=no_future>
+                                    <button on:click=ret!(End) disabled=no_future>
                                         "End"
                                     </button>
                                 }
@@ -490,14 +505,14 @@ impl DialogImpl for GameMenuDialog {
                     </div>
                     <div class="btn-group">
                         <button
-                            value=ret!(Draw)
+                            on:click=ret!(Draw)
                             disabled=move || { ended() || req_state!(Draw) >= Made }
                             class:prominent=move || req_state!(Draw) == CanAccept
                             class:pushed=move || req_state!(Draw) == Made
                         >
                             "Draw"
                         </button>
-                        <button value=ret!(Resign) disabled=ended>
+                        <button on:click=ret!(Resign) disabled=ended>
                             "Resign"
                         </button>
                     </div>
@@ -517,7 +532,9 @@ impl DialogImpl for GameMenuDialog {
             if game_kind.get() == GameKind::Pending {
                 EitherOf3::A(())
             } else if online && player.get().is_none() {
-                EitherOf3::B(view! { <button value=ret!(Auth)>"Authenticate"</button> })
+                EitherOf3::B(
+                    view! { <button on:click=ret!(Auth)>"Authenticate"</button> },
+                )
             } else {
                 EitherOf3::C(ctrl_view())
             }
@@ -527,7 +544,7 @@ impl DialogImpl for GameMenuDialog {
             <p class="title">"Game Menu"</p>
             <p style="font-family: monospace;">{info_view}</p>
             <div class="menu-btn-group">
-                <button value=ret!(MainMenu)>"Main Menu"</button>
+                <button on:click=ret!(MainMenu)>"Main Menu"</button>
                 {maybe_auth_btn_or_ctrl_view}
                 <button autofocus>"Resume"</button>
             </div>
@@ -538,7 +555,7 @@ impl DialogImpl for GameMenuDialog {
 #[derive(Clone)]
 pub struct ConfirmDialog(pub Confirm);
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub enum ConfirmRetVal {
     #[default]
     Cancel,
@@ -626,8 +643,10 @@ impl DialogImpl for ConfirmDialog {
             <p>{message.to_owned()}</p>
             <div class="btn-group">
                 {cancel.map(|s| view! { <button>{s}</button> })}
-                {alt_confirm.map(|s| view! { <button value=ret!(AltConfirm)>{s}</button> })}
-                <button value=ret!(Confirm)>{confirm}</button>
+                {alt_confirm
+                    .map(|s| {
+                        view! { <button on:click=ret!(AltConfirm)>{s}</button> }
+                    })} <button on:click=ret!(Confirm)>{confirm}</button>
             </div>
         }
     }
@@ -639,7 +658,7 @@ pub struct ResetDialog {
     pub old_options: GameOptions,
 }
 
-#[derive(Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub enum ResetRetVal {
     #[default]
     Cancel,
@@ -677,9 +696,9 @@ impl DialogImpl for ResetDialog {
             </p>
             <div class="btn-group">
                 <button>"Cancel"</button>
-                <button value=move || {
+                <button on:click=move |_| {
                     let swapped = self.old_options.swapped ^ (old_stone != new_stone.get());
-                    ret!(Confirm(GameOptions { swapped }))
+                    ret!(Confirm(GameOptions { swapped }))(());
                 }>"Confirm"</button>
             </div>
         }
