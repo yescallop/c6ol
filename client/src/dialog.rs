@@ -10,7 +10,7 @@ use leptos::{
     prelude::*,
 };
 
-trait DialogImpl {
+trait DialogView {
     type RetVal;
 
     fn class(&self) -> Option<&'static str> {
@@ -22,7 +22,7 @@ trait DialogImpl {
 
 macro_rules! ret {
     ($($val:tt)+) => {
-        move |_| use_context::<StoredValue<RetVal>>()
+        use_context::<StoredValue<RetVal>>()
             .unwrap()
             .set_value(RetVal::from(Self::RetVal::$($val)+))
     };
@@ -80,7 +80,7 @@ macro_rules! dialogs {
                     let ret_val = StoredValue::new(default_ret_val);
                     provide_context(ret_val);
 
-                    let (class, inner_view) = match self {
+                    let (class, contents) = match self {
                         $(
                             Dialog::$name(dialog) => (
                                 dialog.class(),
@@ -95,7 +95,7 @@ macro_rules! dialogs {
 
                     view! {
                         <dialog node_ref=dialog_ref class=class on:close=on_close>
-                            <form method="dialog">{inner_view}</form>
+                            <form method="dialog">{contents}</form>
                         </dialog>
                     }
                 }
@@ -123,7 +123,7 @@ pub enum MainMenuRetVal {
     Online,
 }
 
-impl DialogImpl for MainMenuDialog {
+impl DialogView for MainMenuDialog {
     type RetVal = MainMenuRetVal;
 
     fn contents(self) -> impl IntoView {
@@ -131,7 +131,7 @@ impl DialogImpl for MainMenuDialog {
             <p class="title">"Main Menu"</p>
             <div class="menu-btn-group">
                 <button>"Local Play"</button>
-                <button on:click=ret!(Online)>"Online Play"</button>
+                <button on:click=move |_| ret!(Online)>"Online Play"</button>
                 <a target="_blank" href="https://github.com/yescallop/c6ol">
                     <button type="button">"Source Code"</button>
                 </a>
@@ -151,7 +151,7 @@ pub enum OnlineMenuRetVal {
     Join(String),
 }
 
-impl DialogImpl for OnlineMenuDialog {
+impl DialogView for OnlineMenuDialog {
     type RetVal = OnlineMenuRetVal;
 
     fn contents(self) -> impl IntoView {
@@ -190,7 +190,7 @@ impl DialogImpl for OnlineMenuDialog {
                             let options = GameOptions {
                                 swapped: stone.get() == Stone::White,
                             };
-                            ret!(Start(options))(());
+                            ret!(Start(options));
                         }>"Start"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>
@@ -210,7 +210,7 @@ impl DialogImpl for OnlineMenuDialog {
                         bind:value=game_id
                     />
                     <div class="btn-group reversed">
-                        <button on:click=ret!(Join(game_id.get()))>"Join"</button>
+                        <button on:click=move |_| ret!(Join(game_id.get()))>"Join"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>
                 };
@@ -252,7 +252,7 @@ pub enum AuthRetVal {
     Submit(String),
 }
 
-impl DialogImpl for AuthDialog {
+impl DialogView for AuthDialog {
     type RetVal = AuthRetVal;
 
     fn contents(self) -> impl IntoView {
@@ -269,7 +269,7 @@ impl DialogImpl for AuthDialog {
                 bind:value=passcode
             />
             <div class="btn-group reversed">
-                <button on:click=ret!(Submit(passcode.get()))>"Submit"</button>
+                <button on:click=move |_| ret!(Submit(passcode.get()))>"Submit"</button>
                 <button formnovalidate>"View Only"</button>
             </div>
         }
@@ -303,7 +303,7 @@ pub enum GameMenuRetVal {
     Draw,
 }
 
-impl DialogImpl for GameMenuDialog {
+impl DialogView for GameMenuDialog {
     type RetVal = GameMenuRetVal;
 
     fn class(&self) -> Option<&'static str> {
@@ -442,7 +442,7 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         {alt_btn(false)}
                         <button
-                            on:click=ret!(Undo)
+                            on:click=move |_| ret!(Undo)
                             disabled=move || { no_past() || req_state!(Retract) >= Made }
                             class:prominent=move || req_state!(Retract) == CanAccept
                             class:pushed=move || req_state!(Retract) == Made
@@ -452,7 +452,7 @@ impl DialogImpl for GameMenuDialog {
                         {(!online)
                             .then(|| {
                                 view! {
-                                    <button on:click=ret!(Redo) disabled=no_future>
+                                    <button on:click=move |_| ret!(Redo) disabled=no_future>
                                         "Redo"
                                     </button>
                                 }
@@ -461,13 +461,13 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         <button
                             class:pushed=move || win_claim.read().is_some()
-                            on:click=ret!(ClaimWin)
+                            on:click=move |_| ret!(ClaimWin)
                             disabled=ended
                         >
                             "Claim Win"
                         </button>
                         <button
-                            on:click=ret!(Submit)
+                            on:click=move |_| ret!(Submit)
                             disabled=move || {
                                 ended()
                                     || (record.read().turn() != stone.get()
@@ -485,7 +485,7 @@ impl DialogImpl for GameMenuDialog {
                     <div class="btn-group">
                         {alt_btn(true)}
                         <button
-                            on:click=ret!(Home)
+                            on:click=move |_| ret!(Home)
                             disabled=move || {
                                 (!online && no_past()) || req_state!(Reset { .. }) >= Made
                             }
@@ -497,7 +497,7 @@ impl DialogImpl for GameMenuDialog {
                         {(!online)
                             .then(|| {
                                 view! {
-                                    <button on:click=ret!(End) disabled=no_future>
+                                    <button on:click=move |_| ret!(End) disabled=no_future>
                                         "End"
                                     </button>
                                 }
@@ -505,14 +505,14 @@ impl DialogImpl for GameMenuDialog {
                     </div>
                     <div class="btn-group">
                         <button
-                            on:click=ret!(Draw)
+                            on:click=move |_| ret!(Draw)
                             disabled=move || { ended() || req_state!(Draw) >= Made }
                             class:prominent=move || req_state!(Draw) == CanAccept
                             class:pushed=move || req_state!(Draw) == Made
                         >
                             "Draw"
                         </button>
-                        <button on:click=ret!(Resign) disabled=ended>
+                        <button on:click=move |_| ret!(Resign) disabled=ended>
                             "Resign"
                         </button>
                     </div>
@@ -532,9 +532,7 @@ impl DialogImpl for GameMenuDialog {
             if game_kind.get() == GameKind::Pending {
                 EitherOf3::A(())
             } else if online && player.get().is_none() {
-                EitherOf3::B(
-                    view! { <button on:click=ret!(Auth)>"Authenticate"</button> },
-                )
+                EitherOf3::B(view! { <button on:click=move |_| ret!(Auth)>"Authenticate"</button> })
             } else {
                 EitherOf3::C(ctrl_view())
             }
@@ -544,7 +542,7 @@ impl DialogImpl for GameMenuDialog {
             <p class="title">"Game Menu"</p>
             <p style="font-family: monospace;">{info_view}</p>
             <div class="menu-btn-group">
-                <button on:click=ret!(MainMenu)>"Main Menu"</button>
+                <button on:click=move |_| ret!(MainMenu)>"Main Menu"</button>
                 {maybe_auth_btn_or_ctrl_view}
                 <button autofocus>"Resume"</button>
             </div>
@@ -563,7 +561,7 @@ pub enum ConfirmRetVal {
     AltConfirm,
 }
 
-impl DialogImpl for ConfirmDialog {
+impl DialogView for ConfirmDialog {
     type RetVal = ConfirmRetVal;
 
     fn class(&self) -> Option<&'static str> {
@@ -645,8 +643,8 @@ impl DialogImpl for ConfirmDialog {
                 {cancel.map(|s| view! { <button>{s}</button> })}
                 {alt_confirm
                     .map(|s| {
-                        view! { <button on:click=ret!(AltConfirm)>{s}</button> }
-                    })} <button on:click=ret!(Confirm)>{confirm}</button>
+                        view! { <button on:click=move |_| ret!(AltConfirm)>{s}</button> }
+                    })} <button on:click=move |_| ret!(Confirm)>{confirm}</button>
             </div>
         }
     }
@@ -665,7 +663,7 @@ pub enum ResetRetVal {
     Confirm(GameOptions),
 }
 
-impl DialogImpl for ResetDialog {
+impl DialogView for ResetDialog {
     type RetVal = ResetRetVal;
 
     fn class(&self) -> Option<&'static str> {
@@ -698,7 +696,7 @@ impl DialogImpl for ResetDialog {
                 <button>"Cancel"</button>
                 <button on:click=move |_| {
                     let swapped = self.old_options.swapped ^ (old_stone != new_stone.get());
-                    ret!(Confirm(GameOptions { swapped }))(());
+                    ret!(Confirm(GameOptions { swapped }));
                 }>"Confirm"</button>
             </div>
         }
