@@ -273,7 +273,7 @@ pub(crate) fn GameView(
     #[prop(optional)] view_center: RwSignal<Point>,
     #[prop(optional)] cursor_pos: RwSignal<Option<Point>>,
     #[prop(optional)] phantom_pos: RwSignal<Option<Point>>,
-    #[prop(optional)] tentatives_pos: RwSignal<ArrayVec<[Point; 2]>>,
+    #[prop(optional)] tentatives: RwSignal<ArrayVec<[Point; 2]>>,
     #[prop(optional)] win_claim: RwSignal<Option<WinClaim>>,
 ) -> impl IntoView {
     let disabled = Memo::new(move |_| disabled());
@@ -326,7 +326,7 @@ pub(crate) fn GameView(
     // are enough tentative stones, the move is automatically submitted.
     let hit_cursor = move |cursor: Point| {
         let phantom = phantom_pos.get();
-        let mut tentatives = tentatives_pos.get();
+        let mut tent = tentatives.get();
 
         if calc().board_to_view_pos(cursor).is_none() {
             return;
@@ -348,7 +348,7 @@ pub(crate) fn GameView(
 
                     if record
                         .write_untracked()
-                        .with_temp_placements(stone, &tentatives, |record| {
+                        .with_temp_placements(stone, &tent, |record| {
                             record.test_winning_row(p, dir) == Some(cursor)
                         })
                     {
@@ -371,29 +371,29 @@ pub(crate) fn GameView(
         }
 
         if replaying() {
-            if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
-                tentatives.remove(i);
-                tentatives_pos.set(tentatives);
-            } else if tentatives.len() < record.read().max_stones_to_play() {
-                tentatives.push(cursor);
-                tentatives_pos.set(tentatives);
+            if let Some(i) = tent.iter().position(|&p| p == cursor) {
+                tent.remove(i);
+                tentatives.set(tent);
+            } else if tent.len() < record.read().max_stones_to_play() {
+                tent.push(cursor);
+                tentatives.set(tent);
 
-                if tentatives.len() == record.read().max_stones_to_play() {
+                if tent.len() == record.read().max_stones_to_play() {
                     on_event(Event::Submit);
                 }
             }
-        } else if let Some(i) = tentatives.iter().position(|&p| p == cursor) {
-            phantom_pos.set(Some(tentatives.remove(i)));
-            tentatives_pos.set(tentatives);
+        } else if let Some(i) = tent.iter().position(|&p| p == cursor) {
+            phantom_pos.set(Some(tent.remove(i)));
+            tentatives.set(tent);
         } else if phantom == Some(cursor) {
             phantom_pos.set(None);
-            tentatives.push(cursor);
-            tentatives_pos.set(tentatives);
+            tent.push(cursor);
+            tentatives.set(tent);
 
-            if tentatives.len() == record.read().max_stones_to_play() {
+            if tent.len() == record.read().max_stones_to_play() {
                 on_event(Event::Submit);
             }
-        } else if tentatives.len() < record.read().max_stones_to_play() {
+        } else if tent.len() < record.read().max_stones_to_play() {
             phantom_pos.set(Some(cursor));
         }
     };
@@ -807,7 +807,7 @@ pub(crate) fn GameView(
 
         // Clear phantom, tentatives and win claim if the record or the stone changed.
         phantom_pos.set(None);
-        tentatives_pos.set(ArrayVec::new());
+        tentatives.set(ArrayVec::new());
         win_claim.set(None);
     });
 
@@ -965,7 +965,7 @@ pub(crate) fn GameView(
         };
         let calc = calc();
 
-        tentatives_pos
+        tentatives
             .get()
             .iter()
             .filter_map(|&p| calc.board_to_view_pos(p))

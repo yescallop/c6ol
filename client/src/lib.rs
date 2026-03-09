@@ -14,7 +14,10 @@ use c6ol_core::{
 use dialog::*;
 use leptos::{ev, prelude::*};
 use std::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::Duration,
 };
 use tinyvec::ArrayVec;
@@ -50,18 +53,25 @@ macro_rules! console_log {
 pub(crate) use console_log;
 
 #[derive(Clone)]
+enum Submit {
+    Pass,
+    OneAndPass,
+    One,
+    Two,
+}
+
+#[derive(Clone)]
 enum Confirm {
     MainMenu,
-    Submit(Point, Option<Point>),
-    Pass(Option<Point>),
+    Submit(Submit),
     BeginClaim,
-    Claim(ArrayVec<[Point; 2]>, Point, Direction),
+    Claim,
     RequestDraw,
     RequestRetract,
-    Requested(Player, Request),
+    Requested(Request),
     RequestAccepted,
     RequestDeclined,
-    Resign { online: bool },
+    Resign,
     ConnClosed(String),
     Error(String),
 }
@@ -131,12 +141,29 @@ enum GameKind {
     Online(GameId),
 }
 
+impl GameKind {
+    fn is_online(self) -> bool {
+        matches!(self, Self::Online(_))
+    }
+}
+
+struct AppState {
+    record: RwSignal<Record>,
+    tentatives: RwSignal<ArrayVec<[Point; 2]>>,
+    win_claim: RwSignal<Option<WinClaim>>,
+    game_kind: RwSignal<GameKind>,
+    player: RwSignal<Option<Player>>,
+    requests: RwSignal<PlayerSlots<Option<Request>>>,
+    options: RwSignal<Option<GameOptions>>,
+    stone: Memo<Option<Stone>>,
+}
+
 /// Entry-point for the app.
 #[component]
 pub fn App() -> impl IntoView {
     let record = RwSignal::new(Record::new());
 
-    let tentatives_pos = RwSignal::new(ArrayVec::new());
+    let tentatives = RwSignal::new(ArrayVec::new());
     let win_claim = RwSignal::new(None);
 
     let game_kind = RwSignal::new(GameKind::Pending);
@@ -150,6 +177,17 @@ pub fn App() -> impl IntoView {
         GameKind::Local | GameKind::Record => record.read().turn(),
         GameKind::Online(_) => Some(options.get()?.stone_of(player.get()?)),
     });
+
+    provide_context(Arc::new(AppState {
+        record,
+        tentatives,
+        win_claim,
+        game_kind,
+        player,
+        requests,
+        options,
+        stone,
+    }));
 
     let dialog_entries = RwSignal::new(Vec::<DialogEntry>::new());
 
@@ -200,15 +238,7 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        show_dialog(Dialog::from(GameMenuDialog {
-            game_kind: game_kind.read_only(),
-            stone,
-            online: online(),
-            player: player.read_only(),
-            record: record.read_only(),
-            win_claim: win_claim.read_only(),
-            requests: requests.read_only(),
-        }));
+        show_dialog(Dialog::from(GameMenuDialog));
     };
 
     let on_message = move |ev: MessageEvent| {
@@ -239,7 +269,7 @@ pub fn App() -> impl IntoView {
                     show_game_menu_dialog();
                 }
                 if let Some(req) = requests.read()[assigned_player.opposite()] {
-                    confirm(Confirm::Requested(assigned_player, req));
+                    confirm(Confirm::Requested(req));
                 }
             }
             ServerMessage::Options(new_options) => {
@@ -272,7 +302,7 @@ pub fn App() -> impl IntoView {
                 if let Some(player) = player.get()
                     && player != initiator
                 {
-                    confirm(Confirm::Requested(player, req));
+                    confirm(Confirm::Requested(req));
                 }
             }
             ServerMessage::AcceptRequest(initiator) => {
@@ -487,29 +517,28 @@ pub fn App() -> impl IntoView {
     let on_event = move |ev: Event| match ev {
         Event::Menu => show_game_menu_dialog(),
         Event::Submit => {
-            let tentatives = tentatives_pos.get();
+            let tent = tentatives.get();
             let claim = win_claim.get();
             if online() {
                 confirm(match claim {
-                    Some(WinClaim::Ready(p, dir)) => Confirm::Claim(tentatives, p, dir),
-                    _ => match tentatives[..] {
-                        [] => Confirm::Pass(None),
-                        [p] if record.read().has_past() => Confirm::Pass(Some(p)),
-                        [p] => Confirm::Submit(p, None),
-                        [p1, p2] => Confirm::Submit(p1, Some(p2)),
-                        _ => unreachable!(),
-                    },
+                    Some(WinClaim::Ready(..)) => Confirm::Claim,
+                    _ => Confirm::Submit(match tent.len() {
+                        0 => Submit::Pass,
+                        1 if record.read().has_past() => Submit::OneAndPass,
+                        1 => Submit::One,
+                        _ => Submit::Two,
+                    }),
                 });
             } else {
                 let mut record = record.write();
 
                 if let Some(WinClaim::Ready(p, dir)) = claim {
-                    if !tentatives.is_empty() {
-                        record.make_move(Move::Place(tentatives[0], tentatives.get(1).copied()));
+                    if !tent.is_empty() {
+                        record.make_move(Move::Place(tent[0], tent.get(1).copied()));
                     }
                     record.make_move(Move::Win(p, dir));
                 } else {
-                    record.make_move(match tentatives[..] {
+                    record.make_move(match tent[..] {
                         [] => Move::Pass,
                         [p] => Move::Place(p, None),
                         [p1, p2] => Move::Place(p1, Some(p2)),
@@ -527,7 +556,7 @@ pub fn App() -> impl IntoView {
             } else if let Some(player) = player.get() {
                 let requests = requests.read();
                 if let Some(req @ Request::Retract) = requests[player.opposite()] {
-                    confirm(Confirm::Requested(player, req));
+                    confirm(Confirm::Requested(req));
                 } else if requests[player].is_none() {
                     confirm(Confirm::RequestRetract);
                 }
@@ -545,7 +574,7 @@ pub fn App() -> impl IntoView {
             if let Some(player) = player.get() {
                 let requests = requests.read();
                 if let Some(req @ Request::Reset { .. }) = requests[player.opposite()] {
-                    confirm(Confirm::Requested(player, req));
+                    confirm(Confirm::Requested(req));
                 } else if requests[player].is_none()
                     && let Some(options) = options.get()
                 {
@@ -572,13 +601,13 @@ pub fn App() -> impl IntoView {
             }
         }
         Event::Resign => {
-            confirm(Confirm::Resign { online: online() });
+            confirm(Confirm::Resign);
         }
         Event::Draw => {
             if let Some(player) = player.get() {
                 let requests = requests.read();
                 if let Some(req @ Request::Draw) = requests[player.opposite()] {
-                    confirm(Confirm::Requested(player, req));
+                    confirm(Confirm::Requested(req));
                 } else if requests[player].is_none() {
                     confirm(Confirm::RequestDraw);
                 }
@@ -674,16 +703,23 @@ pub fn App() -> impl IntoView {
 
                 match confirm {
                     Confirm::MainMenu => set_game_id(""),
-                    Confirm::Submit(p1, p2) => send(ClientMessage::Place(p1, p2)),
-                    Confirm::Pass(None) => send(ClientMessage::Pass),
-                    Confirm::Pass(Some(p)) => send(ClientMessage::Place(p, None)),
+                    Confirm::Submit(_) => {
+                        let tent = tentatives.get();
+                        if tent.is_empty() {
+                            send(ClientMessage::Pass);
+                        } else {
+                            send(ClientMessage::Place(tent[0], tent.get(1).copied()));
+                        }
+                    }
                     Confirm::BeginClaim => {}
-                    Confirm::Claim(tentatives, p, dir) => {
-                        if !tentatives.is_empty() {
-                            send(ClientMessage::Place(
-                                tentatives[0],
-                                tentatives.get(1).copied(),
-                            ));
+                    Confirm::Claim => {
+                        let Some(WinClaim::Ready(p, dir)) = win_claim.get() else {
+                            return;
+                        };
+
+                        let tent = tentatives.get();
+                        if !tent.is_empty() {
+                            send(ClientMessage::Place(tent[0], tent.get(1).copied()));
                         }
                         send(ClientMessage::ClaimWin(p, dir));
                     }
@@ -697,8 +733,8 @@ pub fn App() -> impl IntoView {
                         });
                     }
                     Confirm::RequestAccepted | Confirm::RequestDeclined => {}
-                    Confirm::Resign { online } => {
-                        if online {
+                    Confirm::Resign => {
+                        if online() {
                             send(ClientMessage::Resign);
                         } else {
                             let resigned_stone = match ret_val {
@@ -758,7 +794,7 @@ pub fn App() -> impl IntoView {
             pending=move || online() && options.get().is_none()
             replaying=move || game_kind.get() == GameKind::Record
             on_event=on_event
-            tentatives_pos=tentatives_pos
+            tentatives=tentatives
             win_claim=win_claim
         />
         <For each=move || dialog_entries.get() key=|entry| entry.id let(DialogEntry { id, dialog })>

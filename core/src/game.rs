@@ -9,7 +9,7 @@ use bytes::{Buf, BufMut};
 use bytes_varint::{VarIntSupport, VarIntSupportMut};
 use std::{
     collections::HashMap,
-    iter,
+    fmt, iter,
     ops::{Add, AddAssign, Sub, SubAssign},
 };
 
@@ -321,6 +321,15 @@ impl Stone {
             Self::Black => Self::White,
             Self::White => Self::Black,
         }
+    }
+}
+
+impl fmt::Display for Stone {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Black => "Black",
+            Self::White => "White",
+        })
     }
 }
 

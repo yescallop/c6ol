@@ -1,14 +1,15 @@
-use crate::{BASE64_URL, Confirm, GameKind, RECORD_PREFIX, WinClaim};
+use crate::{AppState, BASE64_URL, Confirm, GameKind, RECORD_PREFIX, Submit, WinClaim};
 use base64::Engine;
 use c6ol_core::{
-    game::{Move, Record, RecordEncodingScheme, Stone},
-    protocol::{GameOptions, Player, PlayerSlots, Request},
+    game::{Move, RecordEncodingScheme, Stone},
+    protocol::{GameOptions, Player, Request},
 };
 use leptos::{
     either::{Either, EitherOf3, EitherOf6},
     html,
     prelude::*,
 };
+use std::sync::Arc;
 
 trait DialogView {
     type RetVal;
@@ -277,15 +278,7 @@ impl DialogView for AuthDialog {
 }
 
 #[derive(Clone)]
-pub struct GameMenuDialog {
-    pub game_kind: ReadSignal<GameKind>,
-    pub stone: Memo<Option<Stone>>,
-    pub online: bool,
-    pub player: ReadSignal<Option<Player>>,
-    pub record: ReadSignal<Record>,
-    pub win_claim: ReadSignal<Option<WinClaim>>,
-    pub requests: ReadSignal<PlayerSlots<Option<Request>>>,
-}
+pub struct GameMenuDialog;
 
 #[derive(Debug, Default)]
 pub enum GameMenuRetVal {
@@ -311,15 +304,17 @@ impl DialogView for GameMenuDialog {
     }
 
     fn contents(self) -> impl IntoView {
-        let Self {
+        let AppState {
             game_kind,
             stone,
-            online,
             player,
             record,
             win_claim,
             requests,
-        } = self;
+            ..
+        } = *use_context::<Arc<AppState>>().unwrap();
+
+        let online = game_kind.get().is_online();
 
         let alt_pushed = RwSignal::new(false);
 
@@ -336,7 +331,7 @@ impl DialogView for GameMenuDialog {
                                 <a href=href>{id.to_string()}</a>
                                 <br />
                                 {move || match stone.get() {
-                                    Some(stone) => format!("Playing {stone:?}"),
+                                    Some(stone) => format!("Playing {stone}"),
                                     None => "View Only".into(),
                                 }}
                             },
@@ -348,14 +343,14 @@ impl DialogView for GameMenuDialog {
             {move || {
                 let record = record.read();
                 if let Some(stone) = record.turn() {
-                    return format!("{stone:?} to Play");
+                    return format!("{stone} to Play");
                 }
                 match record.prev_move().unwrap() {
                     Move::Draw => "Game Drawn".into(),
-                    Move::Resign(stone) => format!("{stone:?} Resigned"),
+                    Move::Resign(stone) => format!("{stone} Resigned"),
                     Move::Win(p, _) => {
                         let stone = record.stone_at(p).unwrap();
-                        format!("{stone:?} Won")
+                        format!("{stone} Won")
                     }
                     _ => unreachable!(),
                 }
@@ -566,7 +561,7 @@ impl DialogView for ConfirmDialog {
 
     fn class(&self) -> Option<&'static str> {
         match self.0 {
-            Confirm::Submit(..) | Confirm::Pass(_) | Confirm::Claim(..) => Some("transparent"),
+            Confirm::Submit(_) | Confirm::Claim => Some("transparent"),
             _ => None,
         }
     }
@@ -577,17 +572,21 @@ impl DialogView for ConfirmDialog {
         let mut cancel = Some("Cancel");
         let mut alt_confirm = None;
 
+        let state = use_context::<Arc<AppState>>().unwrap();
+
         let message = match self.0 {
             Confirm::MainMenu => "Back to main menu?",
-            Confirm::Submit(_, None) => "Place one stone?",
-            Confirm::Submit(_, Some(_)) => "Place two stones?",
-            Confirm::Pass(None) => "Place no stone and pass?",
-            Confirm::Pass(Some(_)) => "Place one stone and pass?",
+            Confirm::Submit(submit) => match submit {
+                Submit::Pass => "Place no stone and pass?",
+                Submit::OneAndPass => "Place one stone and pass?",
+                Submit::One => "Place one stone?",
+                Submit::Two => "Place two stones?",
+            },
             Confirm::BeginClaim => {
                 (confirm, cancel) = ("Noted", None);
                 "To claim a win, click on one end of a six-in-a-row and then on the other end."
             }
-            Confirm::Claim(tentatives, ..) => match tentatives.len() {
+            Confirm::Claim => match state.tentatives.get().len() {
                 // TODO: Inform the user if they're claiming a win for the opponent?
                 0 => "Claim a win?",
                 1 => "Place one stone and claim a win?",
@@ -595,16 +594,23 @@ impl DialogView for ConfirmDialog {
             },
             Confirm::RequestDraw => "Offer a draw?",
             Confirm::RequestRetract => "Request to retract the previous move?",
-            Confirm::Requested(player, req) => {
+            Confirm::Requested(req) => {
                 (confirm, cancel, alt_confirm) = ("Accept", Some("Ignore"), Some("Decline"));
 
+                let player = state.player.get().unwrap();
+                let options = state.options.get().unwrap();
                 match req {
                     Request::Draw => "The opponent offers a draw.",
                     Request::Retract => "The opponent requests to retract the previous move.",
-                    Request::Reset(options) => &format!(
+                    Request::Reset(new_options) => &format!(
                         "The opponent requests to reset the game. \
-                         After the reset, you're to play {:?}.",
-                        options.stone_of(player)
+                         Your stone will {} {}.",
+                        if new_options.swapped == options.swapped {
+                            "remain"
+                        } else {
+                            "switch to"
+                        },
+                        new_options.stone_of(player)
                     ),
                 }
             }
@@ -616,8 +622,8 @@ impl DialogView for ConfirmDialog {
                 (confirm, cancel) = ("Noted", None);
                 "The opponent declined your request."
             }
-            Confirm::Resign { online } => {
-                if online {
+            Confirm::Resign => {
+                if state.game_kind.get().is_online() {
                     "Resign the game?"
                 } else {
                     (confirm, alt_confirm) = ("White", Some("Black"));
@@ -672,23 +678,23 @@ impl DialogView for ResetDialog {
 
     fn contents(self) -> impl IntoView {
         let old_stone = self.old_options.stone_of(self.player);
-        let new_stone = RwSignal::new(old_stone);
+        let new_stone = RwSignal::new(old_stone.opposite());
 
         view! {
             <p>
-                "Request to reset the game?"<br />"To play: "
+                "Request to reset the game?"<br />"Playing: "{old_stone.to_string()}<br />"To play: "
                 <input
                     type="radio"
                     id="black"
                     name="stone"
-                    checked=old_stone == Stone::Black
+                    checked=old_stone == Stone::White
                     on:input=move |_| new_stone.set(Stone::Black)
                 /> <label for="black">"Black"</label>
                 <input
                     type="radio"
                     id="white"
                     name="stone"
-                    checked=old_stone == Stone::White
+                    checked=old_stone == Stone::Black
                     on:input=move |_| new_stone.set(Stone::White)
                 /> <label for="white">"White"</label>
             </p>
