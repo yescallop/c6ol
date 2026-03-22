@@ -21,8 +21,7 @@ ensure_wasm_opt() {
     esac
 
     local url="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-${arch}.tar.gz"
-    mkdir -p ./bin
-    curl -fL "$url" | tar -xz -C ./bin --strip-components=2 "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
+    curl -fL "$url" | tar -xz --strip-components=1 "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
     echo "wasm-opt version $BINARYEN_VERSION installed."
 }
 
