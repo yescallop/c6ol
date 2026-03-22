@@ -1,6 +1,7 @@
 {
   "name": "c6ol-client",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "scripts": {
     "build": "./build.sh && webpack --mode=production",
@@ -14,7 +15,7 @@
     "mini-css-extract-plugin": "^2.9.4",
     "style-loader": "^4.0.0",
     "webpack": "^5.104.1",
-    "webpack-cli": "^6.0.1",
+    "webpack-cli": "^7.0.0",
     "webpack-dev-server": "^5.2.2"
   }
 }
