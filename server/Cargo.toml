@@ -14,7 +14,6 @@ futures-util = "0.3"
 rand = "0.10"
 remain = "0.2"
 rusqlite = { version = "0.39", features = ["bundled"] }
-socket2 = "0.6"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tokio-util = { version = "0.7.16", features = ["join-map"] }

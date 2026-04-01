@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::Parser;
 use std::{
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 use tokio::{
@@ -15,10 +15,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_PORT: u16 = 8086;
 
-const DEFAULT_LISTEN: [SocketAddr; 2] = [
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
-    SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), DEFAULT_PORT),
-];
+const DEFAULT_LISTEN: &[SocketAddr] = &[SocketAddr::new(
+    IpAddr::V4(Ipv4Addr::LOCALHOST),
+    DEFAULT_PORT,
+)];
 
 /// The server program for Connect6 Online
 #[derive(Debug, Parser)]
@@ -78,10 +78,6 @@ fn listen(addr: SocketAddr) -> io::Result<TcpListener> {
     } else {
         TcpSocket::new_v6()?
     };
-
-    if addr.ip() == Ipv6Addr::UNSPECIFIED {
-        socket2::SockRef::from(&socket).set_only_v6(false)?;
-    }
 
     #[cfg(not(windows))]
     socket.set_reuseaddr(true)?;
