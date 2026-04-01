@@ -682,7 +682,8 @@ impl DialogView for ResetDialog {
 
         view! {
             <p>
-                "Request to reset the game?"<br />"Playing: "{old_stone.to_string()}<br />"To play: "
+                "Request to reset the game?"<br />"Playing: "{old_stone.to_string()}<br />
+                "To play: "
                 <input
                     type="radio"
                     id="black"
