@@ -61,15 +61,15 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS game (
-            id INT NOT NULL PRIMARY KEY,
+            id INTEGER NOT NULL PRIMARY KEY,
             options BLOB NOT NULL,
-            passcode_host INT,
-            passcode_guest INT,
+            passcode_host INTEGER,
+            passcode_guest INTEGER,
             request_host BLOB,
             request_guest BLOB,
             record BLOB NOT NULL,
-            created_at INT NOT NULL,
-            updated_at INT NOT NULL
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
         ) STRICT",
         (),
     )?;
