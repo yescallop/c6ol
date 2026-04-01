@@ -56,6 +56,9 @@ fn manage_db(path: Option<PathBuf>, mut cmd_rx: mpsc::Receiver<Command>) -> anyh
         None => Connection::open_in_memory()?,
     };
 
+    // Limit database size to 1M with 4K pages.
+    conn.pragma_update(None, "max_page_count", 256)?;
+
     conn.execute(
         "CREATE TABLE IF NOT EXISTS game (
             id INT NOT NULL PRIMARY KEY,
