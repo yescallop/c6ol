@@ -54,18 +54,18 @@ npm run dev
 To build for deployment, run:
 
 ```sh
-cd client
+cd server 
+cargo build --release
+cd ../client
 npm install
 npm run build
-cd ../server
-cargo build --release
 cd ..
 ```
 
 To deploy, copy `target/release/c6ol-server` and `client/dist` to a directory on the server, `cd` into it and run:
 
 ```sh
-./c6ol-server --listen [::]:8086 --serve-dir dist --db-file c6ol.db
+./c6ol-server --serve-dir dist --db-file c6ol.db
 ```
 
-A Connect6 Online server will be listening at port 8086 on all available interfaces, serving static files under `dist`, loading games from and saving games to `c6ol.db`.
+A Connect6 Online server will be listening on `127.0.0.1:8086`, serving static files under `dist`, loading games from and saving games to `c6ol.db`.
