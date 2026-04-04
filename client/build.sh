@@ -30,7 +30,7 @@ ensure_wasm_bindgen() {
 ensure_wasm_opt() {
     local current_version
     if [ -x "./bin/wasm-opt" ]; then
-        current_version=$(./bin/wasm-opt --version 2>&1 | grep -oP '(?<=version )\d+' | head -1)
+        current_version=$(./bin/wasm-opt --version 2>&1 | grep -oP '(?<=version )\d+')
     fi
     if [ "$current_version" = "$BINARYEN_VERSION" ]; then
         return
@@ -45,8 +45,9 @@ ensure_wasm_opt() {
         *)       echo "Unsupported architecture: $arch"; exit 1 ;;
     esac
 
-    local url="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-${arch}.tar.gz"
-    curl -fL "$url" | tar -xz --strip-components=1 "binaryen-version_${BINARYEN_VERSION}/bin/wasm-opt"
+    local name="binaryen-version_${BINARYEN_VERSION}"
+    local url="https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/${name}-${arch}.tar.gz"
+    curl -fL "$url" | tar -xz --strip-components=1 "${name}/bin/wasm-opt"
     echo "wasm-opt version $BINARYEN_VERSION installed."
 }
 
