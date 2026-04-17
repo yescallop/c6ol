@@ -37,7 +37,7 @@ An official instance is hosted [here](https://c6.chika.at/). Please refrain from
 
 ## Setup (Linux)
 
-Install Rust 1.88+ and Node.js. To develop, run:
+Install Rust 1.95+ and Node.js. To develop, run:
 
 ```sh
 git clone https://github.com/yescallop/c6ol

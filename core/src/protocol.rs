@@ -176,11 +176,7 @@ impl Message for GameOptions {
 
     fn decode(buf: &mut &[u8]) -> Option<Self> {
         Some(Self {
-            swapped: match buf.try_get_u8().ok()? {
-                0 => false,
-                1 => true,
-                _ => return None,
-            },
+            swapped: buf.try_get_u8().ok()?.try_into().ok()?,
         })
     }
 }
