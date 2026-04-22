@@ -70,9 +70,6 @@ impl<T> IndexMut<Player> for PlayerSlots<T> {
     }
 }
 
-/// A passcode.
-pub type Passcode = Box<[u8]>;
-
 /// A passcode hash.
 pub type PasscodeHash = i64;
 
