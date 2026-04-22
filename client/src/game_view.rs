@@ -1,5 +1,5 @@
 use crate::{Event, WinClaim};
-use c6ol_core::game::{self, Direction, Move, Point, Record, Stone};
+use c6ol_core::game::{Direction, Move, Point, Record, Stone};
 use leptos::{either::EitherOf3, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
@@ -830,7 +830,7 @@ pub(crate) fn GameView(
             let Move::Place(p1, p2) = mov else {
                 continue;
             };
-            let stone = game::turn_at(i);
+            let stone = Stone::turn_at(i);
 
             for p in iter::once(p1).chain(p2) {
                 let (p, out) = calc.board_to_view_pos_clamped(p, ClampTo::InsideAndBorder);
@@ -907,7 +907,7 @@ pub(crate) fn GameView(
             return EitherOf3::A(vec![]);
         };
 
-        let stone = game::turn_at(record.move_index() - 1);
+        let stone = Stone::turn_at(record.move_index() - 1);
         match mov {
             Move::Place(p1, p2) => {
                 let calc = calc();

@@ -322,6 +322,12 @@ impl Stone {
             Self::White => Self::Black,
         }
     }
+
+    /// Returns the stone to play at the given move index.
+    #[must_use]
+    pub fn turn_at(index: usize) -> Self {
+        Self::from_u8(index as u8 & 1).unwrap()
+    }
 }
 
 impl fmt::Display for Stone {
@@ -544,12 +550,6 @@ impl PartialEq for Move {
 
 impl Eq for Move {}
 
-/// Returns the stone to play at the given move index.
-#[must_use]
-pub fn turn_at(index: usize) -> Stone {
-    Stone::from_u8(index as u8 & 1).unwrap()
-}
-
 /// Scheme to encode a game record with.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecordEncodingScheme {
@@ -685,7 +685,7 @@ impl Record {
 
     /// Returns the current stone to play, without checking if the game is ended.
     fn turn_unchecked(&self) -> Stone {
-        turn_at(self.index)
+        Stone::turn_at(self.index)
     }
 
     /// Returns the current stone to play, or `None` if the game is ended.
