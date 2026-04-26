@@ -93,16 +93,12 @@ fn test_delta_encoding_win_all_directions() {
             .map(|i| Point::ZERO + dir.offset(i as i16))
             .collect();
 
-        // White dummy moves base
-        let mut white_y = 100;
-
-        for chunk in stones.chunks(2) {
+        for (white_y, chunk) in (100..).zip(stones.chunks(2)) {
             // White dummy move
             assert!(record.make_move(Move::Place(
                 Point::new(0, white_y),
                 Some(Point::new(1, white_y))
             )));
-            white_y += 1;
 
             if chunk.len() == 2 {
                 assert!(record.make_move(Move::Place(chunk[0], Some(chunk[1]))));
