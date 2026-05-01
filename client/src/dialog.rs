@@ -193,7 +193,7 @@ impl DialogView for OnlineMenuDialog {
                             };
                             ret!(Start(options));
                         }>"Start"</button>
-                        <button formnovalidate>"Cancel"</button>
+                        <button>"Cancel"</button>
                     </div>
                 };
                 Either::Left(view)
@@ -211,7 +211,12 @@ impl DialogView for OnlineMenuDialog {
                         bind:value=game_id
                     />
                     <div class="btn-group reversed">
-                        <button on:click=move |_| ret!(Join(game_id.get()))>"Join"</button>
+                        <button on:click=move |_| {
+                            let id = game_id.get();
+                            if id.len() == 11 && id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                                ret!(Join(id));
+                            }
+                        }>"Join"</button>
                         <button formnovalidate>"Cancel"</button>
                     </div>
                 };
@@ -270,7 +275,12 @@ impl DialogView for AuthDialog {
                 bind:value=passcode
             />
             <div class="btn-group reversed">
-                <button on:click=move |_| ret!(Submit(passcode.get()))>"Submit"</button>
+                <button on:click=move |_| {
+                    let code = passcode.get();
+                    if !code.is_empty() {
+                        ret!(Submit(code));
+                    }
+                }>"Submit"</button>
                 <button formnovalidate>"View Only"</button>
             </div>
         }
