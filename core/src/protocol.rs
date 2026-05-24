@@ -2,7 +2,6 @@
 
 use crate::game::{Direction, Move, Point, Record, RecordEncodingScheme, Stone};
 use bytes::{Buf, BufMut};
-use serde::{Deserialize, Serialize};
 use std::{
     fmt, iter,
     ops::{Index, IndexMut},
@@ -144,7 +143,7 @@ pub trait Message: Sized {
 }
 
 /// Game options.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GameOptions {
     /// Whether the stones are swapped.
     pub swapped: bool,
