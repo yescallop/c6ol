@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+
 PROFILE=${1:-release-wasm}
 WASM_BINDGEN_VERSION=$(grep -A1 'name = "wasm-bindgen"' ../Cargo.lock | grep -oP '(?<=version = ")\S+(?=")')
 BINARYEN_VERSION="129"
