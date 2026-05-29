@@ -13,7 +13,7 @@ clap = { version = "4.5.20", features = ["derive"] }
 futures-util = "0.3"
 rand = "0.10"
 remain = "0.2"
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt", "signal"] }
 tokio-util = { version = "0.7.16", features = ["join-map"] }
