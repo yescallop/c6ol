@@ -646,6 +646,10 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
         GameMenuRetVal::Draw => on_event(Event::Draw),
+        GameMenuRetVal::Help => {
+             show_dialog(Dialog::from(HelpDialog));
+        }
+        
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
@@ -760,8 +764,14 @@ pub fn App() -> impl IntoView {
                     send(ClientMessage::Request(Request::Reset(options)));
                 }
             },
+            // The help dialog has a Close button and super cow power.
+            RetVal::Help(ret_val) => match ret_val {
+                HelpRetVal::Close => {}
+            },
         }
-    };
+    }; 
+
+        
 
     let on_hash_change = move || {
         set_game_id(location_hash().as_deref().unwrap_or_default());
