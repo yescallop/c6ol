@@ -10,8 +10,8 @@ use std::{
 };
 use tinyvec::ArrayVec;
 use web_sys::{
-    CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent, MouseEvent, PointerEvent,
-    WheelEvent, wasm_bindgen::prelude::*,
+    CanvasRenderingContext2d, HtmlAnchorElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+    PointerEvent, WheelEvent, wasm_bindgen::prelude::*,
 };
 
 const CURSOR_COLOR_ACTIVE: &str = "firebrick";
@@ -580,6 +580,8 @@ pub(crate) fn GameView(
         if disabled.get() {
             return;
         }
+        ev.prevent_default();
+        //Prevent page zooming with trackpad
 
         // Prevent zooming the page with trackpad.
         ev.prevent_default();
@@ -1095,4 +1097,145 @@ pub(crate) fn GameView(
             </svg>
         </div>
     }
+}
+
+/// Exports the current board state as a PNG image.
+pub(crate) fn export_board_image(record: &Record) {
+    let Some(document) = window().document() else {
+        return;
+    };
+
+    // Calculate bounds.
+    let (mut min_x, mut max_x, mut min_y, mut max_y) =
+        (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
+    for (p, _) in record.stones() {
+        min_x = min_x.min(p.x);
+        max_x = max_x.max(p.x);
+        min_y = min_y.min(p.y);
+        max_y = max_y.max(p.y);
+    }
+
+    if min_x == i16::MAX {
+        return;
+    }
+
+    let padding = 3;
+    min_x -= padding;
+    max_x += padding;
+    min_y -= padding;
+    max_y += padding;
+
+    let cell_size = 20.0;
+    let width = (max_x - min_x + 1) as f64 * cell_size;
+    let height = (max_y - min_y + 1) as f64 * cell_size;
+
+    // Create canvas.
+    let canvas = document
+        .create_element("canvas")
+        .unwrap()
+        .unchecked_into::<HtmlCanvasElement>();
+    canvas.set_width(width as u32);
+    canvas.set_height(height as u32);
+
+    let ctx = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .unchecked_into::<CanvasRenderingContext2d>();
+
+    // Background.
+    ctx.set_fill_style_str("#fc6");
+    ctx.fill_rect(0.0, 0.0, width, height);
+
+    // Grid.
+    ctx.set_stroke_style_str("black");
+    ctx.set_line_width(1.0);
+
+    for x in min_x..=max_x {
+        let px = ((x - min_x) as f64 + 0.5) * cell_size;
+        ctx.begin_path();
+        ctx.move_to(px, 0.0);
+        ctx.line_to(px, height);
+        ctx.stroke();
+    }
+
+    for y in min_y..=max_y {
+        let py = ((y - min_y) as f64 + 0.5) * cell_size;
+        ctx.begin_path();
+        ctx.move_to(0.0, py);
+        ctx.line_to(width, py);
+        ctx.stroke();
+    }
+
+    // Origin dot.
+    if record.stone_at(Point::ZERO).is_none()
+        && min_x <= 0
+        && 0 <= max_x
+        && min_y <= 0
+        && 0 <= max_y
+    {
+        let px = ((-min_x) as f64 + 0.5) * cell_size;
+        let py = ((-min_y) as f64 + 0.5) * cell_size;
+        ctx.set_fill_style_str("black");
+        ctx.begin_path();
+        ctx.arc(px, py, cell_size * 0.15, 0.0, 2.0 * std::f64::consts::PI)
+            .unwrap();
+        ctx.fill();
+    }
+
+    // Stones.
+    let radius = cell_size * 0.4;
+    for (p, stone) in record.stones() {
+        let px = ((p.x - min_x) as f64 + 0.5) * cell_size;
+        let py = ((p.y - min_y) as f64 + 0.5) * cell_size;
+
+        ctx.begin_path();
+        ctx.arc(px, py, radius, 0.0, 2.0 * std::f64::consts::PI)
+            .unwrap();
+
+        match stone {
+            Stone::Black => {
+                ctx.set_fill_style_str("black");
+                ctx.fill();
+            }
+            Stone::White => {
+                ctx.set_fill_style_str("white");
+                ctx.fill();
+                ctx.set_stroke_style_str("black");
+                ctx.stroke();
+            }
+        }
+    }
+
+    // Win rings.
+    if record.is_ended() {
+        if let Some(Move::Win(p, dir)) = record.prev_move() {
+            let stone = record.stone_at(p).unwrap();
+            let color = if stone == Stone::Black { "white" } else { "black" };
+            let ring_radius = radius * 1.3;
+
+            for i in 0..6 {
+                let point = p + dir.offset(i);
+                let px = ((point.x - min_x) as f64 + 0.5) * cell_size;
+                let py = ((point.y - min_y) as f64 + 0.5) * cell_size;
+
+                ctx.set_stroke_style_str(color);
+                ctx.set_line_width(3.0);
+                ctx.begin_path();
+                ctx.arc(px, py, ring_radius, 0.0, 2.0 * std::f64::consts::PI)
+                    .unwrap();
+                ctx.stroke();
+            }
+        }
+    }
+
+    // Download.
+    let data_url = canvas.to_data_url().unwrap();
+    let anchor = document
+        .create_element("a")
+        .unwrap()
+        .unchecked_into::<HtmlAnchorElement>();
+    anchor.set_href(&data_url);
+    anchor.set_download("c6ol-board.png");
+    anchor.click();
 }
