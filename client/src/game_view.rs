@@ -580,9 +580,6 @@ pub(crate) fn GameView(
         if disabled.get() {
             return;
         }
-        ev.prevent_default();
-        //Prevent page zooming with trackpad
-
         // Prevent zooming the page with trackpad.
         ev.prevent_default();
 
@@ -1106,8 +1103,7 @@ pub(crate) fn export_board_image(record: &Record) {
     };
 
     // Calculate bounds.
-    let (mut min_x, mut max_x, mut min_y, mut max_y) =
-        (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
     for (p, _) in record.stones() {
         min_x = min_x.min(p.x);
         max_x = max_x.max(p.x);
@@ -1211,7 +1207,11 @@ pub(crate) fn export_board_image(record: &Record) {
     if record.is_ended() {
         if let Some(Move::Win(p, dir)) = record.prev_move() {
             let stone = record.stone_at(p).unwrap();
-            let color = if stone == Stone::Black { "white" } else { "black" };
+            let color = if stone == Stone::Black {
+                "white"
+            } else {
+                "black"
+            };
             let ring_radius = radius * 1.3;
 
             for i in 0..6 {
