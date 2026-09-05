@@ -5,7 +5,7 @@ use c6ol_core::{
     protocol::{GameOptions, Player, Request},
 };
 use leptos::{
-    either::{Either, EitherOf3, EitherOf6},
+    either::{Either, EitherOf3, EitherOf7},
     html,
     prelude::*,
 };
@@ -105,13 +105,14 @@ macro_rules! dialogs {
     };
 }
 
-dialogs!(EitherOf6 {
+dialogs!(EitherOf7 {
     A => MainMenu,
     B => OnlineMenu,
     C => Auth,
     D => GameMenu,
     E => Confirm,
     F => Reset,
+    G => Help,
 });
 
 #[derive(Clone)]
@@ -304,6 +305,7 @@ pub enum GameMenuRetVal {
     Resign,
     Submit,
     Draw,
+    Help,
 }
 
 impl DialogView for GameMenuDialog {
@@ -549,7 +551,63 @@ impl DialogView for GameMenuDialog {
             <div class="menu-btn-group">
                 <button on:click=move |_| ret!(MainMenu)>"Main Menu"</button>
                 {maybe_auth_btn_or_ctrl_view}
+                <button on:click=move |_| ret!(Help)>"Help"</button>
                 <button autofocus>"Resume"</button>
+            </div>
+        }
+    }
+}
+
+/// A dialog showing gameplay help and keyboard controls.
+#[derive(Clone)]
+pub struct HelpDialog;
+
+#[derive(Debug, Default)]
+pub enum HelpRetVal {
+    #[default]
+    Close,
+}
+
+impl DialogView for HelpDialog {
+    type RetVal = HelpRetVal;
+
+    fn contents(self) -> impl IntoView {
+        view! {
+            <p class="title">"Help"</p>
+            <p><b>"Connect6 Rules"</b></p>
+            <ul>
+                <li>"Black places one stone at the center first."</li>
+                <li>"After that, each player places two stones per turn."</li>
+                <li>"The first to form a continuous line of six stones wins."</li>
+            </ul>
+            <p><b>"Online Play"</b></p>
+            <ul>
+                <li>"Start a game and send the link to a friend."</li>
+                <li>"Each player uses a different passcode."</li>
+                <li>"You can request retract, draw, or reset."</li>
+            </ul>
+            <p><b>"Claiming a Win"</b></p>
+            <ul>
+                <li>"Choose Claim Win in the game menu."</li>
+                <li>"Click both ends of a six-in-a-row to claim it."</li>
+            </ul>
+            <p><b>"Keyboard & Controls"</b></p>
+            <table>
+                <tr><td>"W / A / S / D"</td><td>"Move cursor"</td></tr>
+                <tr><td>"Arrow keys"</td><td>"Move view"</td></tr>
+                <tr><td>"- / ="</td><td>"Zoom out / in"</td></tr>
+                <tr><td>"Space / Enter"</td><td>"Place stone at cursor"</td></tr>
+                <tr><td>"Backspace / Ctrl+Z"</td><td>"Undo"</td></tr>
+                <tr><td>"Shift+Backspace / Ctrl+Shift+Z"</td><td>"Redo (only in local play)"</td></tr>
+                <tr><td>"Home"</td><td>"Jump to first move (only in local play)"</td></tr>
+                <tr><td>"End"</td><td>"Jump to last move (only in local play)"</td></tr>
+                <tr><td>"Escape"</td><td>"Open game menu"</td></tr>
+                <tr><td>"Scroll wheel"</td><td>"Zoom in/out (in game) or undo/redo (in record mode)"</td></tr>
+                <tr><td>"Swipe left / right"</td><td>"Undo/redo (in record mode)"</td></tr>
+                <tr><td>"Right click"</td><td>"Open game menu"</td></tr>
+            </table>
+            <div class="btn-group">
+                <button>"Close"</button>
             </div>
         }
     }

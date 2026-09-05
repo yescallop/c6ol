@@ -646,6 +646,9 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
         GameMenuRetVal::Draw => on_event(Event::Draw),
+        GameMenuRetVal::Help => {
+            show_dialog(Dialog::from(HelpDialog));
+        }
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
@@ -759,6 +762,9 @@ pub fn App() -> impl IntoView {
                 ResetRetVal::Confirm(options) => {
                     send(ClientMessage::Request(Request::Reset(options)));
                 }
+            },
+            RetVal::Help(ret_val) => match ret_val {
+                HelpRetVal::Close => {}
             },
         }
     };
