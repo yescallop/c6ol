@@ -950,4 +950,9 @@ impl Record {
             Some(record)
         }
     }
+    /// Returns an iterator over all stones currently on the board.
+    #[must_use]
+    pub fn stones(&self) -> impl Iterator<Item = (Point, Stone)> + '_ {
+        self.map.iter().map(|(&p, &s)| (p, s))
+    }
 }
