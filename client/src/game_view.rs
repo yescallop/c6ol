@@ -580,9 +580,9 @@ pub(crate) fn GameView(
         if disabled.get() {
             return;
         }
-        ev.prevent_default();
-        //Prevent page zooming with trackpad
 
+        // Prevent zooming the page with trackpad.
+        ev.prevent_default();
 
         if replaying() && state.read_value().down_pointers.is_empty() {
             on_event(if ev.delta_y() > 0.0 {
@@ -1020,6 +1020,7 @@ pub(crate) fn GameView(
             on:mouseleave=move |ev| on_leave((&ev).into())
             // Avoid touching a dialog opened by the same touch.
             // Cancel only when possible to avoid error after pinching:
+            //
             // [Intervention] Ignored attempt to cancel a touchend event with
             // cancelable=false, for example because scrolling is in progress
             // and cannot be interrupted.
