@@ -583,7 +583,6 @@ pub(crate) fn GameView(
         ev.prevent_default();
         //Prevent page zooming with trackpad
 
-
         if replaying() && state.read_value().down_pointers.is_empty() {
             on_event(if ev.delta_y() > 0.0 {
                 Event::Undo
@@ -875,7 +874,7 @@ pub(crate) fn GameView(
             </g>
         }
     };
-    
+
     let centered_text = move |text: &'static str, fill: &'static str| {
         let size = view_size.get() + 1;
 
