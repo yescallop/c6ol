@@ -1,2 +1,3 @@
-/target
+\/target
 /deploy.sh
+.DS_Store
