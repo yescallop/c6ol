@@ -875,11 +875,7 @@ pub(crate) fn GameView(
             </g>
         }
     };
-    // Cache the canvas context to avoid creating a new canvas element on every render of centered text 
-    //(e.g., PASS, DRAW, RESIGN, PENDING).
-
-    let ctx_store = StoredValue::new(canvas_context_2d());
-
+    
     let centered_text = move |text: &'static str, fill: &'static str| {
         let size = view_size.get() + 1;
 
