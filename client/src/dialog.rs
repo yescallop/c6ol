@@ -588,7 +588,7 @@ impl DialogView for ConfirmDialog {
             Confirm::MainMenu => "Back to main menu?",
             Confirm::Submit(submit) => match submit {
                 Submit::Pass => "Place no stone and pass?",
-                Submit::OneAndPass => "Place one stone and pass?",
+                Submit::OnlyOne => "Place only one stone?",
                 Submit::One => "Place one stone?",
                 Submit::Two => "Place two stones?",
             },

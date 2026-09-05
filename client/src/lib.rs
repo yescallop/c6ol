@@ -55,7 +55,7 @@ pub(crate) use console_log;
 #[derive(Clone)]
 enum Submit {
     Pass,
-    OneAndPass,
+    OnlyOne,
     One,
     Two,
 }
@@ -524,7 +524,7 @@ pub fn App() -> impl IntoView {
                     Some(WinClaim::Ready(..)) => Confirm::Claim,
                     _ => Confirm::Submit(match tent.len() {
                         0 => Submit::Pass,
-                        1 if record.read().has_past() => Submit::OneAndPass,
+                        1 if record.read().has_past() => Submit::OnlyOne,
                         1 => Submit::One,
                         _ => Submit::Two,
                     }),
