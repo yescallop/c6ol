@@ -680,6 +680,9 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Help => {
             show_dialog(Dialog::from(HelpDialog));
         }
+        GameMenuRetVal::Export => {
+            game_view::export_board_image(&record.read());
+        }
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
