@@ -580,6 +580,8 @@ pub(crate) fn GameView(
         if disabled.get() {
             return;
         }
+        ev.prevent_default();
+        //Prevent page zooming with trackpad
 
         if replaying() && state.read_value().down_pointers.is_empty() {
             on_event(if ev.delta_y() > 0.0 {
