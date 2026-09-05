@@ -646,6 +646,9 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
         GameMenuRetVal::Draw => on_event(Event::Draw),
+        GameMenuRetVal::Export => {
+            game_view::export_board_image(&record.read());
+        }
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {

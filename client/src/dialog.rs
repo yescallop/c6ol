@@ -304,6 +304,7 @@ pub enum GameMenuRetVal {
     Resign,
     Submit,
     Draw,
+    Export,
 }
 
 impl DialogView for GameMenuDialog {
@@ -549,6 +550,7 @@ impl DialogView for GameMenuDialog {
             <div class="menu-btn-group">
                 <button on:click=move |_| ret!(MainMenu)>"Main Menu"</button>
                 {maybe_auth_btn_or_ctrl_view}
+                <button on:click=move |_| ret!(Export)>"Export"</button>
                 <button autofocus>"Resume"</button>
             </div>
         }
