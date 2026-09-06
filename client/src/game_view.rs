@@ -2,16 +2,16 @@ use crate::{Event, WinClaim};
 use c6ol_core::{
     game::{
         Direction, Move, Point, Record,
-        Stone::{self, White},
+        Stone::{self},
     },
-    protocol::ServerMessage::Move as OtherMove,
+   
 };
 use leptos::{either::EitherOf3, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::FRAC_PI_4,
-    fmt::{Alignment::Center, Write as _},
-    iter::{self, Enumerate},
+    fmt::{Write as _},
+    iter::{self},
     time::Duration,
 };
 use tinyvec::ArrayVec;
@@ -1201,13 +1201,23 @@ pub(crate) fn export_board_image(record: &Record) {
 
         let stone = record.stone_at(p1).unwrap();
         let move_text = (i + 1).to_string();
-        let font_size = match move_text.len() {
+        let mut font_size = match move_text.len() {
             1 | 2 => cell_size * 0.4,
             3 => cell_size * 0.35,
             _ => cell_size * 0.3,
         };
 
-        ctx.set_font(&format!("bold ß{font_size}px sans-serif"));
+        loop {
+            ctx.set_font(&format!("bold {font_size}px sans-serif"));
+
+            if ctx.measure_text(&move_text).unwrap().width() <= radius * 1.6
+                || font_size <= cell_size * 0.2
+            {
+                break;
+            }
+
+            font_size -= 0.5;
+        }
 
         for p in iter::once(p1).chain(p2) {
             let px = ((p.x - min_x) as f64 + 0.5) * cell_size;

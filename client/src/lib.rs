@@ -687,12 +687,7 @@ pub fn App() -> impl IntoView {
             show_dialog(Dialog::from(HelpDialog));
         }
         GameMenuRetVal::Export => {
-            let record = record.read();
-
-            let url = export_record_url(&record);
-            window().open_with_url_and_target(&url, "_blank").unwrap();
-
-            game_view::export_board_image(&record);
+            show_dialog(Dialog::from(ExportDialog))
         }
     };
 
@@ -812,6 +807,25 @@ pub fn App() -> impl IntoView {
             RetVal::Help(ret_val) => match ret_val {
                 HelpRetVal::Close => {}
             },
+            RetVal::Export(ret_val) => match ret_val {
+                ExportRetVal::Cancel => {}
+                ExportRetVal::Export(kind) => {
+                    let record = record.read();
+
+                    match kind {
+                        ExportKind::Link => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                        }
+                        ExportKind::Photo => game_view::export_board_image(&record),
+                        ExportKind::Both => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                            game_view::export_board_image(&record);
+                        }
+                    }
+                }
+            }
         }
     };
 

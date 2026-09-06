@@ -5,7 +5,7 @@ use c6ol_core::{
     protocol::{GameOptions, Player, Request},
 };
 use leptos::{
-    either::{Either, EitherOf3, EitherOf7},
+    either::{Either, EitherOf3, EitherOf8},
     html,
     prelude::*,
 };
@@ -105,7 +105,7 @@ macro_rules! dialogs {
     };
 }
 
-dialogs!(EitherOf7 {
+dialogs!(EitherOf8 {
     A => MainMenu,
     B => OnlineMenu,
     C => Auth,
@@ -113,6 +113,7 @@ dialogs!(EitherOf7 {
     E => Confirm,
     F => Reset,
     G => Help,
+    H => Export,
 });
 
 #[derive(Clone)]
@@ -144,6 +145,63 @@ impl DialogView for MainMenuDialog {
 
 #[derive(Clone)]
 pub struct OnlineMenuDialog;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ExportKind {
+    Link,
+    Photo,
+    Both,
+}
+
+#[derive(Clone)]
+pub struct ExportDialog;
+
+#[derive(Debug, Default)]
+pub enum ExportRetVal {
+    #[default]
+    Cancel,
+    Export(ExportKind),
+}
+
+impl DialogView for ExportDialog {
+    type RetVal = ExportRetVal;
+
+    fn contents(self) -> impl IntoView {
+        let kind = RwSignal::new(ExportKind::Link);
+
+        view! {
+            <p class="title">"Export"</p>
+            <div class="radio-group">
+                <input
+                    type="radio"
+                    id="link"
+                    name="kind"
+                    checked
+                    on:input=move |_| kind.set(ExportKind::Link)
+                />
+                <label for="link">"Link"</label>
+                <input
+                    type="radio"
+                    id="photo"
+                    name="kind"
+                    on:input=move |_| kind.set(ExportKind::Photo)
+                />
+                <label for="photo">"Photo"</label>
+                <input
+                    type="radio"
+                    id="both"
+                    name="kind"
+                    on:input=move |_| kind.set(ExportKind::Both)
+                />
+                <label for="both">"Both"</label>
+            </div>
+            <div class="btn-group reversed">
+                <button on:click=move |_| ret!(Export(kind.get()))>"Export"</button>
+                <button>"Cancel"</button>
+            </div>
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub enum OnlineMenuRetVal {
