@@ -1,11 +1,17 @@
 use crate::{Event, WinClaim};
-use c6ol_core::game::{Direction, Move, Point, Record, Stone};
+use c6ol_core::{
+    game::{
+        Direction, Move, Point, Record,
+        Stone::{self, White},
+    },
+    protocol::ServerMessage::Move as OtherMove,
+};
 use leptos::{either::EitherOf3, ev, html, prelude::*};
 use std::{
     collections::{HashMap, HashSet},
     f64::consts::FRAC_PI_4,
-    fmt::Write as _,
-    iter,
+    fmt::{Alignment::Center, Write as _},
+    iter::{self, Enumerate},
     time::Duration,
 };
 use tinyvec::ArrayVec;
@@ -267,7 +273,8 @@ pub(crate) fn GameView(
     /// Defaults to 15. Minimum value is 1. Is always odd.
     ///
     /// The *view* refers to the area where the user can see and place stones.
-    /// Stones outside the view are drawn in gray on its *border*.
+    ///
+    /// outside the view are drawn in gray on its *border*.
     #[prop(default = RwSignal::new(DEFAULT_VIEW_SIZE))]
     view_size: RwSignal<i16>,
     #[prop(optional)] view_center: RwSignal<Point>,
@@ -1106,8 +1113,7 @@ pub(crate) fn export_board_image(record: &Record) {
     };
 
     // Calculate bounds.
-    let (mut min_x, mut max_x, mut min_y, mut max_y) =
-        (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
     for (p, _) in record.stones() {
         min_x = min_x.min(p.x);
         max_x = max_x.max(p.x);
@@ -1185,25 +1191,48 @@ pub(crate) fn export_board_image(record: &Record) {
 
     // Stones.
     let radius = cell_size * 0.4;
-    for (p, stone) in record.stones() {
-        let px = ((p.x - min_x) as f64 + 0.5) * cell_size;
-        let py = ((p.y - min_y) as f64 + 0.5) * cell_size;
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("middle");
 
-        ctx.begin_path();
-        ctx.arc(px, py, radius, 0.0, 2.0 * std::f64::consts::PI)
-            .unwrap();
+    for (i, &mov) in record.moves().iter().enumerate().take(record.move_index()) {
+        let Move::Place(p1, p2) = mov else {
+            continue;
+        };
 
-        match stone {
-            Stone::Black => {
-                ctx.set_fill_style_str("black");
-                ctx.fill();
+        let stone = record.stone_at(p1).unwrap();
+        let move_text = (i + 1).to_string();
+        let font_size = match move_text.len() {
+            1 | 2 => cell_size * 0.4,
+            3 => cell_size * 0.35,
+            _ => cell_size * 0.3,
+        };
+
+        ctx.set_font(&format!("bold ß{font_size}px sans-serif"));
+
+        for p in iter::once(p1).chain(p2) {
+            let px = ((p.x - min_x) as f64 + 0.5) * cell_size;
+            let py = ((p.y - min_y) as f64 + 0.5) * cell_size;
+
+            ctx.begin_path();
+            ctx.arc(px, py, radius, 0.0, 2.0 * std::f64::consts::PI)
+                .unwrap();
+
+            match stone {
+                Stone::Black => {
+                    ctx.set_fill_style_str("black");
+                    ctx.fill();
+                    ctx.set_fill_style_str("White");
+                }
+                Stone::White => {
+                    ctx.set_fill_style_str("white");
+                    ctx.fill();
+                    ctx.set_stroke_style_str("black");
+                    ctx.stroke();
+                    ctx.set_fill_style_str("black");
+                }
             }
-            Stone::White => {
-                ctx.set_fill_style_str("white");
-                ctx.fill();
-                ctx.set_stroke_style_str("black");
-                ctx.stroke();
-            }
+
+            ctx.fill_text(&move_text, px, py).unwrap();
         }
     }
 
@@ -1211,7 +1240,11 @@ pub(crate) fn export_board_image(record: &Record) {
     if record.is_ended() {
         if let Some(Move::Win(p, dir)) = record.prev_move() {
             let stone = record.stone_at(p).unwrap();
-            let color = if stone == Stone::Black { "white" } else { "black" };
+            let color = if stone == Stone::Black {
+                "white"
+            } else {
+                "black"
+            };
             let ring_radius = radius * 1.3;
 
             for i in 0..6 {

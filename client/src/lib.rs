@@ -98,6 +98,12 @@ const STORAGE_KEY_RECORD: &str = "record";
 const RECORD_PREFIX_LEGACY: &str = "analyze,";
 const RECORD_PREFIX: &str = "r=";
 
+fn export_record_url(record: &Record) -> String {
+    let mut buf = vec![];
+    record.encode(&mut buf, RecordEncodingScheme::past());
+    format!("#{RECORD_PREFIX}{}", BASE64_URL.encode(buf))
+}
+
 #[derive(Clone)]
 struct DialogEntry {
     id: u32,
@@ -681,7 +687,12 @@ pub fn App() -> impl IntoView {
             show_dialog(Dialog::from(HelpDialog));
         }
         GameMenuRetVal::Export => {
-            game_view::export_board_image(&record.read());
+            let record = record.read();
+
+            let url = export_record_url(&record);
+            window().open_with_url_and_target(&url, "_blank").unwrap();
+
+            game_view::export_board_image(&record);
         }
     };
 
