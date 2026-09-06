@@ -1,3 +1,4 @@
 import './style.css';
-export * from '../pkg/c6ol-client.js';
-export { default } from '../pkg/c6ol-client.js';
+import init from '../pkg/c6ol-client.js';
+
+await init();

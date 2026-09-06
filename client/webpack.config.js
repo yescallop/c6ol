@@ -7,25 +7,77 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { spawn } from 'child_process';
 
-function getHash(content) {
-  return crypto.createHash('md5').update(content).digest('hex').slice(0, 20);
+const srcDir = path.join(import.meta.dirname, 'src');
+
+// The app is always served from the root. `output.publicPath` is left at
+// `auto`, because a static one makes webpack drop the wasm asset module
+// from unconcatenated (development) builds.
+const publicPath = '/';
+
+// The icon is hashed by hand, because the manifest has to reference it
+// under its final name. The digest length matches webpack's default.
+function iconAssetName() {
+  const content = fs.readFileSync(path.join(import.meta.dirname, 'assets/icon.svg'));
+  const hash = crypto.createHash('md5').update(content).digest('hex').slice(0, 20);
+  return `assets/icon-${hash}.svg`;
+}
+
+// Rebuilds the crate when its sources change, so that `webpack serve` picks
+// up the new `pkg` output.
+class BuildRustPlugin {
+  apply(compiler) {
+    compiler.hooks.afterCompile.tap('WatchRust', (compilation) => {
+      compilation.contextDependencies.add(srcDir);
+    });
+
+    compiler.hooks.watchRun.tapPromise('BuildRust', async ({ modifiedFiles }) => {
+      const rustChanged = [...(modifiedFiles ?? [])].some(
+        (file) => file === srcDir || (file.startsWith(srcDir) && file.endsWith('.rs')),
+      );
+      if (!rustChanged) {
+        return;
+      }
+
+      // Resolves at most once, however the build script terminates.
+      await new Promise((resolve) => {
+        const build = spawn('./build.sh', ['dev'], {
+          stdio: 'inherit',
+          cwd: import.meta.dirname,
+        });
+
+        build.on('error', (err) => {
+          console.error('Failed to start build script:', err);
+          resolve();
+        });
+
+        build.on('close', (code) => {
+          if (code === 0) {
+            console.log('Rust build successful.');
+          } else {
+            console.error(`Rust build failed with code ${code}`);
+          }
+          resolve();
+        });
+      });
+    });
+  }
 }
 
 export default (env, argv) => {
   const isProduction = argv.mode === 'production';
+
+  const assetName = (name, ext) =>
+    isProduction ? `assets/${name}-[contenthash]${ext}` : `assets/${name}${ext}`;
 
   return {
     entry: {
       'c6ol-client': './assets/entry.js',
     },
     output: {
-      filename: isProduction ? `assets/[name]-[contenthash].js` : 'assets/[name].js',
+      filename: assetName('[name]', '.js'),
       path: path.join(import.meta.dirname, 'dist'),
       clean: true,
-      library: {
-        type: 'module',
-      },
-      assetModuleFilename: isProduction ? `assets/[name]-[contenthash][ext]` : 'assets/[name][ext]'
+      assetModuleFilename: assetName('[name]', '[ext]'),
     },
     module: {
       rules: [
@@ -41,79 +93,31 @@ export default (env, argv) => {
     },
     plugins: [
       new HtmlWebpackPlugin({
-        template: "index.html",
-        inject: false,
+        template: 'index.html',
+        publicPath,
+        scriptLoading: 'module',
       }),
       new MiniCssExtractPlugin({
-        filename: isProduction ? 'assets/style-[contenthash].css' : 'assets/style.css',
+        filename: assetName('style', '.css'),
       }),
       new CopyWebpackPlugin({
         patterns: [
           {
-            from: "assets/manifest.json",
-            to: () => "assets/[name]-[contenthash][ext]",
+            from: 'assets/manifest.json',
+            to: 'assets/[name]-[contenthash][ext]',
             transform(content) {
               const manifest = JSON.parse(content.toString());
-              const iconContent = fs.readFileSync('assets/icon.svg');
-              const iconHash = getHash(iconContent);
-              manifest.icons[0].src = `/assets/icon-${iconHash}.svg`;
+              manifest.icons[0].src = publicPath + iconAssetName();
               return JSON.stringify(manifest);
-            }
+            },
           },
           {
-            from: "assets/icon.svg",
-            to: () => {
-              const content = fs.readFileSync('assets/icon.svg');
-              const hash = getHash(content);
-              return `assets/icon-${hash}.svg`;
-            }
-          }
+            from: 'assets/icon.svg',
+            to: iconAssetName,
+          },
         ],
       }),
-      {
-        apply: (compiler) => {
-          compiler.hooks.afterCompile.tap('WatchRust', (compilation) => {
-            compilation.contextDependencies.add(path.resolve(import.meta.dirname, 'src'));
-          });
-
-          compiler.hooks.watchRun.tapAsync('BuildRust', (params, callback) => {
-            const modifiedFiles = params.modifiedFiles;
-            let rustChanged = false;
-            const srcDir = path.resolve(import.meta.dirname, 'src');
-
-            if (modifiedFiles) {
-              for (const file of modifiedFiles) {
-                if (file.startsWith(srcDir)) {
-                  if (file.endsWith('.rs') || file === srcDir) {
-                    rustChanged = true;
-                    break;
-                  }
-                }
-              }
-            }
-
-            if (rustChanged) {
-              const build = spawn('./build.sh dev', [], { stdio: 'inherit', shell: true });
-
-              build.on('error', (err) => {
-                console.error('Failed to start build script:', err);
-                callback();
-              });
-
-              build.on('close', (code) => {
-                if (code === 0) {
-                  console.log('Rust build successful.');
-                } else {
-                  console.error(`Rust build failed with code ${code}`);
-                }
-                callback();
-              });
-            } else {
-              callback();
-            }
-          });
-        }
-      }
+      new BuildRustPlugin(),
     ],
     experiments: {
       outputModule: true,
@@ -125,7 +129,7 @@ export default (env, argv) => {
       ],
     },
     performance: {
-      maxAssetSize: 512000
+      maxAssetSize: 512000,
     },
     devServer: {
       port: 8080,

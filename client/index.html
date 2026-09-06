@@ -5,28 +5,22 @@
     <title>Connect6</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#fc6">
-    <% 
-      var manifestFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/manifest') && k.endsWith('.json'));
-      var iconFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/icon') && k.endsWith('.svg'));
-      var cssFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/style') && k.endsWith('.css'));
-      var jsFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/c6ol-client') && k.endsWith('.js'));
-      var wasmFile = Object.keys(compilation.assets).find(k => k.startsWith('assets/c6ol-client_bg') && k.endsWith('.wasm'));
+    <%
+      // The script and stylesheet tags are injected. Looked up here are the
+      // assets html-webpack-plugin does not know about: the copied files, and
+      // the wasm module, which is an auxiliary asset of the entrypoint.
+      var assetNames = Object.keys(compilation.assets);
+      var asset = (name, ext) => {
+        var file = assetNames.find(k => k.startsWith('assets/' + name) && k.endsWith(ext));
+        if (!file) {
+          throw new Error('no emitted asset matches assets/' + name + '*' + ext);
+        }
+        return htmlWebpackPlugin.files.publicPath + file;
+      };
     %>
-    <% if (iconFile) { %>
-    <link rel="icon" sizes="any" href="/<%= iconFile %>">
-    <% } %>
-    <% if (manifestFile) { %>
-    <link rel="manifest" href="/<%= manifestFile %>">
-    <% } %>
-    <% if (cssFile) { %>
-    <link rel="stylesheet" href="/<%= cssFile %>">
-    <% } %>
-    <% if (wasmFile) { %>
-    <link rel="preload" href="/<%= wasmFile %>" as="fetch" type="application/wasm" crossorigin>
-    <% } %>
-    <script type="module">
-      import init from '/<%= jsFile %>';await init()
-    </script>
+    <link rel="icon" sizes="any" href="<%= asset('icon', '.svg') %>">
+    <link rel="manifest" href="<%= asset('manifest', '.json') %>">
+    <link rel="preload" href="<%= asset('c6ol-client_bg', '.wasm') %>" as="fetch" type="application/wasm" crossorigin>
   </head>
   <body>
   </body>
