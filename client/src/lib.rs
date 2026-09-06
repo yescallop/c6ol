@@ -98,6 +98,12 @@ const STORAGE_KEY_RECORD: &str = "record";
 const RECORD_PREFIX_LEGACY: &str = "analyze,";
 const RECORD_PREFIX: &str = "r=";
 
+fn export_record_url(record: &Record) -> String {
+    let mut buf = vec![];
+    record.encode(&mut buf, RecordEncodingScheme::past());
+    format!("#{RECORD_PREFIX}{}", BASE64_URL.encode(buf))
+}
+
 #[derive(Clone)]
 struct DialogEntry {
     id: u32,
@@ -203,6 +209,10 @@ pub fn App() -> impl IntoView {
     let ws_state = RwSignal::new_local(None::<WebSocketState>);
 
     let online = move || ws_state.read().is_some();
+
+    Effect::new(move || {
+        update_title(game_kind.get(), &record.read());
+    });
 
     Effect::new(move || {
         if game_kind.get() == GameKind::Local {
@@ -353,6 +363,33 @@ pub fn App() -> impl IntoView {
 
         dialog_entries.write().clear();
     };
+
+    fn update_title(game_kind: GameKind, record: &Record) {
+        let document = window().document().unwrap();
+
+        let status = if let Some(stone) = record.turn() {
+            format!("Move {} - {} to play", record.move_index(), stone)
+        } else {
+            match record.prev_move().unwrap() {
+                Move::Draw => "Game Drawn".into(),
+                Move::Resign(stone) => format!("{} Resigned", stone),
+                Move::Win(p, _) => {
+                    let stone = record.stone_at(p).unwrap();
+                    format!("{} Won", stone)
+                }
+                _ => unreachable!(),
+            }
+        };
+
+        let title = match game_kind {
+            GameKind::Pending => "c6ol".into(),
+            GameKind::Local => format!("c6ol - Local - {}", status),
+            GameKind::Record => format!("c6ol - Record - {}", status),
+            GameKind::Online(_) => format!("c6ol - Online - {}", status),
+        };
+
+        document.set_title(&title);
+    }
 
     fn connect(
         init_msg: ClientMessage,
@@ -646,6 +683,12 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
         GameMenuRetVal::Draw => on_event(Event::Draw),
+        GameMenuRetVal::Help => {
+            show_dialog(Dialog::from(HelpDialog));
+        }
+        GameMenuRetVal::Export => {
+            show_dialog(Dialog::from(ExportDialog))
+        }
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
@@ -760,6 +803,29 @@ pub fn App() -> impl IntoView {
                     send(ClientMessage::Request(Request::Reset(options)));
                 }
             },
+            // The help dialog has a Close button and super cow power.
+            RetVal::Help(ret_val) => match ret_val {
+                HelpRetVal::Close => {}
+            },
+            RetVal::Export(ret_val) => match ret_val {
+                ExportRetVal::Cancel => {}
+                ExportRetVal::Export(kind) => {
+                    let record = record.read();
+
+                    match kind {
+                        ExportKind::Link => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                        }
+                        ExportKind::Photo => game_view::export_board_image(&record),
+                        ExportKind::Both => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                            game_view::export_board_image(&record);
+                        }
+                    }
+                }
+            }
         }
     };
 
