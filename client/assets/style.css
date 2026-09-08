@@ -30,6 +30,20 @@ dialog {
   max-width: 15em;
 }
 
+dialog.help {
+  box-sizing: border-box;
+  width: 40vw;
+  max-width: none;
+  max-height: 80vh;
+  overflow: auto;
+}
+
+@media (max-width: 600px) {
+  dialog.help {
+    width: 80vw;
+  }
+}
+
 .game-menu {
   min-width: 11em;
 }
