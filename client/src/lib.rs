@@ -98,6 +98,12 @@ const STORAGE_KEY_RECORD: &str = "record";
 const RECORD_PREFIX_LEGACY: &str = "analyze,";
 const RECORD_PREFIX: &str = "r=";
 
+fn export_record_url(record: &Record) -> String {
+    let mut buf = vec![];
+    record.encode(&mut buf, RecordEncodingScheme::past());
+    format!("#{RECORD_PREFIX}{}", BASE64_URL.encode(buf))
+}
+
 #[derive(Clone)]
 struct DialogEntry {
     id: u32,
@@ -646,6 +652,7 @@ pub fn App() -> impl IntoView {
         GameMenuRetVal::Resign => on_event(Event::Resign),
         GameMenuRetVal::Submit => on_event(Event::Submit),
         GameMenuRetVal::Draw => on_event(Event::Draw),
+        GameMenuRetVal::Export => show_dialog(Dialog::from(ExportDialog)),
     };
 
     let on_dialog_return = move |id: u32, ret_val: RetVal| {
@@ -758,6 +765,25 @@ pub fn App() -> impl IntoView {
                 ResetRetVal::Cancel => {}
                 ResetRetVal::Confirm(options) => {
                     send(ClientMessage::Request(Request::Reset(options)));
+                }
+            },
+            RetVal::Export(ret_val) => match ret_val {
+                ExportRetVal::Cancel => {}
+                ExportRetVal::Export(kind) => {
+                    let record = record.read();
+
+                    match kind {
+                        ExportKind::Link => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                        }
+                        ExportKind::Photo => game_view::export_board_image(&record),
+                        ExportKind::Both => {
+                            let url = export_record_url(&record);
+                            window().open_with_url_and_target(&url, "_blank").unwrap();
+                            game_view::export_board_image(&record);
+                        }
+                    }
                 }
             },
         }

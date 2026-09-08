@@ -10,8 +10,8 @@ use std::{
 };
 use tinyvec::ArrayVec;
 use web_sys::{
-    CanvasRenderingContext2d, HtmlCanvasElement, KeyboardEvent, MouseEvent, PointerEvent,
-    WheelEvent, wasm_bindgen::prelude::*,
+    CanvasRenderingContext2d, HtmlAnchorElement, HtmlCanvasElement, KeyboardEvent, MouseEvent,
+    PointerEvent, WheelEvent, wasm_bindgen::prelude::*,
 };
 
 const CURSOR_COLOR_ACTIVE: &str = "firebrick";
@@ -1095,4 +1095,192 @@ pub(crate) fn GameView(
             </svg>
         </div>
     }
+}
+
+/// Exports the current board state as a PNG image.
+pub(crate) fn export_board_image(record: &Record) {
+    let Some(document) = window().document() else {
+        return;
+    };
+
+    let stones = record.stones().collect::<Vec<_>>();
+    // Calculate bounds.
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
+    for &(p, _) in &stones {
+        min_x = min_x.min(p.x);
+        max_x = max_x.max(p.x);
+        min_y = min_y.min(p.y);
+        max_y = max_y.max(p.y);
+    }
+
+    if min_x == i16::MAX {
+        min_x = 0;
+        min_y = 0;
+        max_x = 0;
+        max_y = 0;
+    }
+
+    let padding = 4;
+    //in case of winning stone close to the edge which might contribute to the WinRing invisiable
+    let cell_size: f64 = 20.0;
+    let line_width: f64 = 1.0;
+    let stone_radius: f64 = cell_size * 0.4;
+    let origin_dot_radius: f64 = cell_size * 0.15;
+    let win_ring_radius: f64 = stone_radius * 1.3;
+    let win_ring_width: f64 = 3.0;
+    let full_circle = 2.0 * std::f64::consts::PI;
+
+    min_x -= padding;
+    max_x += padding;
+    min_y -= padding;
+    max_y += padding;
+
+    let width = (max_x - min_x + 1) as f64 * cell_size;
+    let height = (max_y - min_y + 1) as f64 * cell_size;
+
+    let board_to_canvas_x = |x: i16| ((x - min_x) as f64 + 0.5) * cell_size;
+    let board_to_canvas_y = |y: i16| ((y - min_y) as f64 + 0.5) * cell_size;
+    let grid_left = board_to_canvas_x(min_x);
+    let grid_top = board_to_canvas_y(min_y);
+    let grid_right = board_to_canvas_x(max_x); //merry x(max_x)!
+    let grid_bottom = board_to_canvas_y(max_y);
+
+    // Create canvas.
+    let canvas = document
+        .create_element("canvas")
+        .unwrap()
+        .unchecked_into::<HtmlCanvasElement>();
+    canvas.set_width(width as u32);
+    canvas.set_height(height as u32);
+
+    let ctx = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .unchecked_into::<CanvasRenderingContext2d>();
+
+    // Background.
+    ctx.set_fill_style_str("#fc6");
+    ctx.fill_rect(0.0, 0.0, width, height);
+
+    // Grid.
+    ctx.set_stroke_style_str("black");
+    ctx.set_line_width(line_width);
+
+    for x in min_x..=max_x {
+        let px = board_to_canvas_x(x);
+        ctx.begin_path();
+        ctx.move_to(px, grid_top);
+        ctx.line_to(px, grid_bottom);
+        ctx.stroke();
+    }
+
+    for y in min_y..=max_y {
+        let py = board_to_canvas_y(y);
+        ctx.begin_path();
+        ctx.move_to(grid_left, py);
+        ctx.line_to(grid_right, py);
+        ctx.stroke();
+        //Now the grid will draw till the outer intersection.
+    }
+
+    // Origin dot.
+    if record.stone_at(Point::ZERO).is_none()
+        && min_x <= 0
+        && 0 <= max_x
+        && min_y <= 0
+        && 0 <= max_y
+    {
+        let px = board_to_canvas_x(0);
+        let py = board_to_canvas_y(0);
+        ctx.set_fill_style_str("black");
+        ctx.begin_path();
+        ctx.arc(px, py, origin_dot_radius, 0.0, full_circle)
+            .unwrap();
+        ctx.fill();
+    }
+
+    // Stones.
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("middle");
+
+    for (i, &mov) in record.moves().iter().enumerate().take(record.move_index()) {
+        let Move::Place(p1, p2) = mov else {
+            continue;
+        };
+
+        let stone = record.stone_at(p1).unwrap();
+        let move_text = (i + 1).to_string();
+        let mut font_size = match move_text.len() {
+            1 | 2 => cell_size * 0.4,
+            3 => cell_size * 0.35,
+            _ => cell_size * 0.3,
+        };
+
+        loop {
+            ctx.set_font(&format!("bold {font_size}px sans-serif"));
+
+            if ctx.measure_text(&move_text).unwrap().width() <= stone_radius * 1.6
+                || font_size <= cell_size * 0.2
+            {
+                break;
+            }
+
+            font_size -= 0.5;
+        }
+
+        for p in iter::once(p1).chain(p2) {
+            let px = board_to_canvas_x(p.x);
+            let py = board_to_canvas_y(p.y);
+
+            ctx.begin_path();
+            ctx.arc(px, py, stone_radius, 0.0, full_circle).unwrap();
+
+            match stone {
+                Stone::Black => {
+                    ctx.set_fill_style_str("black");
+                    ctx.fill();
+                    ctx.set_fill_style_str("white");
+                }
+                Stone::White => {
+                    ctx.set_fill_style_str("white");
+                    ctx.fill();
+                    ctx.set_fill_style_str("black");
+                }
+            }
+
+            ctx.fill_text(&move_text, px, py).unwrap();
+        }
+    }
+
+    // Win rings.
+    if let Some(Move::Win(p, dir)) = record.prev_move() {
+        let stone = record.stone_at(p).unwrap();
+        let color = if stone == Stone::Black {
+            "white"
+        } else {
+            "black"
+        };
+        for i in 0..6 {
+            let point = p + dir.offset(i);
+            let px = board_to_canvas_x(point.x);
+            let py = board_to_canvas_y(point.y);
+
+            ctx.set_stroke_style_str(color);
+            ctx.set_line_width(win_ring_width);
+            ctx.begin_path();
+            ctx.arc(px, py, win_ring_radius, 0.0, full_circle).unwrap();
+            ctx.stroke();
+        }
+    }
+
+    // Download.
+    let data_url = canvas.to_data_url().unwrap();
+    let anchor = document
+        .create_element("a")
+        .unwrap()
+        .unchecked_into::<HtmlAnchorElement>();
+    anchor.set_href(&data_url);
+    anchor.set_download("c6ol-board.png");
+    anchor.click();
 }
